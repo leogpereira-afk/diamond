@@ -1,0 +1,7 @@
+project_id = "diamond-supabase"
+
+[functions.dmd-api]
+verify_jwt = false
+
+[functions.dmd-p]
+verify_jwt = false

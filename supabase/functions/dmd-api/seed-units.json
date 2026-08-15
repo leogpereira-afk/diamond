@@ -1,0 +1,583 @@
+[
+ {
+  "unidade": "1401",
+  "andar": 14,
+  "area": 43.17,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1402",
+  "andar": 14,
+  "area": 42.56,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1301",
+  "andar": 13,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1302",
+  "andar": 13,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1303",
+  "andar": 13,
+  "area": 44.99,
+  "precoBase": 386044,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1304",
+  "andar": 13,
+  "area": 46.33,
+  "precoBase": 397542,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1305",
+  "andar": 13,
+  "area": 46.07,
+  "precoBase": 395311,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1306",
+  "andar": 13,
+  "area": 46.07,
+  "precoBase": 395311,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1307",
+  "andar": 13,
+  "area": 45.51,
+  "precoBase": 390506,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1308",
+  "andar": 13,
+  "area": 45.51,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1201",
+  "andar": 12,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1202",
+  "andar": 12,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1203",
+  "andar": 12,
+  "area": 44.99,
+  "precoBase": 383061,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1204",
+  "andar": 12,
+  "area": 46.33,
+  "precoBase": 394470,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1205",
+  "andar": 12,
+  "area": 46.07,
+  "precoBase": 392257,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1206",
+  "andar": 12,
+  "area": 46.07,
+  "precoBase": 392257,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1207",
+  "andar": 12,
+  "area": 45.51,
+  "precoBase": 387489,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1208",
+  "andar": 12,
+  "area": 45.51,
+  "precoBase": 387489,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1101",
+  "andar": 11,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Reservado"
+ },
+ {
+  "unidade": "1102",
+  "andar": 11,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1103",
+  "andar": 11,
+  "area": 44.99,
+  "precoBase": 380078,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1104",
+  "andar": 11,
+  "area": 46.33,
+  "precoBase": 391398,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1105",
+  "andar": 11,
+  "area": 46.07,
+  "precoBase": 389202,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1106",
+  "andar": 11,
+  "area": 46.07,
+  "precoBase": 389202,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1107",
+  "andar": 11,
+  "area": 45.51,
+  "precoBase": 384471,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1108",
+  "andar": 11,
+  "area": 45.51,
+  "precoBase": 384471,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1001",
+  "andar": 10,
+  "area": 46.85,
+  "precoBase": 397370,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1002",
+  "andar": 10,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "1003",
+  "andar": 10,
+  "area": 44.99,
+  "precoBase": 377095,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1004",
+  "andar": 10,
+  "area": 46.33,
+  "precoBase": 388326,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1005",
+  "andar": 10,
+  "area": 46.07,
+  "precoBase": 386147,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1006",
+  "andar": 10,
+  "area": 46.07,
+  "precoBase": 386147,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1007",
+  "andar": 10,
+  "area": 45.51,
+  "precoBase": 381453,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "1008",
+  "andar": 10,
+  "area": 45.51,
+  "precoBase": 381453,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "901",
+  "andar": 9,
+  "area": 46.85,
+  "precoBase": 394263,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "902",
+  "andar": 9,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "903",
+  "andar": 9,
+  "area": 44.99,
+  "precoBase": 374112,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "904",
+  "andar": 9,
+  "area": 46.33,
+  "precoBase": 385254,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "905",
+  "andar": 9,
+  "area": 46.07,
+  "precoBase": 383092,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "906",
+  "andar": 9,
+  "area": 46.07,
+  "precoBase": 383092,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "907",
+  "andar": 9,
+  "area": 45.51,
+  "precoBase": 378436,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "908",
+  "andar": 9,
+  "area": 45.51,
+  "precoBase": 378436,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "801",
+  "andar": 8,
+  "area": 46.85,
+  "precoBase": 391157,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "802",
+  "andar": 8,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "803",
+  "andar": 8,
+  "area": 44.99,
+  "precoBase": 371129,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "804",
+  "andar": 8,
+  "area": 46.33,
+  "precoBase": 382183,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "805",
+  "andar": 8,
+  "area": 46.07,
+  "precoBase": 380038,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "806",
+  "andar": 8,
+  "area": 46.07,
+  "precoBase": 380038,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "807",
+  "andar": 8,
+  "area": 45.51,
+  "precoBase": 375418,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "808",
+  "andar": 8,
+  "area": 45.51,
+  "precoBase": 375418,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "701",
+  "andar": 7,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Reservado"
+ },
+ {
+  "unidade": "702",
+  "andar": 7,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "703",
+  "andar": 7,
+  "area": 44.99,
+  "precoBase": 368146,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "704",
+  "andar": 7,
+  "area": 46.33,
+  "precoBase": 379111,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "705",
+  "andar": 7,
+  "area": 46.07,
+  "precoBase": 376983,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "706",
+  "andar": 7,
+  "area": 46.07,
+  "precoBase": 376983,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "707",
+  "andar": 7,
+  "area": 45.51,
+  "precoBase": 372401,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "708",
+  "andar": 7,
+  "area": 45.51,
+  "precoBase": 372401,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "601",
+  "andar": 6,
+  "area": 46.85,
+  "precoBase": 384944,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "602",
+  "andar": 6,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "603",
+  "andar": 6,
+  "area": 44.99,
+  "precoBase": 365163,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "604",
+  "andar": 6,
+  "area": 46.33,
+  "precoBase": 376039,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "605",
+  "andar": 6,
+  "area": 46.07,
+  "precoBase": 373929,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "606",
+  "andar": 6,
+  "area": 46.07,
+  "precoBase": 373929,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "607",
+  "andar": 6,
+  "area": 45.51,
+  "precoBase": 369383,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "608",
+  "andar": 6,
+  "area": 45.51,
+  "precoBase": 369383,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "501",
+  "andar": 5,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "502",
+  "andar": 5,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "503",
+  "andar": 5,
+  "area": 44.99,
+  "precoBase": 362179,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "504",
+  "andar": 5,
+  "area": 46.33,
+  "precoBase": 372967,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "505",
+  "andar": 5,
+  "area": 46.07,
+  "precoBase": 370874,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "506",
+  "andar": 5,
+  "area": 46.07,
+  "precoBase": 370874,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "507",
+  "andar": 5,
+  "area": 45.51,
+  "precoBase": 366366,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "508",
+  "andar": 5,
+  "area": 45.51,
+  "precoBase": 366366,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "401",
+  "andar": 4,
+  "area": 46.85,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "402",
+  "andar": 4,
+  "area": 39.79,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "403",
+  "andar": 4,
+  "area": 44.99,
+  "precoBase": null,
+  "status": "Vendido"
+ },
+ {
+  "unidade": "404",
+  "andar": 4,
+  "area": 46.33,
+  "precoBase": 369895,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "405",
+  "andar": 4,
+  "area": 46.07,
+  "precoBase": 367819,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "406",
+  "andar": 4,
+  "area": 46.07,
+  "precoBase": 367819,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "407",
+  "andar": 4,
+  "area": 45.51,
+  "precoBase": 363348,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "408",
+  "andar": 4,
+  "area": 45.51,
+  "precoBase": 363348,
+  "status": "Disponível"
+ },
+ {
+  "unidade": "LOJA",
+  "andar": 0,
+  "area": 191.32,
+  "precoBase": 1147920,
+  "status": "Disponível"
+ }
+]
