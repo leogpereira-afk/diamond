@@ -48,7 +48,13 @@
   var alvo = document.getElementById('conteudo');
   var aviso = function (msg) { alvo.innerHTML = '<div class="aviso">' + esc(msg) + '</div>'; };
 
-  var id = (new URLSearchParams(location.search)).get('id') || '';
+  var par = new URLSearchParams(location.search);
+  // A função encaminha para cá também quando tem um recado a dar (link inválido,
+  // proposta removida): HTML dela vira texto puro na tela do cliente, então quem
+  // mostra qualquer aviso é esta página.
+  var recado = par.get('aviso');
+  if (recado) { aviso(recado); return; }
+  var id = par.get('id') || '';
   if (!/^pp-[a-z0-9]+$/i.test(id)) { aviso('Link incompleto. Peça ao corretor para reenviar a proposta.'); return; }
   var SELF = API + encodeURIComponent(id);
 
