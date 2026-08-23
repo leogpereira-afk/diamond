@@ -177,7 +177,7 @@ function keyset(keys, after) {
 export const handler = async (event) => {
   try { connectLambda(event); } catch (e) { /* contexto injetado pelo runtime */ }
   if (event.httpMethod === 'OPTIONS') return json(200, { ok: true });
-  if ((event.headers['x-token'] || event.headers['X-Token']) !== Deno.env.get('TOKEN')) {
+  if ((event.headers['x-token'] || event.headers['X-Token']) !== Deno.env.get('DMD_TOKEN')) {
     return json(401, { erro: 'não autorizado' });
   }
   let body = {};

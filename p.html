@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sua proposta · Edifício Diamond</title>
+<!-- POR QUE ESTA PÁGINA EXISTE AQUI E NÃO NA FUNÇÃO:
+     no domínio compartilhado do Supabase toda resposta em HTML é reescrita para
+     text/plain com CSP `sandbox` — o cliente recebia o código na tela, com os
+     acentos quebrados. JSON e PDF passam intactos. Então os DADOS continuam
+     saindo da função (dmd-p?dados=1) e quem desenha a tela é este arquivo, que
+     o GitHub Pages serve como HTML de verdade.
+     O link que está no WhatsApp do cliente NÃO mudou: ele bate na função, que
+     conta a abertura e encaminha para cá. -->
+<meta property="og:title" content="Sua proposta · Edifício Diamond">
+<meta property="og:description" content="Sua proposta está pronta. Toque para ver valor, área e condições.">
+<meta property="og:image" content="https://leogpereira-afk.github.io/diamond/icon-512.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="icon-192.png">
+<style>
+*{box-sizing:border-box;margin:0}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#0d0d0d;color:#f0f0f0;min-height:100vh;padding:30px 20px;display:flex;justify-content:center}
+.wrap{max-width:440px;width:100%}.logo{color:#e4f72b;font-weight:800;font-size:32px;letter-spacing:.14em;text-align:center}.sub{color:#9a9a9a;text-align:center;font-size:13px;margin-top:4px}
+.card{background:#171717;border:1px solid #262626;border-radius:16px;padding:24px;margin-top:24px}.oi{font-size:20px;font-weight:700}.oi span{color:#e4f72b}
+.un{color:#c2c2c2;margin-top:10px;font-size:15px}.btn{display:block;width:100%;text-align:center;text-decoration:none;padding:16px;border-radius:12px;font-weight:700;font-size:16px;border:0;cursor:pointer;font-family:inherit}
+.btn-pdf{background:#e4f72b;color:#000;margin-top:18px}.q{color:#9a9a9a;font-size:14px;margin:24px 0 10px;text-align:center}.acoes{display:flex;gap:10px}
+.btn-sim{background:#1f2d10;color:#c7f24a;border:1px solid #3a5216}.btn-duv{background:#1c1c1c;color:#eee;border:1px solid #333}
+.ok{text-align:center;color:#c7f24a;font-weight:700;margin-top:20px;display:none;line-height:1.5}.foot{color:#666;font-size:12px;text-align:center;margin-top:26px}
+.imob-logo{text-align:center;margin-top:26px}.imob-logo span{display:block;color:#8a8a8a;font-size:11px;margin-bottom:7px}.imob-logo img{max-height:44px;max-width:190px;background:#fff;border-radius:8px;padding:5px 9px}
+.teaser{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}.t-item{flex:1;min-width:96px;background:#111;border:1px solid #262626;border-radius:12px;padding:12px 14px}
+.t-lab{color:#8a8a8a;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.t-val{font-weight:700;font-size:15px;margin-top:3px}.t-val.big{color:#e4f72b;font-size:21px}
+.validade{color:#8a8a8a;font-size:12px;text-align:center;margin-top:14px}.validade.venc{color:#e7b64b;background:#241d0b;border:1px solid #3d3212;border-radius:10px;padding:10px 12px;line-height:1.5}
+.aviso{text-align:center;padding:40px 0;color:#aaa;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">DIAMOND</div>
+  <div class="sub">Edifício Diamond · Domo Construtora</div>
+  <div id="conteudo"><div class="aviso">Carregando sua proposta…</div></div>
+</div>
+<script>
+(function () {
+  var API = 'https://reoghclxripktzpdwhiy.supabase.co/functions/v1/dmd-p/';
+  var esc = function (s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+  var fmtBRL = function (v) { var n = Number(v) || 0; return n ? 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : ''; };
+  var fmtArea = function (v) { var n = Number(v) || 0; return n ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m²' : ''; };
+  var alvo = document.getElementById('conteudo');
+  var aviso = function (msg) { alvo.innerHTML = '<div class="aviso">' + esc(msg) + '</div>'; };
+
+  var id = (new URLSearchParams(location.search)).get('id') || '';
+  if (!/^pp-[a-z0-9]+$/i.test(id)) { aviso('Link incompleto. Peça ao corretor para reenviar a proposta.'); return; }
+  var SELF = API + encodeURIComponent(id);
+
+  fetch(SELF + '?dados=1').then(function (r) {
+    if (!r.ok) throw new Error(r.status === 404 ? 'Proposta não encontrada — o link pode ter sido removido.' : 'Não consegui carregar sua proposta agora. Tente de novo em instantes.');
+    return r.json();
+  }).then(function (d) {
+    var cli = esc(d.cliente || 'você');
+    var cor = esc(d.corretor || 'o corretor');
+    var emp = esc(d.empresa || '');
+    var valorTxt = fmtBRL(d.valor), areaTxt = fmtArea(d.area);
+    var andarTxt = (d.andar || d.andar === 0) ? (Number(d.andar) === 0 ? 'Térreo' : esc(d.andar) + 'º andar') : '';
+    // validade: 7 dias a partir da geração — não bloqueia, mas avisa se passou
+    var emDate = d.em ? new Date(d.em) : null;
+    var dias = (emDate && !isNaN(emDate)) ? Math.floor((Date.now() - emDate.getTime()) / 86400000) : null;
+    var geradaEm = (emDate && !isNaN(emDate)) ? emDate.toLocaleDateString('pt-BR') : '';
+    var vencida = dias != null && dias > 7;
+
+    var teaser = '';
+    if (valorTxt || areaTxt || andarTxt) {
+      teaser = '<div class="teaser">'
+        + (valorTxt ? '<div class="t-item"><div class="t-lab">Valor</div><div class="t-val big">' + esc(valorTxt) + '</div></div>' : '')
+        + (areaTxt ? '<div class="t-item"><div class="t-lab">Área privativa</div><div class="t-val">' + esc(areaTxt) + '</div></div>' : '')
+        + (andarTxt ? '<div class="t-item"><div class="t-lab">Andar</div><div class="t-val">' + andarTxt + '</div></div>' : '')
+        + '</div>';
+    }
+    var validade = '';
+    if (geradaEm) {
+      validade = '<div class="validade' + (vencida ? ' venc' : '') + '">' + (vencida
+        ? '⚠ Proposta gerada em ' + geradaEm + ' (há ' + dias + ' dias). Os valores podem ter mudado — confirme com ' + cor + ' antes de decidir.'
+        : 'Gerada em ' + geradaEm + ' · válida por 7 dias.') + '</div>';
+    }
+    alvo.innerHTML = '<div class="card">'
+      + '<div class="oi">Olá, <span>' + cli + '</span>! 👋</div>'
+      + '<div class="un">Sua proposta da <b>unidade ' + esc(d.unidade || '') + '</b> está pronta:</div>'
+      + teaser
+      + '<a class="btn btn-pdf" href="' + esc(SELF) + '?pdf=1" target="_blank" rel="noopener">📄 Ver proposta completa (PDF)</a>'
+      + validade
+      + '<div class="q">O que você achou? Responda ao corretor:</div>'
+      + '<div class="acoes" id="acoes">'
+      +   '<button class="btn btn-sim" data-acao="interesse">✅ Tenho interesse</button>'
+      +   '<button class="btn btn-duv" data-acao="duvida">💬 Tirar dúvida</button>'
+      + '</div>'
+      + '<div class="ok" id="ok">Perfeito! ' + cor + ' foi avisado e já vai te chamar aqui no WhatsApp. 🎉</div>'
+      + '</div>'
+      + (d.logoUri ? '<div class="imob-logo"><span>apresentado por</span><img src="' + esc(d.logoUri) + '" alt="' + emp + '"></div>' : '')
+      + '<div class="foot">' + (d.numero ? 'Proposta nº ' + String(d.numero).padStart(3, '0') + ' · ' : '') + 'enviada por ' + cor + (emp ? ' · ' + emp : '') + '</div>';
+
+    // Resposta do cliente: grava no servidor e leva para o WhatsApp do corretor.
+    // fetch com keepalive (e não sendBeacon): o beacon manda Content-Type que
+    // exige verificação prévia entre domínios, e ela ele não sabe fazer.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-acao]'), function (b) {
+      b.onclick = function () {
+        var t = b.getAttribute('data-acao');
+        try { fetch(SELF, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: t }), keepalive: true }); } catch (e) {}
+        document.getElementById('acoes').style.display = 'none';
+        var q = document.querySelector('.q'); if (q) q.style.display = 'none';
+        document.getElementById('ok').style.display = 'block';
+        if (d.whats) {
+          var m = t === 'duvida'
+            ? 'Olá! Tenho uma dúvida sobre a proposta da unidade ' + (d.unidade || '') + ' do Edifício Diamond.'
+            : 'Olá! Tenho interesse na unidade ' + (d.unidade || '') + ' do Edifício Diamond. Podemos conversar?';
+          setTimeout(function () { location.href = 'https://wa.me/' + d.whats + '?text=' + encodeURIComponent(m); }, 700);
+        }
+      };
+    });
+  }).catch(function (e) { aviso(e.message || 'Não consegui carregar sua proposta agora.'); });
+})();
+</script>
+</body>
+</html>
