@@ -177,7 +177,13 @@ function keyset(keys, after) {
 export const handler = async (event) => {
   try { connectLambda(event); } catch (e) { /* contexto injetado pelo runtime */ }
   if (event.httpMethod === 'OPTIONS') return json(200, { ok: true });
-  if ((event.headers['x-token'] || event.headers['X-Token']) !== Deno.env.get('DMD_TOKEN')) {
+  // Porta do backup central (hub Impresilk): o token de ROTINA — um segredo
+  // forte que nunca viaja no navegador — abre um `list` que devolve TUDO
+  // (todas as coleções de registros), não só as unidades do espelho.
+  const tokenRecebido = event.headers['x-token'] || event.headers['X-Token'];
+  const ROTINA = Deno.env.get('DMD_ROTINA_TOKEN');
+  const ehBackup = !!ROTINA && tokenRecebido === ROTINA;
+  if (tokenRecebido !== Deno.env.get('DMD_TOKEN') && !ehBackup) {
     return json(401, { erro: 'não autorizado' });
   }
   let body = {};
@@ -236,6 +242,36 @@ export const handler = async (event) => {
     }
 
     // ---------- unidades ----------
+    if (action === 'list' && ehBackup) {
+      // Backup completo: as stores de REGISTROS, achatadas com `_col`, numa
+      // paginação única (cursor "store|key"). Binários (fotos, PDFs) ficam de
+      // fora — como em todos os backups do hub.
+      const ORDEM = ['unidades', 'propostas', 'leads', 'reservas', 'envios', 'enviosEv', 'cfg'];
+      const [aStore, aKey] = String(body.after || '').split('|');
+      const registros = [];
+      let nextAfter = null;
+      for (let i = Math.max(0, ORDEM.indexOf(aStore)); i < ORDEM.length && !nextAfter; i++) {
+        const nome = ORDEM[i];
+        const { blobs } = await stores[nome].list();
+        const keys = blobs.map((x) => x.key).sort();
+        for (const k of keys) {
+          if (nome === aStore && aKey && k <= aKey) continue;
+          if (registros.length >= PAGE) {
+            // O cursor é a posição do ÚLTIMO entregue (a página pode ter
+            // enchido na fronteira entre stores — apontar a store atual aqui
+            // pularia ou repetiria registros na retomada).
+            const ult = registros[registros.length - 1];
+            nextAfter = ult._col + '|' + ult._key;
+            break;
+          }
+          const v = await stores[nome].get(k, { type: 'json' });
+          if (v == null) continue;
+          registros.push(typeof v === 'object' ? { _col: nome, _key: k, ...v } : { _col: nome, _key: k, valor: v });
+        }
+      }
+      return json(200, { registros, nextAfter });
+    }
+
     if (action === 'list') {
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
