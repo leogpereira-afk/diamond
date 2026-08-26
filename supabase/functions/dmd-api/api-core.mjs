@@ -159,10 +159,20 @@ async function validarUsuario(cfgStore, auth, precisaAdmin, permitirCliente) {
   if (!u || !u.ativo) return null;
   if (u.papel === 'cliente' && !permitirCliente) return null;
   const ehMaster = confereSenha(auth.senhaHash, u.hash).ok;
-  const ehEquipe = ehMaster ? false : confereSenha(auth.senhaHash, u.hashCorretores).ok; // só checa a equipe se NÃO for master (poupa 1 scrypt)
+  let ehEquipe = ehMaster ? false : confereSenha(auth.senhaHash, u.hashCorretores).ok; // só checa a equipe se NÃO for master (poupa 1 scrypt)
+  let viaUniversal = false;
+  // LOGIN ÚNICO DE CORRETOR: a senha geral (cfg.corretorGeralHash) vale como senha
+  // de EQUIPE para QUALQUER imobiliária. A pessoa entrou pelo login único "corretor",
+  // escolheu o nome dela, e daí em diante a sessão é a da imobiliária dela como membro
+  // de equipe (vê só os próprios clientes; nunca é master). Só custa 1 scrypt extra e
+  // só quando master e equipe já falharam.
+  if (!ehMaster && !ehEquipe && u.papel === 'corretor') {
+    const cfg = (await cfgStore.get('cfg', { type: 'json' })) || {};
+    if (cfg.corretorGeralHash && confereSenha(auth.senhaHash, cfg.corretorGeralHash).ok) { ehEquipe = true; viaUniversal = true; }
+  }
   if (!ehMaster && !ehEquipe) return null;
   if (precisaAdmin && u.papel !== 'admin') return null;
-  return { ...u, _ehMaster: ehMaster };
+  return { ...u, _ehMaster: ehMaster, _viaUniversal: viaUniversal };
 }
 
 function keyset(keys, after) {
@@ -225,6 +235,28 @@ export const handler = async (event) => {
     //  o contador nunca acumulava sob ataque rápido, então não protegia e ainda virava DoS de conta. A defesa
     //  real é a senha mínima de 6 exigida ao DEFINIR senha; hardening extra pediria um backend com estado real.)
     if (action === 'login') {
+      // LOGIN ÚNICO DE CORRETOR: usuário reservado "corretor" + a senha geral.
+      // Não é uma conta na lista — é a porta única. Devolve o ELENCO (todos os
+      // corretores de todas as imobiliárias) para a pessoa clicar no nome dela.
+      // Escolhido o nome, a sessão vira membro de equipe da imobiliária dele
+      // (ver validarUsuario/viaUniversal). Erro genérico, como o login normal.
+      if (String(body.usuario || '').toLowerCase().trim() === 'corretor') {
+        const cfg = (await stores.cfg.get('cfg', { type: 'json' })) || {};
+        if (!cfg.corretorGeralHash || !confereSenha(String(body.senhaHash || ''), cfg.corretorGeralHash).ok) {
+          return json(403, { erro: 'usuário ou senha inválidos (ou usuário desativado)' });
+        }
+        const usuarios = (await getUsuarios(stores.cfg)) || [];
+        const elenco = [];
+        for (const e of usuarios) {
+          if (e.papel !== 'corretor' || e.ativo === false) continue;
+          for (const c of (e.corretores || [])) {
+            const nome = String(c.nome || '').trim();
+            if (nome) elenco.push({ nome, telefone: c.telefone || '', empresaLogin: e.usuario, empresaNome: e.nome || e.usuario });
+          }
+        }
+        elenco.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+        return json(200, { ok: true, universal: true, elenco });
+      }
       // LOGIN É SOMENTE-LEITURA (de propósito): NÃO migra hash aqui. O blob 'usuarios' não tem CAS e tem lag —
       // se o login escrevesse, a onda de logins pós-deploy poderia sobrescrever uma troca de senha concorrente e
       // TRAVAR o usuário com a senha nova (revisão adversarial confirmou, gravidade ALTA). O formato legado é aceito
@@ -459,19 +491,22 @@ export const handler = async (event) => {
       // (que edita tudo) E para o domo/super — que precisa dela para o painel de
       // Corretores. Sem isto o domo abria a aba Corretores e via a lista vazia,
       // e o corretor recém-criado não aparecia nem depois de salvar.
+      // temSenhaCorretorGeral: o painel mostra se o login único de corretor já tem senha (sem devolver o hash).
+      const temGeral = !!c.corretorGeralHash;
       if (usr && usr.papel === 'admin') {
         const usuarios = ((await getUsuarios(stores.cfg)) || []).map(({ hash, hashCorretores, ...pub }) => ({ ...pub, temSenhaEquipe: !!hashCorretores }));
-        return json(200, { cfg: c, usuarios }); // admin vê tudo, inclusive a margem (corretagem/quemPaga)
+        const { corretorGeralHash, ...cAdmin } = c; // nunca devolve o hash da senha única, nem ao admin
+        return json(200, { cfg: cAdmin, usuarios, temSenhaCorretorGeral: temGeral }); // admin vê tudo, inclusive a margem (corretagem/quemPaga)
       }
-      // corretor/anônimo/domo: esconde a margem do vendedor (corretagem/quemPaga).
+      // corretor/anônimo/domo: esconde a margem do vendedor (corretagem/quemPaga) e o hash da senha única.
       // Os parâmetros do PLANO (INCC, balões, entrega, dia) são termos do cliente — o corretor precisa deles.
-      const { corretagem, quemPaga, ...cPub } = c;
+      const { corretagem, quemPaga, corretorGeralHash, ...cPub } = c;
       // O domo (super) recebe a lista de contas para gerenciar corretores; corretor comum e anônimo, não.
       const usuarios = (usr && ehSuper(usr))
         ? ((await getUsuarios(stores.cfg)) || []).map(({ hash, hashCorretores, ...pub }) => ({ ...pub, temSenhaEquipe: !!hashCorretores }))
         : [];
       // meuLogoId: deixa a sessão do corretor receber a logo que o ADM subiu sem re-logar.
-      return json(200, { cfg: cPub, usuarios, meuLogoId: (usr && usr.logoId) || '' });
+      return json(200, { cfg: cPub, usuarios, meuLogoId: (usr && usr.logoId) || '', temSenhaCorretorGeral: (usr && ehSuper(usr)) ? temGeral : undefined });
     }
     if (action === 'setCfg') {
       const adm = await validarUsuario(stores.cfg, body.auth, true);
@@ -494,6 +529,7 @@ export const handler = async (event) => {
       const dados = body.usuarioDados || {};
       const login = String(dados.usuario || '').toLowerCase().trim();
       if (!login) return json(400, { erro: 'usuário obrigatório' });
+      if (login === 'corretor') return json(400, { erro: '"corretor" é o login único da equipe — escolha outro nome para a imobiliária' });
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === login);
       if (soDomo) {
@@ -558,6 +594,7 @@ export const handler = async (event) => {
       const para = String(body.para || '').toLowerCase().trim();
       if (!de || !para) return json(400, { erro: 'login de/para obrigatório' });
       if (!/^[a-z0-9._-]+$/.test(para)) return json(400, { erro: 'login só pode ter letras, números, ponto, hífen ou _' });
+      if (para === 'corretor') return json(400, { erro: '"corretor" é o login único da equipe — escolha outro nome' });
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === de);
       if (i < 0) return json(404, { erro: 'login de origem não existe' });
@@ -639,11 +676,27 @@ export const handler = async (event) => {
     }
 
     // define/troca a senha COMPARTILHADA da equipe (todos os corretores entram com ela). Master ou admin.
+    // Senha ÚNICA do login de corretor (cfg.corretorGeralHash). Admin e domo (super).
+    // Enviar senha vazia REMOVE a senha única (desliga o login "corretor").
+    if (action === 'setSenhaCorretorGeral') {
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão' });
+      const cfg = (await stores.cfg.get('cfg', { type: 'json' })) || { ...DEFAULT_CFG };
+      const ch = String(body.senhaHash || '').trim();
+      if (!ch) { delete cfg.corretorGeralHash; }
+      else {
+        if (!/^[a-f0-9]{64}$/.test(ch)) return json(400, { erro: 'senha inválida' });
+        cfg.corretorGeralHash = guardaSenha(ch);
+      }
+      cfg.atualizadoEm = now();
+      await stores.cfg.setJSON('cfg', cfg);
+      return json(200, { ok: true, temSenhaCorretorGeral: !!cfg.corretorGeralHash });
+    }
     if (action === 'setSenhaEquipe') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const alvoLogin = usr.papel === 'admin' && body.usuario ? String(body.usuario).toLowerCase().trim() : usr.usuario;
-      if (usr.papel !== 'admin' && !usr._ehMaster) return json(403, { erro: 'só o master pode definir a senha da equipe' });
+      const alvoLogin = ehSuper(usr) && body.usuario ? String(body.usuario).toLowerCase().trim() : usr.usuario;
+      if (!ehSuper(usr) && !usr._ehMaster) return json(403, { erro: 'só o master pode definir a senha da equipe' });
       if (!body.senhaNova || String(body.senhaNova).trim().length < 6) return json(400, { erro: 'senha muito curta' });
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === alvoLogin);

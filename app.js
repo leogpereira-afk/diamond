@@ -137,8 +137,11 @@
       $('#lg-erro').textContent = '';
       $('#lg-btn').disabled = true;
       try {
-        await STORE.login($('#lg-user').value, $('#lg-pass').value, $('#lg-lembrar').checked);
+        const sess = await STORE.login($('#lg-user').value, $('#lg-pass').value, $('#lg-lembrar').checked);
         _uniDraft = {}; sim = null; // descarta rascunhos/PII de sessão anterior
+        // Login único de corretor: ainda não há nome escolhido → vai direto ao seletor
+        // de nomes (não faz pull agora; a sessão real nasce ao clicar no nome).
+        if (sess && sess._universal && sess.aguardandoNome) { vEscolherCorretorUniversal(); return; }
         await STORE.pull();
         location.hash = '#/home';
       } catch (err) { $('#lg-erro').textContent = err.message; $('#lg-btn').disabled = false; }
@@ -210,6 +213,41 @@
       b.onclick = () => { const c = cors[+b.dataset.i]; STORE.setCorretorAtivo(c.nome, c.telefone); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // rascunho limpo (o espelho de leads é re-escopado pelo setCorretorAtivo)
     });
     const gq = $('#quem-gerenciar'); if (gq) gq.onclick = () => vGerenciarCorretores();
+    $('#quem-sair').onclick = () => { STORE.logout(); location.hash = '#/login'; location.reload(); };
+  }
+
+  // ---------- LOGIN ÚNICO: escolher o nome entre TODOS os corretores ----------
+  // Chega aqui quem entrou com o usuário "corretor" + a senha única. O elenco (todos
+  // os nomes, de todas as imobiliárias) veio no login; ao clicar, a sessão vira a da
+  // imobiliária da pessoa como membro de equipe (STORE.entrarComoUniversal).
+  function vEscolherCorretorUniversal() {
+    _painelEquipe = false;
+    $('#topo').innerHTML = '';
+    const u = STORE.getUser() || {};
+    const elenco = Array.isArray(u.elenco) ? u.elenco.slice() : [];
+    const item = (c, i) => `<button class="quem-btn" data-i="${i}"><span class="quem-ava">${esc((c.nome || '?').trim().charAt(0).toUpperCase())}</span><span class="quem-nome">${esc(c.nome)}</span>${c.empresaNome ? '<span class="quem-tel">' + esc(c.empresaNome) + '</span>' : ''}</button>`;
+    app().innerHTML = `
+      <div class="login-wrap"><div class="login-card quem-card">
+        <img src="wordmark.png" class="login-logo" alt="DIAMOND">
+        <div class="login-sub">Toque no seu nome</div>
+        ${elenco.length > 8 ? '<input id="quem-busca" placeholder="buscar seu nome…" autocomplete="off" style="width:100%;margin:10px 0;padding:12px;border-radius:10px;border:1px solid #333;background:#111;color:#eee">' : ''}
+        <div class="quem-lista" id="quem-lista">
+          ${elenco.length ? elenco.map(item).join('')
+            : '<div class="nota" style="text-align:center">Nenhum corretor cadastrado ainda — peça ao responsável para cadastrar você.</div>'}
+        </div>
+        <div class="quem-rodape"><button class="btn-mini quem-link" id="quem-sair">sair</button></div>
+      </div></div>`;
+    const irPara = (c) => { STORE.entrarComoUniversal(c); _uniDraft = {}; sim = null; STORE.pull().finally(() => { location.hash = '#/home'; render(); }); };
+    $$('.quem-btn').forEach((b) => { b.onclick = () => irPara(elenco[+b.dataset.i]); });
+    const busca = $('#quem-busca');
+    if (busca) busca.oninput = () => {
+      const q = busca.value.trim().toLowerCase();
+      $$('#quem-lista .quem-btn').forEach((b) => {
+        const c = elenco[+b.dataset.i];
+        const txt = ((c.nome || '') + ' ' + (c.empresaNome || '')).toLowerCase();
+        b.style.display = (!q || txt.includes(q)) ? '' : 'none';
+      });
+    };
     $('#quem-sair').onclick = () => { STORE.logout(); location.hash = '#/login'; location.reload(); };
   }
 
@@ -2405,6 +2443,15 @@
           </tr>
         </tbody></table></div>`}
 
+      <h3>Login único dos corretores</h3>
+      <div class="nota">Um acesso só para <b>todos</b> os corretores: usuário <b>corretor</b> + esta senha. Ao entrar, cada um clica no próprio nome. ${STORE.temSenhaCorretorGeral() ? '<b class="tag-ok">✓ senha definida</b>' : '<b class="tag-falta">⚠ ainda sem senha — o login único não funciona até você definir uma aqui</b>'}</div>
+      <div class="cfg-rapida">
+        <label>Usuário<input value="corretor" readonly></label>
+        <label>Senha única<input id="geral-senha" type="password" placeholder="${STORE.temSenhaCorretorGeral() ? '(trocar a senha)' : 'defina a senha (mín. 4)'}" autocomplete="new-password"></label>
+        <button class="btn-lime" id="geral-save">salvar</button>
+        ${STORE.temSenhaCorretorGeral() ? '<button class="btn-mini" id="geral-remover">remover</button>' : ''}
+      </div>
+
       <h3>Empresas / imobiliárias (login compartilhado)</h3>
       <div class="nota">Cada empresa tem UM login e <b>DUAS senhas</b>: 🔑 a do <b>master</b> (o responsável — vê os clientes de toda a equipe e gerencia os corretores) e 🔓 a da <b>equipe</b> (compartilhada; cada corretor vê só os próprios clientes). A senha usada no login é o que define o papel.</div>
       ${empresas.map((e) => `
@@ -2419,8 +2466,8 @@
             <button class="btn-mini btn-danger e-del" data-user="${esc(e.usuario)}" data-nome="${esc(e.nome || e.usuario)}">excluir</button>
           </div>
           <div class="senhas-lin">
-            <span class="senha-tag master">🔑 master</span><input class="e-senha" type="password" placeholder="(trocar senha do master)" autocomplete="new-password">
-            <span class="senha-tag">🔓 equipe</span><input class="e-senha-eq" type="password" placeholder="(trocar senha da equipe)" autocomplete="new-password">
+            <span class="senha-tag master">🔑 master</span><input class="e-senha" type="password" placeholder="(trocar senha do master)" autocomplete="new-password"><button type="button" class="btn-mini e-senha-save">salvar</button>
+            <span class="senha-tag">🔓 equipe</span><input class="e-senha-eq" type="password" placeholder="(trocar senha da equipe)" autocomplete="new-password"><button type="button" class="btn-mini e-senha-eq-save">salvar</button>
             ${e.temSenhaEquipe ? '<span class="tag-ok">✓ equipe tem senha</span>' : '<span class="tag-falta" title="Enquanto não houver senha de equipe, os corretores não conseguem entrar — só o master.">⚠ sem senha de equipe</span>'}
           </div>
           <div class="e-logo-lin">
@@ -2564,6 +2611,25 @@
           salvarUser({ usuario, ...dados }, rens);
         }
       };
+      // salvar SÓ a senha do master (não mexe no resto do card)
+      const smSave = $('.e-senha-save', card);
+      if (smSave) smSave.onclick = async () => {
+        const v = ($('.e-senha', card).value || '').trim();
+        if (v.length < 6) { toast('A senha do master precisa de ao menos 6 caracteres.', true); return; }
+        smSave.disabled = true;
+        try { await STORE.api('upsertUsuario', { usuarioDados: { usuario, senha: v } }); toast('Senha do master salva ✓'); $('.e-senha', card).value = ''; }
+        catch (e2) { toast(e2.message, true); }
+        smSave.disabled = false;
+      };
+      // salvar SÓ a senha da equipe
+      const seSave = $('.e-senha-eq-save', card);
+      if (seSave) seSave.onclick = async () => {
+        const v = ($('.e-senha-eq', card).value || '').trim();
+        if (v.length < 6) { toast('A senha da equipe precisa de ao menos 6 caracteres.', true); return; }
+        seSave.disabled = true;
+        try { await STORE.setSenhaEquipe(v, usuario); toast('Senha da equipe salva ✓'); await STORE.pull(); vAdmin('corretores'); }
+        catch (e2) { toast(e2.message, true); seSave.disabled = false; }
+      };
       // CHIPS: cada corretor é um chip; clicar abre só o editor dele (e clicar de novo fecha)
       const chips = $$('.cor-chip', card);
       const linhas = $$('.cor-row', card);
@@ -2617,6 +2683,19 @@
       if (!$('#ne-user').value.trim() || !$('#ne-senha').value) { toast('Login e senha do master são obrigatórios.', true); return; }
       salvarUser({ usuario: $('#ne-user').value, nome: $('#ne-nome').value || $('#ne-user').value, telefone: $('#ne-tel').value, papel: 'corretor', ativo: true, senha: $('#ne-senha').value, senhaEquipe: ($('#ne-senha-eq').value || '').trim() || undefined, corretores: [] });
     };
+    // login único de corretores: define/remove a senha compartilhada
+    { const gs = $('#geral-save'); if (gs) gs.onclick = async () => {
+      const v = ($('#geral-senha').value || '').trim();
+      if (v.length < 4) { toast('A senha precisa de ao menos 4 caracteres.', true); return; }
+      gs.disabled = true;
+      try { await STORE.setSenhaCorretorGeral(v); localStorage.setItem('dv_temGeral', 'true'); toast('Senha única salva ✓'); await STORE.pull(); vAdmin('corretores'); }
+      catch (e) { toast(e.message, true); gs.disabled = false; }
+    }; }
+    { const gr = $('#geral-remover'); if (gr) gr.onclick = async () => {
+      if (!confirm('Remover a senha única? O login "corretor" para de funcionar até você definir de novo.')) return;
+      try { await STORE.setSenhaCorretorGeral(''); localStorage.setItem('dv_temGeral', 'false'); toast('Senha única removida'); await STORE.pull(); vAdmin('corretores'); }
+      catch (e) { toast(e.message, true); }
+    }; }
     marcarSujo('#aba-corpo'); // editar empresa/corretor sem salvar bloqueia o re-render do pull
   }
 
@@ -3198,6 +3277,8 @@
       vHome(); return;
     }
     if (_u && _u.papel !== 'admin') {
+      // login único de corretor: entrou mas ainda não clicou no nome → seletor geral
+      if (_u._universal && !(_u.corretorAtivo && _u.corretorAtivo.nome)) { vEscolherCorretorUniversal(); return; }
       // master de 1º acesso: explica as 2 senhas e cria a da equipe antes de qualquer coisa
       if (_u.ehMaster && !_u.temSenhaEquipe) { vPrimeiroAcessoMaster(); return; }
       const _cors = (_u.corretores || []).filter((c) => (c.nome || '').trim());

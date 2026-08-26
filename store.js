@@ -58,6 +58,18 @@ const STORE = (() => {
     const senhaHash = await sha256(String(senha).trim()); // ignora espaços acidentais na senha (comum no teclado do celular)
     const login0 = usuario.toLowerCase().trim();
     const r = await api('login', { usuario: login0, senhaHash, auth: { usuario, senhaHash } });
+    // LOGIN ÚNICO DE CORRETOR: o servidor devolveu o elenco (todos os nomes) em vez
+    // de uma conta. Guarda uma sessão TEMPORÁRIA (sem escolher nome ainda); a tela de
+    // "quem está acessando" lista o elenco e chama entrarComoUniversal ao clicar.
+    if (r && r.universal) {
+      const dono0 = localStorage.getItem('dv_owner');
+      if (dono0 && dono0 !== 'corretor') limparDadosLocais();
+      localStorage.setItem('dv_owner', 'corretor');
+      const tmp = { _universal: true, aguardandoNome: true, papel: 'corretor', usuario: 'corretor',
+        nome: 'Corretores', senhaHashUniversal: senhaHash, elenco: Array.isArray(r.elenco) ? r.elenco : [], corretorAtivo: null };
+      setUser(tmp, lembrar !== false);
+      return tmp;
+    }
     const dono = localStorage.getItem('dv_owner');
     if (dono && dono !== r.usuario) limparDadosLocais(); // dono anterior diferente → começa limpo
     localStorage.setItem('dv_owner', r.usuario);
@@ -72,6 +84,33 @@ const STORE = (() => {
       api('numerarEnvios', { auth: { usuario: r.usuario, senhaHash } }).catch(() => {}); // numera as propostas antigas (idempotente)
     }
     return sess;
+  }
+  // Finaliza o login único: a pessoa clicou no nome dela. A sessão passa a ser a da
+  // imobiliária dela COMO MEMBRO DE EQUIPE (vê só os próprios clientes). O crachá é a
+  // senha única (senhaHashUniversal), que o servidor aceita como senha de equipe de
+  // qualquer imobiliária (validarUsuario/viaUniversal).
+  function entrarComoUniversal(pick) {
+    const cur = getUser() || {};
+    const lembrar = !!localStorage.getItem(K.user);
+    const dono = localStorage.getItem('dv_owner');
+    if (dono && dono !== pick.empresaLogin) limparDadosLocais();
+    localStorage.setItem('dv_owner', pick.empresaLogin);
+    const sess = {
+      usuario: pick.empresaLogin, nome: pick.empresaNome, papel: 'corretor', empresa: pick.empresaNome,
+      corretores: [{ nome: pick.nome, telefone: pick.telefone || '' }],
+      corretorAtivo: { nome: pick.nome, telefone: pick.telefone || '' },
+      senhaHash: cur.senhaHashUniversal, senhaHashUniversal: cur.senhaHashUniversal,
+      ehMaster: false, temSenhaEquipe: true, _universal: true, elenco: cur.elenco || [], logoId: '',
+    };
+    setUser(sess, lembrar);
+    lsSet(K.leads, []); lsSet(K.prop, []); // escopo por corretor: começa limpo
+    return sess;
+  }
+  // Define/remove a senha ÚNICA do login de corretor (admin ou domo). Senha vazia remove.
+  async function setSenhaCorretorGeral(senha) {
+    const s = getUser(); if (!s) throw new Error('sessão inválida');
+    const senhaHash = senha ? await sha256(String(senha).trim()) : '';
+    return api('setSenhaCorretorGeral', { senhaHash, auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
   }
   // define/troca a senha COMPARTILHADA da equipe (só o master; admin pode passar usuario da empresa)
   async function setSenhaEquipe(senhaNova, usuarioEmpresa) {
@@ -615,6 +654,7 @@ const STORE = (() => {
         const cfgLocal = getCfg();
         if (!cfgLocal || (rc.cfg.atualizadoEm || '') > (cfgLocal.atualizadoEm || '')) { lsSet(K.cfg, rc.cfg); mudou = true; }
         lsSet(K.usuarios, rc.usuarios || []);
+        if (rc.temSenhaCorretorGeral !== undefined) lsSet('dv_temGeral', !!rc.temSenhaCorretorGeral); // login único: senha já definida?
         // logo subida pelo ADM chega à sessão sem re-login (o PDF lê s.logoId)
         const sess = getUser();
         if (sess && sess.papel !== 'admin' && rc.meuLogoId != null && sess.logoId !== rc.meuLogoId) {
@@ -659,6 +699,7 @@ const STORE = (() => {
 
   return {
     api, sha256, login, logout, getUser, setUser, setCorretorAtivo, setMeusCorretores, trocarMinhaSenha, setSenhaEquipe, enviarPropostaPdf, isAdmin,
+    entrarComoUniversal, setSenhaCorretorGeral, temSenhaCorretorGeral: () => lsGet('dv_temGeral', false),
     getLeads, pullLeads, salvarLead, excluirLead, listEnvios,
     getReservas, pullReservas, pedirReserva, excluirReserva,
     getUnidades, getCfg, getPropostas, getUsuarios, unidadePorId,
