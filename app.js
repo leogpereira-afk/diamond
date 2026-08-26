@@ -1914,7 +1914,7 @@
     if (!STORE.podeVerPainel()) { location.hash = '#/home'; return; }
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
-      ? [['vendas', 'Vendas'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
+      ? [['vendas', 'Vendas'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
       : [['unidades', 'Unidades'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
@@ -2370,6 +2370,10 @@
   }
 
   function aCorretores() {
+    // O domo (super) usa esta MESMA tela, mas enxuta: cria e gerencia
+    // corretores/imobiliárias, sem a seção de administradores nem a de modo
+    // apresentação — que continuam só para o admin. O servidor também barra.
+    const soDomo = !STORE.isAdmin();
     const usuarios = STORE.getUsuarios();
     const admins = usuarios.filter((u) => u.papel === 'admin');
     const empresas = usuarios.filter((u) => u.papel !== 'admin' && u.papel !== 'cliente').sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
@@ -2386,6 +2390,7 @@
       </tr>`;
 
     $('#aba-corpo').innerHTML = `
+      ${soDomo ? '<div class="nota">Aqui você cria e gerencia os <b>corretores</b> e as imobiliárias que enviam propostas. Os preços e a configuração do prédio ficam com o administrador.</div>' : `
       <h3>Administradores (equipe Domo)</h3>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Login</th><th>Nome</th><th>Telefone</th><th>Ativo</th><th>Nova senha</th><th></th></tr></thead>
@@ -2398,7 +2403,7 @@
             <td><input id="na-senha" type="password" placeholder="senha"></td>
             <td><button class="btn-mini" id="na-criar">criar</button></td>
           </tr>
-        </tbody></table></div>
+        </tbody></table></div>`}
 
       <h3>Empresas / imobiliárias (login compartilhado)</h3>
       <div class="nota">Cada empresa tem UM login e <b>DUAS senhas</b>: 🔑 a do <b>master</b> (o responsável — vê os clientes de toda a equipe e gerencia os corretores) e 🔓 a da <b>equipe</b> (compartilhada; cada corretor vê só os próprios clientes). A senha usada no login é o que define o papel.</div>
@@ -2458,7 +2463,7 @@
         <button class="btn-lime" id="ne-criar">+ criar empresa</button>
       </div>
 
-      <h3>Modo apresentação <span class="nota" style="font-weight:400">— login que mostra só a tabela e a apresentação do prédio ao cliente; não acessa CRM, propostas, simulador nem reservas</span></h3>
+      ${soDomo ? '' : `<h3>Modo apresentação <span class="nota" style="font-weight:400">— login que mostra só a tabela e a apresentação do prédio ao cliente; não acessa CRM, propostas, simulador nem reservas</span></h3>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Login</th><th>Nome</th><th>Ativo</th><th>Nova senha</th><th></th></tr></thead>
         <tbody>${clientes.map((c) => `<tr data-cliuser="${esc(c.usuario)}">
@@ -2476,7 +2481,7 @@
             <td><button class="btn-mini" id="ncl-criar">criar</button></td>
           </tr>
         </tbody></table></div>
-      <div class="nota">Desmarcar <b>Ativo</b> revoga o acesso na hora. O que esse login enxerga se ajusta em <b>ADM → Config → Modo apresentação</b>.</div>`;
+      <div class="nota">Desmarcar <b>Ativo</b> revoga o acesso na hora. O que esse login enxerga se ajusta em <b>ADM → Config → Modo apresentação</b>.</div>`}`;
 
     const salvarUser = async (dados, renomeados) => {
       try { await STORE.api('upsertUsuario', { usuarioDados: dados, renomeados: renomeados || [] }); toast('Salvo ✓'); await STORE.pull(); vAdmin('corretores'); }
@@ -2493,7 +2498,8 @@
       if (s) s.onclick = () => salvarUser({ usuario: tr.dataset.user, nome: $('.a-nome', tr).value, telefone: $('.a-tel', tr).value, papel: 'admin', ativo: $('.a-ativo', tr).checked, senha: $('.a-senha', tr).value || undefined });
     });
     $$('.a-del').forEach((b) => { b.onclick = () => delUser(b.dataset.user); });
-    $('#na-criar').onclick = () => salvarUser({ usuario: $('#na-user').value, nome: $('#na-nome').value, telefone: $('#na-tel').value, papel: 'admin', ativo: true, senha: $('#na-senha').value });
+    // #na-criar (novo admin) só existe para o admin; o domo não vê essa seção.
+    { const na = $('#na-criar'); if (na) na.onclick = () => salvarUser({ usuario: $('#na-user').value, nome: $('#na-nome').value, telefone: $('#na-tel').value, papel: 'admin', ativo: true, senha: $('#na-senha').value }); }
 
     // coleta os corretores das linhas editáveis do card (existentes + a linha em branco), na ordem exibida
     const corretoresDoCard = (card) => [...$$('.cor-row', card)].map((row) => ({
@@ -2600,12 +2606,13 @@
       if (s) s.onclick = () => salvarUser({ usuario: tr.dataset.cliuser, nome: $('.cl-nome', tr).value, papel: 'cliente', ativo: $('.cl-ativo', tr).checked, senha: $('.cl-senha', tr).value || undefined });
     });
     $$('.cl-del').forEach((b) => { b.onclick = () => delUser(b.dataset.user); });
-    $('#ncl-criar').onclick = () => {
+    // #ncl-criar (novo login de apresentação) só existe para o admin.
+    { const ncl = $('#ncl-criar'); if (ncl) ncl.onclick = () => {
       const login = ($('#ncl-user').value || '').trim(), senha = $('#ncl-senha').value || '';
       if (!login || !senha) { toast('Login e senha são obrigatórios.', true); return; }
       if (senha.length < 6) { toast('A senha precisa ter no mínimo 6 caracteres.', true); return; }
       salvarUser({ usuario: login, nome: $('#ncl-nome').value || 'Apresentação', papel: 'cliente', ativo: true, senha });
-    };
+    }; }
     $('#ne-criar').onclick = () => {
       if (!$('#ne-user').value.trim() || !$('#ne-senha').value) { toast('Login e senha do master são obrigatórios.', true); return; }
       salvarUser({ usuario: $('#ne-user').value, nome: $('#ne-nome').value || $('#ne-user').value, telefone: $('#ne-tel').value, papel: 'corretor', ativo: true, senha: $('#ne-senha').value, senhaEquipe: ($('#ne-senha-eq').value || '').trim() || undefined, corretores: [] });

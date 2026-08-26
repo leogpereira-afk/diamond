@@ -418,8 +418,8 @@ export const handler = async (event) => {
     if (action === 'setLogoEmpresa') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const alvo = (usr.papel === 'admin' && body.usuario) ? String(body.usuario).toLowerCase().trim() : usr.usuario;
-      if (usr.papel !== 'admin' && (!usr._ehMaster || alvo !== usr.usuario)) return json(403, { erro: 'só o master pode definir a logo' });
+      const alvo = (ehSuper(usr) && body.usuario) ? String(body.usuario).toLowerCase().trim() : usr.usuario;
+      if (!ehSuper(usr) && (!usr._ehMaster || alvo !== usr.usuario)) return json(403, { erro: 'só o master pode definir a logo' });
       if (!body.base64) return json(400, { erro: 'imagem obrigatória' });
       let buf; try { buf = Buffer.from(String(body.base64), 'base64'); } catch (e) { buf = null; }
       if (!buf || buf.length > 1.5 * 1024 * 1024) return json(413, { erro: 'imagem inválida ou grande demais (máx 1,5 MB)' });
@@ -438,8 +438,8 @@ export const handler = async (event) => {
     if (action === 'removerLogoEmpresa') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const alvo = (usr.papel === 'admin' && body.usuario) ? String(body.usuario).toLowerCase().trim() : usr.usuario;
-      if (usr.papel !== 'admin' && (!usr._ehMaster || alvo !== usr.usuario)) return json(403, { erro: 'só o master pode remover a logo' });
+      const alvo = (ehSuper(usr) && body.usuario) ? String(body.usuario).toLowerCase().trim() : usr.usuario;
+      if (!ehSuper(usr) && (!usr._ehMaster || alvo !== usr.usuario)) return json(403, { erro: 'só o master pode remover a logo' });
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === alvo);
       if (i < 0) return json(404, { erro: 'empresa não encontrada' });
@@ -479,13 +479,23 @@ export const handler = async (event) => {
 
     // ---------- usuários (corretores) ----------
     if (action === 'upsertUsuario') {
-      const adm = await validarUsuario(stores.cfg, body.auth, true);
-      if (!adm) return json(403, { erro: 'apenas administrador' });
+      // Admin faz tudo. O DOMO (super) também gerencia corretores — mas NUNCA
+      // toca em conta de administrador nem cria uma (senão o super viraria um
+      // atalho para virar admin). Preços e config seguem só do admin, em outras ações.
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão para gerenciar corretores' });
+      const soDomo = usr.papel !== 'admin'; // ehSuper + não-admin ⇒ é o domo
       const dados = body.usuarioDados || {};
       const login = String(dados.usuario || '').toLowerCase().trim();
       if (!login) return json(400, { erro: 'usuário obrigatório' });
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === login);
+      if (soDomo) {
+        const papelAlvo = dados.papel || (i >= 0 ? usuarios[i].papel : 'corretor');
+        if (papelAlvo !== 'corretor') return json(403, { erro: 'você pode criar e editar apenas contas de corretor' });
+        if (i >= 0 && usuarios[i].papel === 'admin') return json(403, { erro: 'você não pode alterar uma conta de administrador' });
+        if (login === 'domo') return json(403, { erro: 'a conta domo é gerenciada pelo administrador' });
+      }
       if (i < 0 && loginTomado(usuarios, login)) return json(409, { erro: 'login "' + login + '" já está em uso (inclusive como login antigo de outra empresa)' });
       const base = i >= 0 ? usuarios[i] : { usuario: login, criadoEm: now(), hash: null };
       const novo = {
@@ -519,10 +529,16 @@ export const handler = async (event) => {
       return json(200, { ok: true, usuarios: usuarios.map(({ hash, hashCorretores, ...p }) => ({ ...p, temSenhaEquipe: !!hashCorretores })) });
     }
     if (action === 'delUsuario') {
-      const adm = await validarUsuario(stores.cfg, body.auth, true);
-      if (!adm) return json(403, { erro: 'apenas administrador' });
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão' });
+      const alvoLogin = String(body.usuario).toLowerCase().trim();
       let usuarios = (await getUsuarios(stores.cfg)) || [];
-      usuarios = usuarios.filter((x) => x.usuario !== String(body.usuario).toLowerCase().trim());
+      if (usr.papel !== 'admin') { // domo: não apaga admin nem a própria conta domo
+        const alvo = usuarios.find((x) => x.usuario === alvoLogin);
+        if (alvo && alvo.papel === 'admin') return json(403, { erro: 'você não pode excluir uma conta de administrador' });
+        if (alvoLogin === 'domo') return json(403, { erro: 'a conta domo é gerenciada pelo administrador' });
+      }
+      usuarios = usuarios.filter((x) => x.usuario !== alvoLogin);
       if (!usuarios.some((x) => x.papel === 'admin' && x.ativo)) {
         return json(400, { erro: 'não é possível remover o último administrador' });
       }
@@ -530,8 +546,8 @@ export const handler = async (event) => {
       return json(200, { ok: true, usuarios: usuarios.map(({ hash, hashCorretores, ...p }) => ({ ...p, temSenhaEquipe: !!hashCorretores })) });
     }
     if (action === 'renomearUsuario') {
-      const adm = await validarUsuario(stores.cfg, body.auth, true);
-      if (!adm) return json(403, { erro: 'apenas administrador' });
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão' });
       const de = String(body.de || '').toLowerCase().trim();
       const para = String(body.para || '').toLowerCase().trim();
       if (!de || !para) return json(400, { erro: 'login de/para obrigatório' });
@@ -539,6 +555,10 @@ export const handler = async (event) => {
       const usuarios = (await getUsuarios(stores.cfg)) || [];
       const i = usuarios.findIndex((x) => x.usuario === de);
       if (i < 0) return json(404, { erro: 'login de origem não existe' });
+      if (usr.papel !== 'admin') { // domo: só renomeia corretor, nunca admin nem a conta domo
+        if (usuarios[i].papel === 'admin') return json(403, { erro: 'você não pode alterar uma conta de administrador' });
+        if (de === 'domo' || para === 'domo') return json(403, { erro: 'a conta domo é gerenciada pelo administrador' });
+      }
       if (de !== para && loginTomado(usuarios, para, de)) return json(409, { erro: 'o login "' + para + '" já está em uso (inclusive como login antigo de outra empresa)' });
       // aplica edições de campos JUNTO (atômico: rename + dados numa só escrita)
       const dados = body.usuarioDados || null;
