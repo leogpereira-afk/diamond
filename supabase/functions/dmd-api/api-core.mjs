@@ -454,18 +454,24 @@ export const handler = async (event) => {
     // ---------- config ----------
     if (action === 'getCfg') {
       const c = (await stores.cfg.get('cfg', { type: 'json' })) || { ...DEFAULT_CFG };
-      const adm = await validarUsuario(stores.cfg, body.auth, true);
-      if (adm) {
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      // Lista de contas SEM as senhas (hash/hashCorretores). Vai para o admin
+      // (que edita tudo) E para o domo/super — que precisa dela para o painel de
+      // Corretores. Sem isto o domo abria a aba Corretores e via a lista vazia,
+      // e o corretor recém-criado não aparecia nem depois de salvar.
+      if (usr && usr.papel === 'admin') {
         const usuarios = ((await getUsuarios(stores.cfg)) || []).map(({ hash, hashCorretores, ...pub }) => ({ ...pub, temSenhaEquipe: !!hashCorretores }));
-        return json(200, { cfg: c, usuarios });
+        return json(200, { cfg: c, usuarios }); // admin vê tudo, inclusive a margem (corretagem/quemPaga)
       }
-      // corretor/anônimo: esconde só a margem do vendedor (corretagem/quemPaga) e a lista de usuários.
+      // corretor/anônimo/domo: esconde a margem do vendedor (corretagem/quemPaga).
       // Os parâmetros do PLANO (INCC, balões, entrega, dia) são termos do cliente — o corretor precisa deles.
       const { corretagem, quemPaga, ...cPub } = c;
-      // meuLogoId: deixa a sessão do corretor receber a logo que o ADM subiu
-      // sem precisar re-logar (o pull reidrata s.logoId).
-      const uComum = await validarUsuario(stores.cfg, body.auth, false);
-      return json(200, { cfg: cPub, usuarios: [], meuLogoId: (uComum && uComum.logoId) || '' });
+      // O domo (super) recebe a lista de contas para gerenciar corretores; corretor comum e anônimo, não.
+      const usuarios = (usr && ehSuper(usr))
+        ? ((await getUsuarios(stores.cfg)) || []).map(({ hash, hashCorretores, ...pub }) => ({ ...pub, temSenhaEquipe: !!hashCorretores }))
+        : [];
+      // meuLogoId: deixa a sessão do corretor receber a logo que o ADM subiu sem re-logar.
+      return json(200, { cfg: cPub, usuarios, meuLogoId: (usr && usr.logoId) || '' });
     }
     if (action === 'setCfg') {
       const adm = await validarUsuario(stores.cfg, body.auth, true);
