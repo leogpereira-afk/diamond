@@ -1,5 +1,5 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v2';
+const CACHE = 'diamond-pages-v3';
 const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js',
   'selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
@@ -26,7 +26,11 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith((async () => {
     try {
-      const net = await fetch(e.request);
+      // `cache: 'reload'` PULA o cache HTTP do navegador: sem isto, network-first
+      // ainda entregava o arquivo velho que o GitHub Pages mandou guardar por ~10
+      // min, e todo deploy demorava a aparecer para quem já tinha o site aberto.
+      // Agora a rede é sempre a de verdade; o cache do SW é só para quando cai.
+      const net = await fetch(e.request, { cache: 'reload' });
       const c = await caches.open(CACHE);
       c.put(e.request, net.clone());
       return net;
