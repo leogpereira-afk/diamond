@@ -2497,6 +2497,7 @@
                 ${i === 0 ? '<span class="master-tag">master</span>' : '<span class="cor-num">' + (i + 1) + '</span>'}
                 <input class="ce-nome" value="${esc(c.nome)}" placeholder="nome">
                 <input class="ce-tel" type="tel" inputmode="tel" value="${esc(c.telefone || '')}" placeholder="telefone">
+                ${i === 0 ? '' : '<button class="btn-mini cor-master" title="tornar este o master (responsável)">🔑 tornar master</button>'}
                 <button class="btn-mini cor-del" title="remover corretor">✕ remover</button>
               </div>`).join('')}
               <div class="cor-row cor-novo oculto" data-i="novo">
@@ -2659,6 +2660,24 @@
           if (chip) chip.remove();
           row.remove();
           _sujo = true;
+        };
+      });
+      // 🔑 tornar master: promove este corretor à 1ª posição (o master é sempre o
+      // 1º da lista). A SENHA de master NÃO muda — muda quem é o responsável que
+      // vê os clientes de toda a equipe. Grava na hora (reordena + salva o card).
+      $$('.cor-master', card).forEach((b) => {
+        b.onclick = () => {
+          const row = b.closest('.cor-row');
+          const nome = ($('.ce-nome', row).value || '').trim();
+          if (!nome) { toast('Dê um nome ao corretor antes de torná-lo master.', true); return; }
+          const cors = corretoresDoCard(card);            // ordem atual do DOM, já com edições
+          const idx = cors.findIndex((c) => c.nome === nome);
+          if (idx < 0) return;
+          const nomeEmp = ($('.e-nome', card).value || usuario).trim();
+          if (!confirm('Tornar "' + nome + '" o master da ' + nomeEmp + '?\n\nA senha de master continua a mesma — muda só quem é o responsável (o que vê os clientes de toda a equipe). O master atual vira um corretor comum.')) return;
+          const [m] = cors.splice(idx, 1);
+          cors.unshift(m);                                 // vira o 1º = master
+          salvarUser({ usuario, nome: nomeEmp, telefone: $('.e-tel', card).value, papel: 'corretor', corretores: cors }, renomeadosDoCard(card));
         };
       });
       // 🔒 travar / 🔓 destravar (imediato, sem apagar) — só alterna 'ativo', preserva o resto
