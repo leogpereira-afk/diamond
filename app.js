@@ -2411,6 +2411,14 @@
     // O domo (super) usa esta MESMA tela, mas enxuta: cria e gerencia
     // corretores/imobiliárias, sem a seção de administradores nem a de modo
     // apresentação — que continuam só para o admin. O servidor também barra.
+    // Ao ABRIR, puxa dados frescos uma vez: sem isto, salvar a senha de uma
+    // empresa a partir de um cache velho manda um login que o servidor não acha
+    // ("empresa não encontrada"). Não repuxa se há edição pendente (_sujo) nem
+    // em rajada (janela de 8s), pra não entrar em laço de re-render.
+    if (Date.now() - (aCorretores._lastPull || 0) > 8000 && !_sujo) {
+      aCorretores._lastPull = Date.now();
+      STORE.pull().finally(() => { if (location.hash === '#/admin/corretores' && !_sujo) aCorretores(); });
+    }
     const soDomo = !STORE.isAdmin();
     const usuarios = STORE.getUsuarios();
     const admins = usuarios.filter((u) => u.papel === 'admin');
