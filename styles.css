@@ -82,6 +82,16 @@ input::placeholder, textarea::placeholder { color: #9a9a9a; font-weight: 400; fo
 .uni-escolha { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .uni-campo > label { font-size: 12px; color: var(--grey); font-weight: 600; }
 .uni-plano { background: var(--lime-s); border-radius: 8px; padding: 6px 10px; }
+/* entrada digitada em R$ (quando nenhum % serve) */
+.ent-livre { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; flex-wrap: wrap; }
+.ent-livre-lbl { font-size: 12px; color: var(--grey); font-weight: 600; }
+/* 16px NÃO é estética: abaixo disso o Safari do iPhone dá zoom ao focar o campo
+   e desalinha a tela inteira no meio do atendimento. */
+.ent-livre input { flex: 1; min-width: 130px; padding: 9px 10px; border: 1px solid var(--edge); border-radius: 8px; font-size: 16px; font-weight: 700; font-family: inherit; }
+.ent-livre input:focus { outline: 2px solid var(--lime-b); outline-offset: -1px; }
+.ent-livre-pct { font-size: 12px; color: var(--grey); font-weight: 700; }
+.uni-toggle-inline { font-weight: 600; margin: 2px 0; }
+.nota-alerta { background: #fff6d6; border: 1px solid #e6c65c; border-radius: 8px; padding: 8px 10px; color: #7a5c00; font-weight: 600; }
 /* SCP (só p/ o cadastro da Domo) */
 .scp-box { display: flex; flex-direction: column; gap: 9px; margin: 8px 0 4px; }
 .scp-opt { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; }
