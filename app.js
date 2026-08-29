@@ -1199,10 +1199,15 @@
           const maxW = W - 2 * M, maxH = 320;
           const escl = Math.min(maxW / dim.w, maxH / dim.h);
           const dw = dim.w * escl, dh = dim.h * escl;
-          if (y + dh + 26 > H - 30) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+          // Espaço reservado = legenda + respiro + imagem. Antes a conta usava só
+          // dh+26 e, ao virar a página, a legenda caía colada na faixa preta (o
+          // texto começa 9pt ACIMA da linha de base) e a planta grudava na legenda.
+          const TITULO_H = 22, RESPIRO = 14;
+          if (y + TITULO_H + dh + RESPIRO > H - 30) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+          y += 10; // afasta da faixa do topo (ou do bloco anterior)
           doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
           doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
-          y += 8;
+          y += RESPIRO;
           doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
           y += dh;
         }
