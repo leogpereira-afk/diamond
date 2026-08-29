@@ -581,8 +581,8 @@
                 <div class="uni-parc">${finalOpts.map((n) => `<button class="parc-btn ${(!d.finalCustom && d.finalPct === n) ? 'on' : ''}" data-fin="${n}">${n}%</button>`).join('')}</div>
                 <div class="ent-livre">
                   <span class="ent-livre-lbl">Parcela final personalizada</span>
-                  <input id="u-fin-valor" type="text" inputmode="decimal" placeholder="mín. ${fmt(vt * Math.min(...finalOpts) / 100)}" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
-                  <span class="ent-livre-pct">${d.finalCustom ? '= ' + pctTxt(d.finalPct) + '% do valor' : ''}</span>
+                  <input id="u-fin-valor" type="text" inputmode="decimal" placeholder="0 = sem parcela final" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
+                  <span class="ent-livre-pct">${d.finalCustom ? (p.fin > 0 ? '= ' + pctTxt(d.finalPct) + '% do valor' : 'sem parcela final — tudo nas mensais') : ''}</span>
                 </div>
               </div>
               ${balCfg > 0 ? `<div class="uni-campo"><label>Balões</label>
@@ -596,7 +596,7 @@
               <div><span>Entrada (${pctTxt(d.entradaPct)}%)</span><b>${fmt(p.ent)}</b></div>
               <div><span>Parcelas mensais (${p.nParc}x)${d.diluirBaloes && balCfg > 0 ? ' · com balões diluídos' : ''}</span><b>${inviavel ? '—' : fmt(p.vParc, 2)}</b></div>
               ${p.balQtde ? `<div><span>Balões (${p.balQtde}x)</span><b>${fmt(p.balValor)}</b></div>` : ''}
-              <div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin)}</b></div>
+              ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
             </div>
             ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada ou a parcela final${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
             <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div>`;
@@ -674,16 +674,21 @@
     // Aplica um valor digitado a um campo de % (entrada ou parcela final).
     // `voltarPara` guarda o % que estava selecionado nos botões, para apagar o
     // campo devolver ao que a pessoa tinha escolhido — e não ao padrão do ADM.
-    const aplicarCampo = ({ el, opts, rotulo, setPct, setCustom, voltarPara }) => {
+    const aplicarCampo = ({ el, opts, rotulo, setPct, setCustom, voltarPara, permiteZero }) => {
       const minPct = Math.min(...opts);
       // O piso é comparado pelo valor ANUNCIADO (arredondado como o texto mostra),
       // senão o app recusava exatamente o mínimo que ele mesmo pede.
       const minVal = Math.round(vt * minPct / 100);
       const teto = vt * 0.95; // sempre sobra espaço para o resto do plano
       return () => {
-        const v = lerValor(el.value);
+        const txt = String(el.value || '').trim();
+        const v = lerValor(txt);
+        // ZERO ESCRITO À MÃO é uma escolha ("quero quitar antes das chaves"), e não
+        // o mesmo que deixar o campo em branco (que volta ao botão). Só a parcela
+        // final aceita: sem ela, o valor todo cai nas parcelas mensais.
+        if (permiteZero && txt !== '' && isFinite(v) && v === 0) { setPct(0); setCustom(true); repintarPlano(); return; }
         if (!isFinite(v) || v <= 0) { setCustom(false); setPct(voltarPara()); repintarPlano(); return; }
-        if (Math.round(v) < minVal) {
+        if (!permiteZero && Math.round(v) < minVal) {
           toast(`${rotulo}: mínimo ${fmt(minVal)} (${minPct}% do valor).`, true);
           repintarPlano();
           return;
@@ -721,6 +726,7 @@
           el: finVal, opts: finalOpts, rotulo: 'Parcela final personalizada',
           setPct: (p) => { d.finalPct = p; }, setCustom: (b) => { d.finalCustom = b; },
           voltarPara: () => (finalOpts.includes(d.finalBotao) ? d.finalBotao : finDefault),
+          permiteZero: true, // digitar 0 = sem parcela final (tudo nas mensais)
         });
         finVal.onblur = aplicarFin;
         finVal.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarFin(); } };
