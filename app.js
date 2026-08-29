@@ -1096,14 +1096,35 @@
     const LIME = [228, 247, 43];
     const [logoD, logoM, logoImob] = await Promise.all([imgData('pdf-diamond.jpg'), imgData('pdf-domo.jpg'), carregarLogoImob(p.corretorUsuario)]);
     const BAND = 74, CTOP = 90, CX = W / 2;
+    // CABEÇALHO: o texto é centrado no ESPAÇO LIVRE entre as duas logos, não no
+    // meio da página. As logos têm larguras diferentes (Diamond 149, Domo 81),
+    // então o meio da página cai 34pt à esquerda do meio real do vão: o texto
+    // encostava na Diamond e sobrava um buraco antes da Domo. Na página 2 era
+    // pior, porque o "· pág. 2" alarga a linha e ela cresce para os dois lados.
+    // Se ainda assim não couber, a fonte encolhe até caber — nunca invade a logo.
     const cab = (pag) => {
       doc.setFillColor(0, 0, 0); doc.rect(0, 0, W, BAND, 'F');
-      if (logoD) { const h = 20, w = h * 640 / 86; doc.addImage(logoD, 'JPEG', M, (BAND - h) / 2, w, h); }        // Diamond amarela (esq.)
-      if (logoM) { const h = 26, w = h * 520 / 167; doc.addImage(logoM, 'JPEG', W - M - w, (BAND - h) / 2, w, h); } // Domo branca (dir.)
-      doc.setTextColor(LIME[0], LIME[1], LIME[2]); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-      doc.text('PLANO DE PAGAMENTO', CX, 34, { align: 'center' });
-      doc.setTextColor(190, 190, 190); doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5);
-      doc.text(`Edifício Diamond · Domo Construtora · tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''}${pag > 1 ? ' · pág. ' + pag : ''}`, CX, 48, { align: 'center' });
+      let bordaEsq = M, bordaDir = W - M;
+      if (logoD) { const h = 20, w = h * 640 / 86; doc.addImage(logoD, 'JPEG', M, (BAND - h) / 2, w, h); bordaEsq = M + w; }        // Diamond amarela (esq.)
+      if (logoM) { const h = 26, w = h * 520 / 167; doc.addImage(logoM, 'JPEG', W - M - w, (BAND - h) / 2, w, h); bordaDir = W - M - w; } // Domo branca (dir.)
+      const GAP = 16;                                   // respiro obrigatório até cada logo
+      const x0 = bordaEsq + GAP, x1 = bordaDir - GAP;
+      const cxLivre = (x0 + x1) / 2, largLivre = Math.max(60, x1 - x0);
+      // Reduz o corpo da fonte até o texto caber no vão (piso para não sumir).
+      const ajusta = (txt, tam, min) => {
+        let t = tam;
+        while (t > min) { doc.setFontSize(t); if (doc.getTextWidth(txt) <= largLivre) break; t -= 0.5; }
+        doc.setFontSize(t);
+        return t;
+      };
+      const titulo = 'PLANO DE PAGAMENTO';
+      doc.setTextColor(LIME[0], LIME[1], LIME[2]); doc.setFont('helvetica', 'bold');
+      ajusta(titulo, 13, 8);
+      doc.text(titulo, cxLivre, 34, { align: 'center' });
+      const sub = `Edifício Diamond · Domo Construtora · tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''}${pag > 1 ? ' · pág. ' + pag : ''}`;
+      doc.setTextColor(190, 190, 190); doc.setFont('helvetica', 'italic');
+      ajusta(sub, 7.5, 5.5);
+      doc.text(sub, cxLivre, 48, { align: 'center' });
     };
     cab(1);
     let y = CTOP;
@@ -1196,15 +1217,22 @@
         const durl = `data:${foto.mime};base64,${foto.base64}`;
         const dim = await new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.width, h: i.height }); i.onerror = () => res(null); i.src = durl; });
         if (dim) {
-          const maxW = W - 2 * M, maxH = 320;
+          // A planta é a ÚLTIMA coisa do documento e quase sempre cai numa página
+          // só dela. Antes ela era espremida no alto (maxH 320) e sobravam ~59% da
+          // página em branco embaixo — de longe parecia que a planta "subiu".
+          // Agora ela usa a altura disponível e o bloco fica centrado na página.
+          const TITULO_H = 22, RESPIRO = 14, RODAPE = 30;
+          const maxW = W - 2 * M;
+          const alturaLivre = (H - RODAPE) - CTOP - TITULO_H - RESPIRO; // se ficar sozinha
+          const maxH = Math.max(320, alturaLivre);
           const escl = Math.min(maxW / dim.w, maxH / dim.h);
           const dw = dim.w * escl, dh = dim.h * escl;
-          // Espaço reservado = legenda + respiro + imagem. Antes a conta usava só
-          // dh+26 e, ao virar a página, a legenda caía colada na faixa preta (o
-          // texto começa 9pt ACIMA da linha de base) e a planta grudava na legenda.
-          const TITULO_H = 22, RESPIRO = 14;
-          if (y + TITULO_H + dh + RESPIRO > H - 30) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+          if (y + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
           y += 10; // afasta da faixa do topo (ou do bloco anterior)
+          // Sobrou muito espaço? Centraliza o bloco verticalmente — nada vem depois.
+          const bloco = TITULO_H + RESPIRO + dh;
+          const sobra = (H - RODAPE) - y - bloco;
+          if (sobra > 60) y += Math.round(sobra / 2);
           doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
           doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
           y += RESPIRO;
