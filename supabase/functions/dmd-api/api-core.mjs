@@ -850,7 +850,9 @@ export const handler = async (event) => {
       let reservas = (await Promise.all(blobs.map((b) => stores.reservas.get(b.key, { type: 'json' }).catch(() => null)))).filter(Boolean);
       // O espelho é COMPARTILHADO entre imobiliárias concorrentes: todas precisam saber que a unidade tem pedido,
       // mas NENHUMA pode ver o cliente/corretor da outra. Fora da própria empresa, só o fato + a data.
-      if (usr.papel !== 'admin') {
+      // O DOMO é exceção junto com o admin: é a construtora que confirma ou recusa
+      // o pedido — sem ver de quem é, não tem como decidir.
+      if (!ehSuper(usr)) {
         const meus = new Set([usr.usuario, ...(usr.loginsAntigos || [])]);
         reservas = reservas.map((r) => (meus.has(r.empresaUsuario)
           ? r
@@ -884,9 +886,9 @@ export const handler = async (event) => {
       await stores.reservas.setJSON(unidadeId, nova);
       return json(200, { ok: true, reserva: nova });
     }
-    if (action === 'delReserva') { // admin resolveu (reservou de fato ou recusou)
-      const adm = await validarUsuario(stores.cfg, body.auth, true);
-      if (!adm) return json(403, { erro: 'apenas administrador' });
+    if (action === 'delReserva') { // a construtora resolveu (reservou de fato ou recusou)
+      const usr = await validarUsuario(stores.cfg, body.auth, false);
+      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão para resolver pedidos de reserva' });
       await stores.reservas.delete(String(body.unidadeId || ''));
       return json(200, { ok: true });
     }

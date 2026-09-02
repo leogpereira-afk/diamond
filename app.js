@@ -2304,6 +2304,12 @@
 
   // VENDAS (domo): muda só o STATUS + VENDEDOR das unidades (não mexe em preço). Salva direto via setVendedor.
   function aVendas() {
+    // Puxa os pedidos de reserva ao abrir (uma vez), senão a fila mostrada seria a
+    // do último carregamento e um pedido recém-feito não apareceria.
+    if (Date.now() - (aVendas._lastPull || 0) > 8000 && !_sujo) {
+      aVendas._lastPull = Date.now();
+      STORE.pullReservas().finally(() => { if (location.hash === '#/admin/vendas' && !_sujo) aVendas(); });
+    }
     const cfg = STORE.getCfg() || {};
     const uns = STORE.getUnidades().slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1);
     // vendedores conhecidos: o domo não recebe o cadastro de corretores (getCfg só manda p/ admin),
@@ -2320,6 +2326,12 @@
     const nDisp = uns.filter((u) => u.status === 'Disponível').length;
     const nRes = uns.filter((u) => u.status === 'Reservado').length;
     const nVend = uns.filter((u) => u.status === 'Vendido').length;
+    // PEDIDOS DE RESERVA pendentes — é a construtora que confirma ou recusa, e
+    // até aqui eles só apareciam como um aviso dentro da unidade: quem estava no
+    // painel não via que havia corretor esperando resposta.
+    const pedidos = STORE.getReservas().slice().sort((a, b) => String(b.em || '').localeCompare(String(a.em || '')));
+    const nomeUn = (r) => r.unidade || (STORE.getUnidades().find((u) => u.id === r.unidadeId) || {}).unidade || r.unidadeId;
+
     $('#aba-corpo').innerHTML = `
       <div class="hist-resumo">
         <button type="button" class="chip chip-f" data-st="Disponível">Disponíveis: <b>${nDisp}</b></button>
@@ -2327,6 +2339,23 @@
         <button type="button" class="chip chip-f" data-st="Vendido">Vendidas: <b>${nVend}</b></button>
         <button type="button" class="chip chip-f" data-st="">Total: <b>${uns.length}</b></button>
       </div>
+      ${pedidos.length ? `
+      <div class="pedidos-box">
+        <div class="pedidos-tit">⏳ Pedidos de reserva aguardando você <span class="pedidos-n">${pedidos.length}</span></div>
+        <div class="tabela-wrap"><table class="tabela pedidos-tab">
+          <thead><tr><th>Unid.</th><th>Cliente</th><th>Corretor</th><th>Pedido em</th><th></th></tr></thead>
+          <tbody>${pedidos.map((r) => `<tr data-pedido="${esc(r.unidadeId)}">
+            <td data-lab="Unidade"><b>${esc(nomeUn(r))}</b></td>
+            <td data-lab="Cliente">${esc(r.cliente || '—')}</td>
+            <td data-lab="Corretor">${esc(r.corretor || '—')}${r.empresa ? ' · ' + esc(r.empresa) : ''}</td>
+            <td data-lab="Pedido em">${esc(fmtData(r.em))}</td>
+            <td class="td-salvar">
+              <button class="btn-mini ped-ok" data-un="${esc(nomeUn(r))}">✓ reservar</button>
+              <button class="btn-mini btn-danger ped-no" data-un="${esc(nomeUn(r))}">recusar</button>
+            </td>
+          </tr>`).join('')}</tbody></table></div>
+        <div class="nota">“Reservar” marca a unidade como <b>Reservada</b> e tira o pedido da fila. “Recusar” só tira o pedido — a unidade continua disponível.</div>
+      </div>` : ''}
       <div class="nota">Marque o <b>status</b> e <b>quem vendeu</b> cada unidade. Preços e configuração ficam com o administrador.</div>
       <div class="filtros"><input id="v-busca" placeholder="🔎 buscar unidade…" autocomplete="off"><select id="v-status"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
       <div class="tabela-wrap"><table class="tabela adm-un">
@@ -2374,6 +2403,33 @@
         try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; _sujo = false; toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
+      };
+    });
+    // Pedidos de reserva: reservar de fato ou recusar. Nos dois casos o pedido sai
+    // da fila (excluirReserva); "reservar" ainda marca a unidade como Reservada,
+    // pelo MESMO caminho que o botão salvar da linha usa (setVendedor).
+    $$('.ped-ok').forEach((b) => {
+      b.onclick = async (e) => {
+        const btn = e.currentTarget; const un = btn.dataset.un;
+        const linha = btn.closest('tr'); const unidadeId = linha.dataset.pedido;
+        if (!confirm(`Reservar a unidade ${un}?\n\nEla passa a constar como Reservada no espelho de todas as imobiliárias, e o pedido sai da fila.`)) return;
+        btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
+        try {
+          await STORE.setVendedor(un, 'Reservado', '', '');
+          await STORE.excluirReserva(unidadeId);
+          toast(`Unidade ${un} reservada ✓`);
+          vAdmin('vendas');
+        } catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = t; }
+      };
+    });
+    $$('.ped-no').forEach((b) => {
+      b.onclick = async (e) => {
+        const btn = e.currentTarget; const un = btn.dataset.un;
+        const unidadeId = btn.closest('tr').dataset.pedido;
+        if (!confirm(`Recusar o pedido da unidade ${un}?\n\nO pedido sai da fila e a unidade continua Disponível. O corretor não é avisado pelo sistema — combine com ele.`)) return;
+        btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
+        try { await STORE.excluirReserva(unidadeId); toast('Pedido recusado'); vAdmin('vendas'); }
+        catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = t; }
       };
     });
   }

@@ -714,3 +714,14 @@ button.amen-link-chip:hover { background: var(--lime-b); color: #000; }
 
 /* Acesso do cliente (ADM → Config): interruptores do que fica liberado */
 .cli-toggles { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+
+/* Pedidos de reserva na aba Vendas do domo — precisa saltar aos olhos: é
+   corretor esperando resposta para fechar venda. */
+.pedidos-box { border: 1px solid #e0c65a; background: #fffbe9; border-radius: 12px; padding: 14px 16px; margin: 14px 0 18px; }
+.pedidos-tit { font-weight: 800; font-size: 15px; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.pedidos-n { background: #e0c65a; color: #3a2f00; border-radius: 999px; padding: 1px 9px; font-size: 13px; }
+/* NÃO zerar o fundo do <th>: o texto do cabeçalho é branco e sumia no claro. */
+.pedidos-tab td { background: transparent; }
+.pedidos-tab th { background: #1a1a1a; color: #fff; }
+.pedidos-box .td-salvar { display: flex; gap: 6px; flex-wrap: wrap; }
+.pedidos-box .ped-ok { background: #1f2d10; color: #c7f24a; border: 1px solid #3a5216; }
