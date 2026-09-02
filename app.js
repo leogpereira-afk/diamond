@@ -67,13 +67,21 @@
           ${u ? `<span class="topo-user">${u.papel === 'admin'
               ? '<span class="topo-nome"><span class="topo-emp">' + esc(u.nome) + ' · </span></span><a href="#/admin/unidades" class="topo-acao">ADM</a>'
               : '<span class="topo-nome"><span class="topo-emp">' + esc(u.nome) + ' · </span>' + (u.corretorAtivo && u.corretorAtivo.nome ? '<b>' + esc(u.corretorAtivo.nome) + '</b>' : '') + '</span>'
-                + (u.corretorAtivo && u.corretorAtivo.nome ? (u.ehMaster ? '<span class="tag-master" title="você entrou com a senha de master">🔑</span>' : ' <a href="#" id="topo-trocar" class="topo-acao">trocar</a>') : '') + (u.ehMaster ? ' <a href="#" id="topo-equipe" class="topo-acao">equipe</a>' : '')}</span>
+                + (u.corretorAtivo && u.corretorAtivo.nome
+                    ? (u.ehMaster
+                        // O master da Domo também troca de corretor: ele atende junto
+                        // com a equipe e precisa emitir proposta em nome de quem vendeu.
+                        // Nas outras imobiliárias segue como era (só o 🔑).
+                        ? '<span class="tag-master" title="você entrou com a senha de master">🔑</span>'
+                          + (STORE.ehDomo() ? ' <a href="#" id="topo-trocar" class="topo-acao">trocar</a>' : '')
+                        : ' <a href="#" id="topo-trocar" class="topo-acao">trocar</a>')
+                    : '') + (u.ehMaster ? ' <a href="#" id="topo-equipe" class="topo-acao">equipe</a>' : '')}</span>
                  <button class="btn-mini" id="btn-sair">sair</button>` : ''}
         </div>
       </div>`;
     const tl = $('#topo-logo'); if (tl && u && u.logoId) { STORE.obterFoto(u.logoId).then((f) => { const el = $('#topo-logo'); if (f && el) el.src = `data:${f.mime};base64,${f.base64}`; }); }
     const b = $('#btn-sair'); if (b) b.onclick = () => { STORE.logout(); location.hash = '#/login'; location.reload(); }; // reload zera PII em memória
-    const tr = $('#topo-trocar'); if (tr) tr.onclick = (e) => { e.preventDefault(); STORE.setCorretorAtivo('', ''); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // zera rascunho/PII (o espelho de leads é limpo pelo setCorretorAtivo)
+    const tr = $('#topo-trocar'); if (tr) tr.onclick = (e) => { e.preventDefault(); _trocaPedida = true; STORE.setCorretorAtivo('', ''); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // zera rascunho/PII (o espelho de leads é limpo pelo setCorretorAtivo)
     const eq = $('#topo-equipe'); if (eq) eq.onclick = (e) => { e.preventDefault(); vGerenciarCorretores(); }; // empresa gerencia a própria equipe
     atualizaSync(STORE.status());
   }
@@ -210,7 +218,7 @@
         </div>
       </div></div>`;
     $$('.quem-btn').forEach((b) => {
-      b.onclick = () => { const c = cors[+b.dataset.i]; STORE.setCorretorAtivo(c.nome, c.telefone); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // rascunho limpo (o espelho de leads é re-escopado pelo setCorretorAtivo)
+      b.onclick = () => { const c = cors[+b.dataset.i]; _trocaPedida = false; STORE.setCorretorAtivo(c.nome, c.telefone); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // rascunho limpo (o espelho de leads é re-escopado pelo setCorretorAtivo)
     });
     const gq = $('#quem-gerenciar'); if (gq) gq.onclick = () => vGerenciarCorretores();
     $('#quem-sair').onclick = () => { STORE.logout(); location.hash = '#/login'; location.reload(); };
@@ -509,6 +517,10 @@
 
   // ---------- UNIDADE (corretor: estática, sem cálculo de venda) ----------
   let _uniDraft = {};
+  // O master PEDIU para trocar de corretor. Sem esta marca, o roteador reassume
+  // a identidade dele (o 1º da lista) assim que ela fica vazia, e o seletor nunca
+  // chegava a aparecer. Vive só na memória: recarregar a página volta ao master.
+  let _trocaPedida = false;
   let _painelEquipe = false; // true enquanto o painel de equipe (fora de rota) está aberto — evita o pull de 30s destruí-lo
   function vUnidade(id) {
     const cfg = STORE.getCfg() || {};
@@ -3491,7 +3503,11 @@
       const _cors = (_u.corretores || []).filter((c) => (c.nome || '').trim());
       if (_u.ehMaster) {
         // entrou com a senha do master → ele É o 1º corretor (responsável); não passa pelo seletor
-        if (!(_u.corretorAtivo && _u.corretorAtivo.nome) && _cors[0]) { STORE.setCorretorAtivo(_cors[0].nome, _cors[0].telefone); renderTopo(); } // repinta: o topo já tinha sido desenhado sem o corretor
+        if (!(_u.corretorAtivo && _u.corretorAtivo.nome)) {
+          // ...MAS se ele clicou em "trocar", quem manda é a escolha dele.
+          if (_trocaPedida) { vEscolherCorretor(); return; }
+          if (_cors[0]) { STORE.setCorretorAtivo(_cors[0].nome, _cors[0].telefone); renderTopo(); } // repinta: o topo já tinha sido desenhado sem o corretor
+        }
       } else if (_cors.length > 1 && !(_u.corretorAtivo && _u.corretorAtivo.nome)) {
         vEscolherCorretor(); return; // equipe: escolhe quem está acessando (entre os NÃO-master)
       }
