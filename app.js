@@ -1068,7 +1068,7 @@
     try {
       const blob = await (await fetch(url)).blob();
       _imgCache[url] = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
-    } catch (e) { _imgCache[url] = null; }
+    } catch (e) { return null; } // NÃO grava a falha: uma queda de rede desligaria as logos de TODOS os PDFs até recarregar
     return _imgCache[url];
   }
   // logo da imobiliária p/ o rodapé do PDF (co-marca). null se a empresa não tem logo (ou é o admin/Domo).
@@ -1267,14 +1267,29 @@
     return { d: dd, m: mm };
   }
   function drawBanda(doc, cfg, titulo, pag, logos) {
-    const W = 595, M = 40, CX = W / 2, BAND = 74, LIME = [228, 247, 43];
+    const W = 595, M = 40, BAND = 74, LIME = [228, 247, 43], GAP = 14;
     doc.setFillColor(0, 0, 0); doc.rect(0, 0, W, BAND, 'F');
-    if (logos.d) { const h = 20, w = h * 640 / 86; doc.addImage(logos.d, 'JPEG', M, (BAND - h) / 2, w, h); }
-    if (logos.m) { const h = 26, w = h * 520 / 167; doc.addImage(logos.m, 'JPEG', W - M - w, (BAND - h) / 2, w, h); }
-    doc.setTextColor(LIME[0], LIME[1], LIME[2]); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-    doc.text(titulo, CX, 34, { align: 'center' });
-    doc.setTextColor(190, 190, 190); doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5);
-    doc.text(`Edifício Diamond · Domo Construtora · tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''}${pag > 1 ? ' · pág. ' + pag : ''}`, CX, 48, { align: 'center' });
+    let esq = M, dir = W - M; // bordas internas das logos, quando elas existem
+    if (logos.d) { const h = 20, w = h * 640 / 86; doc.addImage(logos.d, 'JPEG', M, (BAND - h) / 2, w, h); esq = M + w; }
+    if (logos.m) { const h = 26, w = h * 520 / 167; doc.addImage(logos.m, 'JPEG', W - M - w, (BAND - h) / 2, w, h); dir = W - M - w; }
+    // Centraliza no ESPAÇO LIVRE entre as logos, encolhendo se não couber. Centralizar
+    // na página inteira encostava o texto na logo DIAMOND — as logos são assimétricas,
+    // e o subtítulo com "pág. N" chegava a invadi-la em 6,6pt.
+    const cx = (esq + dir) / 2, livre = Math.max(60, (dir - esq) - 2 * GAP);
+    // encolhe até o piso; se AINDA não couber (data/versão muito longas), corta —
+    // o piso de fonte sozinho não garante nada, e o texto invadiria as duas logos
+    const ajusta = (txt, base, min) => {
+      let s = base; doc.setFontSize(s);
+      while (s > min && doc.getTextWidth(txt) > livre) { s -= 0.25; doc.setFontSize(s); }
+      let t = txt;
+      while (t.length > 1 && doc.getTextWidth(t) > livre) t = t.slice(0, -1);
+      return t === txt ? txt : t.slice(0, -1) + '…';
+    };
+    doc.setTextColor(LIME[0], LIME[1], LIME[2]); doc.setFont('helvetica', 'bold');
+    doc.text(ajusta(titulo, 13, 8), cx, 34, { align: 'center' });
+    doc.setTextColor(190, 190, 190); doc.setFont('helvetica', 'italic');
+    const sub = `Edifício Diamond · Domo Construtora · tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''}${pag > 1 ? ' · pág. ' + pag : ''}`;
+    doc.text(ajusta(sub, 7.5, 5.5), cx, 48, { align: 'center' });
   }
 
   // ---------- proposta simples (só o valor da unidade — usada pelo corretor) ----------
@@ -1529,6 +1544,142 @@
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(174, 174, 178);
     doc.text(`Tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''} · gerada em ${new Date().toLocaleDateString('pt-BR')} · preços sujeitos a alteração · Domo Construtora`, W / 2, H - 12, { align: 'center' });
     return { doc, nome: `Espelho-Diamond-${(cfg.dataTabela || '').replace(/\//g, '-')}.pdf` };
+  }
+
+  // ---------- lista de vendas em PDF (uso interno: quem vendeu cada unidade) ----------
+  // É a MESMA lista da aba Vendas, em papel: mesmos dados, MESMAS cores da tela, e o
+  // que estiver filtrado na tela sai filtrado aqui — com o filtro escrito no topo,
+  // senão uma lista parcial passaria por espelho completo do prédio. Sai também a
+  // fila de pedidos de reserva, que é o que a tela tem e o espelho do cliente não.
+  async function gerarListaVendasPDF(cfg, unidades, pedidos, filtro) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const W = 595, H = 842, M = 40;
+    const logos = await carregarLogos();
+    const COR = {
+      'Disponível': { bg: [233, 246, 234], tx: [46, 125, 50] },
+      'Reservado': { bg: [237, 231, 246], tx: [94, 53, 177] },
+      'Vendido': { bg: [255, 235, 238], tx: [198, 40, 40] },
+    };
+    const corDe = (s) => COR[s] || { bg: [245, 245, 245], tx: [110, 110, 110] };
+    const RODAPE = 36, RH = 15; // faixa do rodapé reservada em TODA página; altura da linha
+    const X = { un: 50, andar: 96, area: 140, valorR: 284, status: 296, vend: 372 };
+    const LARG = { un: 40, area: 56, vend: W - M - X.vend - 6 }; // -6: respiro até a borda da linha
+    let pag = 0, y = 0;
+
+    const corta = (txt, larg) => { // depende da fonte/tamanho ATUAIS: chamar sempre depois de setFont/setFontSize
+      let s = String(txt ?? '');
+      if (doc.getTextWidth(s) <= larg) return s;
+      while (s.length > 1 && doc.getTextWidth(s + '…') > larg) s = s.slice(0, -1);
+      return s + '…';
+    };
+    const rodape = () => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); doc.setTextColor(198, 40, 40);
+      doc.text('USO INTERNO — mostra quem vendeu cada unidade. Não enviar ao cliente.', W / 2, H - 22, { align: 'center' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(174, 174, 178);
+      doc.text(`Tabela ${cfg.dataTabela || ''} · ${cfg.versao || ''} · gerada em ${new Date().toLocaleString('pt-BR')} · Domo Construtora`, W / 2, H - 12, { align: 'center' });
+    };
+    const novaPagina = () => {
+      if (pag > 0) { rodape(); doc.addPage(); }
+      pag += 1;
+      drawBanda(doc, cfg, 'LISTA DE VENDAS · USO INTERNO', pag, logos);
+      y = 92;
+      // o aviso de recorte vai em TODA folha: quem receber só a página 2 não pode
+      // ler uma lista filtrada como se fosse o prédio inteiro
+      if (filtro && filtro.texto) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(154, 100, 0);
+        doc.text(corta(`Lista filtrada por ${filtro.texto} — ${unidades.length} de ${filtro.total} unidades do prédio.`, W - 2 * M), M, y);
+        y += 15;
+      }
+    };
+    // garante espaço para `h` pontos antes de desenhar; se não couber, vira a página
+    // e redesenha o cabeçalho da tabela — senão a página 2 sairia sem dizer o que é cada coluna.
+    const espaco = (h, repetirCab) => {
+      if (y + h <= H - RODAPE) return;
+      novaPagina();
+      if (repetirCab) repetirCab();
+    };
+
+    novaPagina();
+
+    // resumo DESTA lista (não do prédio: se veio filtrada, os números são os da folha)
+    const cont = (s) => unidades.filter((u) => (u.status || 'Disponível') === s).length;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 65);
+    doc.text(`Total ${unidades.length}`, M, y);
+    let lx = M + 66;
+    ['Disponível', 'Reservado', 'Vendido'].forEach((nome) => {
+      const c = corDe(nome).tx; const txt = `${nome} ${cont(nome)}`;
+      doc.setFillColor(c[0], c[1], c[2]); doc.circle(lx + 3, y - 3, 3.2, 'F');
+      doc.setTextColor(60, 60, 65); doc.text(txt, lx + 10, y);
+      lx += doc.getTextWidth(txt) + 34;
+    });
+    y += 15;
+
+    // fila de pedidos de reserva (não sofre o filtro da lista: é uma fila, não um recorte).
+    // `pedidos` chega pronto para impressão — {unidade, cliente, corretor, em} já em texto.
+    if (pedidos && pedidos.length) {
+      const P = { un: 46, cli: 150, cor: 170 };
+      const cabPed = () => {
+        doc.setFillColor(154, 100, 0); doc.rect(M, y, W - 2 * M, 16, 'F');
+        doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+        doc.text('UNID.', M + 6, y + 11); doc.text('CLIENTE', M + 6 + P.un, y + 11);
+        doc.text('CORRETOR', M + 6 + P.un + P.cli, y + 11); doc.text('PEDIDO EM', M + 6 + P.un + P.cli + P.cor, y + 11);
+        y += 18;
+      };
+      espaco(52);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(154, 100, 0);
+      doc.text(`Pedidos de reserva aguardando resposta (${pedidos.length})`, M, y + 9);
+      y += 18;
+      cabPed();
+      pedidos.forEach((r, i) => {
+        espaco(RH, cabPed);
+        if (i % 2) { doc.setFillColor(250, 246, 238); doc.rect(M, y, W - 2 * M, RH - 1, 'F'); }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 26);
+        doc.text(corta(r.unidade, P.un - 8), M + 6, y + 10);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(70, 70, 75);
+        doc.text(corta(r.cliente || '—', P.cli - 8), M + 6 + P.un, y + 10);
+        doc.text(corta(r.corretor || '—', P.cor - 8), M + 6 + P.un + P.cli, y + 10);
+        doc.text(corta(r.em || '—', W - M - (M + 6 + P.un + P.cli + P.cor)), M + 6 + P.un + P.cli + P.cor, y + 10);
+        y += RH;
+      });
+      y += 12;
+    }
+
+    // a lista em si
+    const cabTab = () => {
+      doc.setFillColor(17, 17, 17); doc.rect(M, y, W - 2 * M, 16, 'F');
+      doc.setTextColor(228, 247, 43); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      doc.text('UNID.', X.un, y + 11); doc.text('ANDAR', X.andar, y + 11); doc.text('ÁREA', X.area, y + 11);
+      doc.text('VALOR TABELA', X.valorR, y + 11, { align: 'right' }); // é o preço de tabela de hoje, NÃO o valor pelo qual a unidade foi vendida
+      doc.text('STATUS', X.status, y + 11); doc.text('VENDEDOR', X.vend, y + 11);
+      y += 18;
+    };
+    espaco(34); cabTab();
+    unidades.forEach((u) => {
+      espaco(RH, cabTab);
+      const st = u.status || 'Disponível';
+      const k = corDe(st);
+      doc.setFillColor(k.bg[0], k.bg[1], k.bg[2]); doc.rect(M, y, W - 2 * M, RH - 1, 'F');
+      doc.setFillColor(k.tx[0], k.tx[1], k.tx[2]); doc.rect(M, y, 4, RH - 1, 'F'); // a mesma barra colorida da tela
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 26);
+      doc.text(corta(u.unidade, LARG.un), X.un, y + 10);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(70, 70, 75);
+      doc.text(u.andar === 0 ? 'Térreo' : (u.andar == null ? '—' : u.andar + 'º'), X.andar, y + 10);
+      doc.text(u.area ? corta(u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²', LARG.area) : '—', X.area, y + 10);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(26, 26, 26);
+      doc.text(u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—', X.valorR, y + 10, { align: 'right' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(k.tx[0], k.tx[1], k.tx[2]);
+      doc.text(st.toUpperCase(), X.status, y + 10);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(70, 70, 75);
+      // sem vendedor marcado é informação, não vazio: é o que falta alguém preencher
+      const vend = st === 'Disponível' ? '—'
+        : ((u.vendedorNome || '').trim() ? u.vendedorNome + ' · ' + ((u.vendedorEmpresa || '').trim() || 'Domo') : 'sem vendedor marcado');
+      doc.text(corta(vend, LARG.vend), X.vend, y + 10);
+      y += RH;
+    });
+
+    rodape();
+    return { doc, nome: `Lista-Vendas-INTERNO-Diamond-${(cfg.dataTabela || '').replace(/\//g, '-')}.pdf` };
   }
 
   function resumoTexto(plano, p) {
@@ -2339,6 +2490,7 @@
         <button type="button" class="chip chip-f" data-st="Reservado">Reservadas: <b>${nRes}</b></button>
         <button type="button" class="chip chip-f" data-st="Vendido">Vendidas: <b>${nVend}</b></button>
         <button type="button" class="chip chip-f" data-st="">Total: <b>${uns.length}</b></button>
+        <button type="button" class="btn-lista-pdf" id="v-baixar">⬇ Baixar esta lista (PDF)</button>
       </div>
       ${pedidos.length ? `
       <div class="pedidos-box">
@@ -2391,6 +2543,20 @@
       };
     });
     pintaChips();
+    // uma linha "difere" quando os selects não batem com o que está salvo
+    const vLinhaDifere = (tr, salvo) => {
+      const u = salvo.get(String(tr.dataset.id)); if (!u) return false;
+      const st = $('.v-status', tr).value;
+      const vv = ($('.v-vend', tr) || {}).value || '|'; const c = vv.indexOf('|');
+      const vEmp = st === 'Disponível' ? '' : vv.slice(0, c);
+      const vNome = st === 'Disponível' ? '' : vv.slice(c + 1);
+      return st !== (u.status || 'Disponível') || vEmp !== (u.vendedorEmpresa || '') || vNome !== (u.vendedorNome || '');
+    };
+    // salvar UMA linha não pode zerar o aviso das OUTRAS que ainda têm edição aberta
+    const vRecalcSujo = () => {
+      const salvo = new Map(STORE.getUnidades().map((u) => [String(u.id), u]));
+      _sujo = linhas.some((tr) => vLinhaDifere(tr, salvo));
+    };
     linhas.forEach((tr) => {
       const stSel = $('.v-status', tr); const vCell = $('.td-vendedor', tr);
       const toggle = () => { vCell.style.visibility = stSel.value === 'Disponível' ? 'hidden' : 'visible'; };
@@ -2404,7 +2570,7 @@
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
         const vv = ($('.v-vend', tr).value) || '|'; const corte = vv.indexOf('|'); const st = stSel.value;
         const vEmp = st === 'Disponível' ? '' : vv.slice(0, corte); const vNome = st === 'Disponível' ? '' : vv.slice(corte + 1);
-        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; _sujo = false; toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
+        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
       };
@@ -2436,6 +2602,46 @@
         catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = t; }
       };
     });
+    // Baixar a lista em PDF: o mesmo recorte da tela (busca e filtro de status),
+    // mas TUDO relido do store no clique. Nada aqui pode usar `uns`/`pedidos`/`cfg`
+    // capturados no render: depois de salvar uma linha o snapshot do render ainda
+    // tem o status velho, e o papel sairia contradizendo o servidor que acabou de
+    // confirmar a gravação.
+    $('#v-baixar').onclick = async (e) => {
+      const b = e.currentTarget; if (b.disabled) return;
+      if (!window.jspdf || !window.jspdf.jsPDF) { toast('O gerador de PDF não carregou (sem internet?). Recarregue a página e tente de novo.', true); return; }
+      const cfgAgora = STORE.getCfg() || {};
+      const todas = STORE.getUnidades().slice().sort((a, z) => String(a.unidade).padStart(5, '0') < String(z.unidade).padStart(5, '0') ? -1 : 1);
+      const stf = ($('#v-status') || {}).value || '';
+      const qf = (($('#v-busca') || {}).value || '').trim();
+      const q = qf.toLowerCase();
+      const sel = todas.filter((u) => (!stf || (u.status || 'Disponível') === stf)
+        && (!q || String(u.unidade).toLowerCase().includes(q)));
+      if (!sel.length) { toast('Nenhuma unidade nesta lista para baixar.', true); return; }
+      // Pendência medida linha a linha contra o que está salvo. Não dá para confiar
+      // no _sujo global: salvar UMA linha o zera, e as outras edições abertas
+      // deixariam de avisar justamente na hora de imprimir.
+      const salvo = new Map(todas.map((u) => [String(u.id), u]));
+      const pend = linhas.filter((tr) => vLinhaDifere(tr, salvo)).length;
+      if (pend && !confirm(`${pend} ${pend === 1 ? 'linha tem alteração não salva' : 'linhas têm alteração não salva'}.\n\nO PDF sai com o que está SALVO no servidor — essas mudanças não entram. Baixar assim mesmo?`)) return;
+      const partes = [];
+      if (stf) partes.push('status ' + stf);
+      if (qf) partes.push('busca “' + qf + '”');
+      const paraPdf = STORE.getReservas().slice().sort((a, z) => String(z.em || '').localeCompare(String(a.em || ''))).map((r) => ({
+        unidade: String(nomeUn(r) ?? '—'),
+        // pedido de outra imobiliária vem mascarado do servidor: dizer isso, e não '—',
+        // senão o papel afirma que o pedido não tem cliente nem corretor
+        cliente: r.deOutraEmpresa ? 'outra imobiliária' : (r.cliente || '—'),
+        corretor: r.deOutraEmpresa ? '(não divulgado)' : ((r.corretor || '—') + (r.empresa ? ' · ' + r.empresa : '')),
+        em: fmtData(r.em),
+      }));
+      b.disabled = true; const t = b.textContent; b.textContent = 'gerando…';
+      try {
+        const { doc, nome } = await gerarListaVendasPDF(cfgAgora, sel, paraPdf, { texto: partes.join(' e '), total: todas.length });
+        doc.save(nome); toast('Lista gerada ✓');
+      } catch (err) { toast('Erro ao gerar: ' + err.message, true); }
+      finally { if (document.body.contains(b)) { b.disabled = false; b.textContent = t; } }
+    };
   }
 
   function aPredio() {

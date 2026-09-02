@@ -225,7 +225,8 @@ input::placeholder, textarea::placeholder { color: #9a9a9a; font-weight: 400; fo
   .adm-un td input, .adm-un td select { max-width: 62%; width: auto; text-align: right; }
   .adm-un td.td-salvar { justify-content: stretch; padding-top: 8px; }
   .adm-un td.td-salvar::before { content: ''; }
-  .adm-un td.td-salvar .e-salvar { width: 100%; padding: 10px; font-size: 14px; }
+  /* .v-salvar é o mesmo botão na aba Vendas: sem ele aqui, o cartão do celular saía com um 'salvar' minúsculo */
+  .adm-un td.td-salvar .e-salvar, .adm-un td.td-salvar .v-salvar { width: 100%; padding: 10px; font-size: 14px; }
 }
 .tabela-wrap { overflow-x: auto; margin-top: 8px; }
 .tabela { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
@@ -743,3 +744,9 @@ button.amen-link-chip:hover { background: var(--lime-b); color: #000; }
 .hist-resumo .chip-f[data-st="Disponível"] b { color: #2e7d32; }
 .hist-resumo .chip-f[data-st="Reservado"] b { color: #5e35b1; }
 .hist-resumo .chip-f[data-st="Vendido"] b { color: #c62828; }
+
+/* botão de baixar dentro do painel (fundo claro): o .btn-baixar é lime sobre preto,
+   feito para a banda do topo — em fundo branco ele sumiria. */
+.btn-lista-pdf { background: #1a1a1a; color: var(--lime-b); border: 1px solid #1a1a1a; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
+.btn-lista-pdf:hover { background: #000; border-color: var(--lime-b); }
+.btn-lista-pdf:disabled { opacity: .6; cursor: default; }
