@@ -2222,8 +2222,9 @@
       const statusSel = $('.e-status', tr);
       const vendCell = $('.td-vendedor', tr);
       const toggleVend = () => { vendCell.style.visibility = statusSel.value === 'Disponível' ? 'hidden' : 'visible'; }; // vendedor só p/ Reservado/Vendido
-      toggleVend();
-      statusSel.onchange = () => { _sujo = true; toggleVend(); }; // escolher status/vendedor sem salvar = edição pendente
+      const corSel = () => { statusSel.dataset.sel = statusSel.value; }; // cor do seletor acompanha a escolha
+      toggleVend(); corSel();
+      statusSel.onchange = () => { _sujo = true; toggleVend(); corSel(); }; // escolher status/vendedor sem salvar = edição pendente
       $('.e-vendedor', tr).onchange = () => { _sujo = true; };
       $('.e-salvar', tr).onclick = () => {
         const status = statusSel.value;
@@ -2393,8 +2394,11 @@
     linhas.forEach((tr) => {
       const stSel = $('.v-status', tr); const vCell = $('.td-vendedor', tr);
       const toggle = () => { vCell.style.visibility = stSel.value === 'Disponível' ? 'hidden' : 'visible'; };
-      toggle();
-      stSel.onchange = () => { _sujo = true; toggle(); };
+      // A COR DA LINHA segue o status SALVO (data-status) — ela não pode mentir
+      // sobre o que está no servidor. Já o seletor acompanha a escolha em curso.
+      const corSel = () => { stSel.dataset.sel = stSel.value; };
+      toggle(); corSel();
+      stSel.onchange = () => { _sujo = true; toggle(); corSel(); };
       $('.v-vend', tr).onchange = () => { _sujo = true; };
       $('.v-salvar', tr).onclick = async (e) => {
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';

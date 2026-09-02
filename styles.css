@@ -725,3 +725,21 @@ button.amen-link-chip:hover { background: var(--lime-b); color: #000; }
 .pedidos-tab th { background: #1a1a1a; color: #fff; }
 .pedidos-box .td-salvar { display: flex; gap: 6px; flex-wrap: wrap; }
 .pedidos-box .ped-ok { background: #1f2d10; color: #c7f24a; border: 1px solid #3a5216; }
+
+/* Cores por status na lista de unidades (aba Vendas do domo e Unidades do admin).
+   MESMA paleta do PDF do espelho (app.js: Disponível verde, Reservado roxo,
+   Vendido vermelho) — duas réguas de cor para a mesma informação confundiriam. */
+.adm-un tbody tr { border-left: 5px solid transparent; }
+.adm-un tbody tr[data-status="Disponível"] { border-left-color: #2e7d32; background: #f4fbf5; }
+.adm-un tbody tr[data-status="Reservado"]  { border-left-color: #5e35b1; background: #f6f3fc; }
+.adm-un tbody tr[data-status="Vendido"]    { border-left-color: #c62828; background: #fdf4f5; }
+/* O seletor segue a ESCOLHA em curso (data-sel), não o status salvo: assim ele
+   responde na hora, enquanto o fundo da linha continua contando a verdade. */
+.adm-un select[data-sel] { font-weight: 700; }
+.adm-un select[data-sel="Disponível"] { color: #2e7d32; }
+.adm-un select[data-sel="Reservado"]  { color: #5e35b1; }
+.adm-un select[data-sel="Vendido"]    { color: #c62828; }
+/* chips do resumo na mesma língua */
+.hist-resumo .chip-f[data-st="Disponível"] b { color: #2e7d32; }
+.hist-resumo .chip-f[data-st="Reservado"] b { color: #5e35b1; }
+.hist-resumo .chip-f[data-st="Vendido"] b { color: #c62828; }
