@@ -32,6 +32,99 @@
   const tipoDe = (u) => String(u.unidade).toUpperCase() === 'LOJA' ? 'LOJA' : String(u.unidade).slice(-2);
   const fotoDe = (u, cfg) => ((cfg && cfg.fotosTipo) || {})[tipoDe(u)] || u.fotoId || '';
 
+  // Consulta do registro original: nunca recalcula, salva ou associa por nome.
+  const rotaRegistro = (tipo, id) => '#/' + tipo + '/' + encodeURIComponent(id) + '?voltar=' + encodeURIComponent(location.hash.split('?')[0]);
+  function voltaRegistro(padrao) {
+    const volta = new URLSearchParams(location.hash.split('?')[1] || '').get('voltar') || '';
+    return /^#\/[a-z0-9_/%.-]+$/i.test(volta) ? volta : padrao;
+  }
+  function clienteReferencias(cliente, propostas, envios) {
+    const enviados = envios.filter((e) => e.leadId === cliente.id);
+    const ids = new Set(enviados.map((e) => e.propostaId).filter(Boolean));
+    return { envios: enviados, propostas: propostas.filter((p) => p.leadId === cliente.id || (!p.leadId && ids.has(p.id))) };
+  }
+  function listaPropostasHTML(propostas) {
+    if (!propostas.length) return '<p class="nota">Nenhuma proposta vinculada neste acesso.</p>';
+    return '<div class="registro-lista">' + propostas.slice().sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).map((p) => `
+      <a class="registro-item" href="${esc(rotaRegistro('proposta', p.id))}">
+        <span class="registro-icone" aria-hidden="true">📄</span><span class="registro-texto"><strong>${esc(p.cliente || 'Sem nome')} · Unidade ${esc(p.unidade)}</strong><small>${fmtData(p.criadoEm)} · ${esc(p.formaLabel || (p.forma === 'scp' ? 'SCP' : p.forma) || 'Proposta')} · ${esc(p.corretor || 'Corretor não informado')}</small></span>
+        <b>${fmt(p.neg, 2)}</b><span aria-hidden="true">›</span>
+      </a>`).join('') + '</div>';
+  }
+  function listaEnviosHTML(envios) {
+    if (!envios.length) return '<p class="nota">Nenhum envio vinculado a este registro.</p>';
+    return '<div class="registro-lista">' + envios.slice().sort((a, b) => String(b.em || '').localeCompare(String(a.em || ''))).map((e) => {
+      const ultimo = (e.eventos || []).filter((ev) => ['interesse', 'duvida'].includes(ev.tipo)).sort((a, b) => String(b.em).localeCompare(String(a.em)))[0];
+      const proposta = STORE.getPropostas().find((p) => p.id === e.propostaId);
+      return `<div class="registro-item"><span class="registro-icone" aria-hidden="true">↗</span><span class="registro-texto"><strong>Envio ${e.numero ? '#' + esc(e.numero) : 'sem número'} · ${fmtData(e.em)}</strong><small>${esc(e.cliente || '')} · ${e.views || 0} abertura(s)${ultimo ? ' · ' + (ultimo.tipo === 'duvida' ? 'Dúvida' : 'Interesse') + ' em ' + fmtData(ultimo.em) : ' · sem resposta registrada'}</small><small>Referência ${esc(String(e.id).slice(-8))}${proposta ? '' : ' · vínculo com proposta pendente'}</small></span><div class="registro-acoes">${proposta && location.hash.split('?')[0] !== '#/proposta/' + encodeURIComponent(proposta.id) ? `<a class="btn-mini" href="${esc(rotaRegistro('proposta', proposta.id))}">Proposta</a>` : ''}<a class="btn-mini" target="_blank" rel="noopener" href="${esc(window.P_URL + '/' + encodeURIComponent(e.id) + '?pdf=1&preview=1')}">Prévia do PDF</a></div></div>`;
+    }).join('') + '</div>';
+  }
+  function condicoesSalvasHTML(p) {
+    const i = p.inp || {};
+    const linhas = [];
+    const add = (rotulo, valor) => { if (valor !== undefined && valor !== null && valor !== '') linhas.push(`<div><dt>${esc(rotulo)}</dt><dd>${esc(valor)}</dd></div>`); };
+    if (p.forma === 'scp') {
+      add('Modalidade', 'SCP');
+      add('Desconto', i.desc10 == null ? 'Não informado' : i.desc10 ? '10%' : 'Sem desconto de 10%');
+      if (i.p12) add('Opção registrada', '12 parcelas');
+      if (i.p2412) add('Opção registrada', '24 parcelas · correção a partir da 13ª');
+      if (i.corr !== undefined && i.corr !== '') add('Corretagem', i.corr + '%');
+    } else {
+      add('Modalidade', p.formaLabel || p.forma);
+      if (i.entradaPct != null) add('Entrada', i.entradaPct + '%');
+      if (i.finalPct != null) add('Parcela final', i.finalPct + '%');
+      add('Parcelas', i.nParcelas);
+      add('Balões', i.balQtde);
+      if (i.balQtde > 0) { add('Valor de cada balão', fmt(i.balValor, 2)); add('Primeiro balão (mês)', i.balPrimeiro); add('Intervalo (meses)', i.balIntervalo); }
+      add('Entrega / chaves (mês)', i.chavesMes);
+      add('Índice', i.indice);
+      if (i.dataProposta) add('Data-base', fmtData(i.dataProposta));
+      add('Dia de vencimento', i.diaVenc);
+    }
+    return `<dl class="registro-dados">${linhas.join('')}</dl><p class="nota">Condições salvas na época. Consulte o PDF enviado para o cronograma completo.</p>`;
+  }
+  async function carregarConexoes(pintar) {
+    const rota = location.hash;
+    try { const envios = await STORE.listEnvios(); if (location.hash === rota) pintar(envios); }
+    catch (e) { if (location.hash === rota && $('#registro-conexoes')) $('#registro-conexoes').innerHTML = '<p class="aviso">Não foi possível consultar os vínculos. ' + esc(e.message) + '</p><button class="btn-mini" id="registro-retentar">Tentar novamente</button>'; const b = $('#registro-retentar'); if (b) b.onclick = () => carregarConexoes(pintar); }
+  }
+  async function vProposta(id) {
+    const p = STORE.getPropostas().find((x) => x.id === id);
+    const volta = voltaRegistro(STORE.podeVerPainel() ? '#/admin/historico' : '#/historico');
+    if (!p) { app().innerHTML = `<div class="vazio">Proposta não localizada neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
+    const u = STORE.unidadePorId(p.unidadeId);
+    app().innerHTML = `<section class="registro">
+      <a class="volta" href="${esc(volta)}">← Voltar à consulta</a>
+      <header class="registro-top"><div><span class="registro-kicker">Proposta original · ${fmtData(p.criadoEm)}</span><h1>${esc(p.cliente || 'Cliente não informado')}</h1><p>Unidade ${esc(p.unidade)} · ${esc(p.formaLabel || (p.forma === 'scp' ? 'SCP' : p.forma) || 'Proposta')}</p></div><div class="registro-valor"><small>Valor registrado</small><strong>${fmt(p.neg, 2)}</strong></div></header>
+      <nav class="registro-acoes" aria-label="Navegação da proposta">${STORE.isAdmin() && u && p.forma !== 'scp' ? `<a class="btn-mini" href="#/sim/${encodeURIComponent(u.id)}?editar=${encodeURIComponent(p.id)}">Editar no simulador</a>` : ''}${u ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', u.id))}">⌂ Histórico da unidade</a><span class="registro-status">Unidade hoje: ${esc(u.status)}</span>` : '<span class="registro-status">Unidade não localizada</span>'}</nav>
+      <div class="registro-grade"><section class="painel"><h2>Condições da proposta</h2>${condicoesSalvasHTML(p)}</section><section class="painel"><h2>Atendimento</h2><dl class="registro-dados"><div><dt>Corretor original</dt><dd>${esc(p.corretor || 'Não informado')}</dd></div><div><dt>Empresa</dt><dd>${esc(p.corretorEmpresa || 'Não informada')}</dd></div><div><dt>Telefone do cliente</dt><dd>${esc(p.clienteTel || 'Não informado')}</dd></div></dl><p class="nota">Esta consulta preserva os valores e a autoria do registro original.</p></section></div>
+      <section class="painel"><h2>Cliente e envios vinculados</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section>
+    </section>`;
+    await carregarConexoes((envios) => {
+      const lista = envios.filter((e) => e.propostaId === p.id);
+      const ids = new Set([p.leadId, ...lista.map((e) => e.leadId)].filter(Boolean));
+      const clientes = STORE.getLeads().filter((l) => ids.has(l.id));
+      $('#registro-conexoes').innerHTML = `<div class="registro-acoes">${clientes.length ? clientes.map((l) => `<a class="btn-mini" href="${esc(rotaRegistro('cliente', l.id))}">👤 ${esc(l.cliente)}</a>`).join('') : '<span class="registro-status">Vínculo com cliente pendente</span>'}</div>${listaEnviosHTML(lista)}`;
+    });
+  }
+  async function vCliente(id) {
+    const l = STORE.getLeads().find((x) => x.id === id);
+    const volta = voltaRegistro('#/clientes');
+    if (!l) { app().innerHTML = `<div class="vazio">Cliente não localizado neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
+    const unidade = STORE.getUnidades().find((u) => String(u.unidade) === String(l.unidade));
+    const crm = STORE.podeVerPainel() ? '#/admin/clientes' : '#/clientes';
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(volta)}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Cliente · ${esc(estLab(l.estagio))}</span><h1>${esc(l.cliente)}</h1><p>${esc(l.corretorNome || 'Responsável não informado')}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</p></div><a class="btn-lime" href="${crm}?cliente=${encodeURIComponent(l.id)}">Editar no CRM</a></header>
+      <div class="registro-grade"><section class="painel"><h2>Próximo passo</h2><p class="registro-proximo">${l.proximoContato ? 'Retorno em ' + fmtData(l.proximoContato) : 'Definir o próximo contato no CRM'}</p><p>${esc(l.obs || 'Sem observações registradas.')}</p></section><section class="painel"><h2>Informações do cliente</h2><dl class="registro-dados"><div><dt>Primeiro contato</dt><dd>${fmtData(l.primeiroContato)}</dd></div><div><dt>Telefone</dt><dd>${esc(l.clienteTel || 'Não informado')}</dd></div><div><dt>Unidade de interesse</dt><dd>${esc(l.unidade || 'Não informada')}</dd></div></dl>${unidade ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', unidade.id))}">⌂ Histórico da unidade</a>` : ''}</section></div>
+      <section class="painel"><h2>Propostas e envios</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section></section>`;
+    await carregarConexoes((envios) => { const refs = clienteReferencias(l, STORE.getPropostas(), envios); $('#registro-conexoes').innerHTML = listaPropostasHTML(refs.propostas) + '<h3>Envios deste cliente</h3>' + listaEnviosHTML(refs.envios); });
+  }
+  function vConexoesUnidade(id) {
+    const u = STORE.unidadePorId(id);
+    if (!u) { app().innerHTML = '<p class="vazio">Unidade não localizada.</p>'; return; }
+    const propostas = STORE.getPropostas().filter((p) => p.unidadeId === id);
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(voltaRegistro('#/home'))}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Histórico da unidade</span><h1>Unidade ${esc(u.unidade)}</h1><p>${esc(u.status)} · ${propostas.length} proposta(s) neste acesso</p></div>${u.status === 'Disponível' ? `<a class="btn-lime" href="#/sim/${encodeURIComponent(u.id)}">Nova proposta</a>` : ''}</header><section class="painel"><h2>Propostas registradas</h2>${listaPropostasHTML(propostas)}</section></section>`;
+  }
+
   function toast(msg, erro) {
     const t = document.createElement('div');
     t.className = 'toast' + (erro ? ' erro' : '');
@@ -63,7 +156,7 @@
     const cfg = STORE.getCfg() || {};
     $('#topo').innerHTML = `
       <div class="topo-in">
-        <img src="wordmark.png" alt="DIAMOND" class="wordmark" onclick="location.hash='#/home'">
+        <a class="marca-home" href="#/home" aria-label="Diamond · voltar ao espelho"><img src="wordmark.png" alt="DIAMOND" class="wordmark"></a>
         ${u && u.logoId && u.papel !== 'admin' ? `<img class="topo-logo" id="topo-logo" alt="${esc(u.empresa || 'imobiliária')}">` : ''}
         <div class="topo-info">tabela ${esc(cfg.dataTabela || '')} · ${esc(cfg.versao || '')}</div>
         <div class="topo-dir">
@@ -92,6 +185,7 @@
   // botão flutuante "Falar com a Domo" — WhatsApp direto com a construtora, com mensagem pronta. Some no login/admin/prédio.
   function montarFabDomo() {
     const antigo = $('#fab-domo'); if (antigo) antigo.remove();
+    if (STORE.ehDomo() || STORE.isAdmin()) return;
     const cfg = STORE.getCfg() || {};
     const num = telWa(cfg.contatoWhats || '11972746113');
     const a = document.createElement('a');
@@ -445,9 +539,9 @@
         ${label}: <b>${arr.length}</b>${STORE.isAdmin() && soma > 0 ? ' · ' + fmt(soma) : ''}</button>`;
     app().innerHTML = `
       <div class="espelho-top">
-        ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/clientes">📊 Painel</a>' : ''}
+        ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/clientes">📊 Gestão comercial</a>' : ''}
         ${(STORE.isAdmin() || (STORE.getUser() || {}).usuario === 'domo') ? '<a class="btn-crm" href="#/retorno">📈 Retorno</a>' : ''}
-        ${STORE.isAdmin() ? '' : '<a class="btn-crm" href="#/clientes">👥 CRM</a>'}`}
+        ${STORE.isAdmin() ? '' : '<a class="btn-crm" href="#/clientes">👥 Clientes</a>'}`}
         ${!cli || cc.baixarPdf ? '<button class="btn-baixar" id="baixar-tabela">⬇ Baixar tabela (PDF)</button>' : ''}
       </div>
       <div class="chips">
@@ -469,7 +563,7 @@
           const temDesc = (u.desconto || 0) > 0;
           const pedida = resPend[u.id]; // pedido de reserva pendente → todos veem (evita 2 corretores no mesmo apto)
           const clicavel = !cli && (u.status === 'Disponível' || STORE.isAdmin()); // corretor não abre vendido/reservado; cliente não abre nada
-          return `<div class="lin ${u.status === 'Vendido' ? 'vendido' : u.status === 'Reservado' ? 'reservado' : ''} ${clicavel ? '' : 'lin-travada'}" data-un="${esc(String(u.unidade))}" ${clicavel ? `onclick="location.hash='#/sim/${u.id}'"` : ''}>
+          return `<${clicavel ? 'a' : 'div'} class="lin ${u.status === 'Vendido' ? 'vendido' : u.status === 'Reservado' ? 'reservado' : ''} ${clicavel ? '' : 'lin-travada'}" data-un="${esc(String(u.unidade))}" ${clicavel ? `href="#/sim/${encodeURIComponent(u.id)}"` : ''}>
             <span class="lin-foto" data-fotoid="${fotoDe(u, cfg)}"></span>
             <span class="lin-un">${esc(u.unidade)}</span>
             <span class="lin-info">${u.andar === 0 ? 'Térreo' : u.andar + 'º andar'} · ${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—'}</span>
@@ -478,7 +572,7 @@
                   : (cc.precos && u.precoBase ? fmt(vt) + (u.area ? '<small>' + fmt(vt / u.area) + '/m²</small>' : '') : '<span class="sem-preco">consultar</span>'))
               : (u.precoBase ? (temDesc ? '<s class="preco-de">' + fmt(valorTabela(u, cfg)) + '</s> ' : '') + fmt(vt) + (temDesc ? ' <span class="preco-desc">−' + pct(u.desconto) + '</span>' : '') : (u.status === 'Disponível' ? '<span class="sem-preco">consultar</span>' : '')) + (u.precoBase && u.area ? '<small>' + fmt(vt / u.area) + '/m²</small>' : '')}</span>
             ${pedida && u.status === 'Disponível' ? `<span class="badge b-pedida" title="${esc(cli ? 'Reserva solicitada — aguardando confirmação' : pedida.deOutraEmpresa ? 'Outra imobiliária pediu a reserva desta unidade — aguardando a Domo confirmar' : 'Reserva solicitada por ' + (pedida.corretor || '') + ' — aguardando a Domo confirmar')}">⏳ reserva pedida</span>` : `<span class="badge ${u.status === 'Disponível' ? 'b-ok' : u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>`}
-          </div>`;
+          </${clicavel ? 'a' : 'div'}>`;
         }).join('')}
         ${vend.length && !filtros.status ? `<button class="ver-vendidas" id="ver-vend">${filtros.verVendidas ? '− ocultar as ' + vend.length + ' vendidas' : '+ ver as ' + vend.length + ' vendidas'}</button>` : ''}
       </div>`;
@@ -658,6 +752,7 @@
             return p.deOutraEmpresa
               ? `<div class="aviso-pedida">⏳ <b>Já existe pedido de reserva</b> para esta unidade, feito por <b>outra imobiliária</b> em ${fmtData(p.em)}. A Domo ainda não confirmou.</div>`
               : `<div class="aviso-pedida">⏳ <b>Já existe pedido de reserva</b> para esta unidade — ${esc(p.cliente || '')} (por ${esc(p.corretor || '')}, ${fmtData(p.em)}). A Domo ainda não confirmou.</div>`; })()}
+          <div class="registro-acoes uni-conexoes"><a class="btn-mini" href="${esc(rotaRegistro('conexoes', u.id))}">📄 Histórico desta unidade</a></div>
           <h3>Proposta</h3>
           <div class="form">
             <label>Cliente<input id="u-cliente" value="${esc(d.cliente)}" placeholder="nome do cliente"></label>
@@ -795,8 +890,8 @@
       if (comPlano && !pln.fecha) { toast('Plano indisponível para esta unidade — fale com a administração.', true); return null; }
       const p = montaP(comPlano);
       STORE.salvarProposta(p); // rastreio: fica no Histórico com corretor + empresa
-      if (comPlano) { const g = await gerarPDF(p, pln, cfg); return { ...g, msg: msgComPlano(p, pln) }; }
-      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user); return { ...g, msg: msgSimples() };
+      if (comPlano) { const g = await gerarPDF(p, pln, cfg); return { ...g, proposta: p, msg: msgComPlano(p, pln) }; }
+      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user); return { ...g, proposta: p, msg: msgSimples() };
     };
 
     $('#u-pdf').onclick = async () => { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } };
@@ -810,6 +905,7 @@
         const r = await preparar(); if (!r) { if (win) win.close(); return; }
         // CRM primeiro: o link nasce amarrado ao cliente → as aberturas/interesse voltam pro corretor certo
         const cr = await crmRegistrar({ cliente: d.cliente, clienteTel: d.clienteTel, unidade: u.unidade, estagio: 'proposta' });
+        if (cr && cr.id) STORE.salvarProposta({ ...r.proposta, leadId: cr.id });
         const base64 = r.doc.output('datauristring').split(',')[1];
         const link = await STORE.enviarPropostaPdf(base64, { unidade: u.unidade, valor: u.precoBase ? vt : 0, area: u.area || 0, andar: u.andar, cliente: d.cliente, corretor: user.nome, corretorTel: user.telefone, empresa: user.empresa, propostaId: d.propostaId, leadId: (cr && cr.id) || '' });
         const msg = r.msg + `\n\n📄 Abra sua proposta aqui: ${link}`;
@@ -1870,12 +1966,12 @@
       : (l.primeiroContato ? `<span class="lead-quando suave">${desdeTxt(l.primeiroContato)}</span>` : '');
     return `
       <div class="lead-card temp-${l.temp || 'morno'} ${fim ? 'lead-fim' : ''} ${venc ? 'lead-venc' : ''} ${temInteresse ? 'lead-interesse' : ''} recolhido" data-id="${esc(l.id)}" data-temp="${esc(l.temp || 'morno')}" data-est="${esc(l.estagio || 'novo')}">
-        <div class="lead-cab">
+        <button type="button" class="lead-cab" aria-expanded="false">
           <span class="lead-temp">${tempIc(l.temp)}</span>
           <span class="lead-nome">${esc(l.cliente || '(sem nome)')}</span>
           ${temInteresse ? '<span class="selo-interesse" title="o cliente clicou em “Tenho interesse”">🙋 interesse</span>' : ''}
           ${(() => { // mostra TODOS os aptos do cliente (não só o 1º) — 1 cliente pode ter levado vários
-            const aps = _aptosPorCliente.get(_nrmNome(l.cliente)) || [];
+            const aps = _aptosPorCliente.get(l.id) || [];
             if (aps.length > 1) return `<span class="lead-un" title="${aps.length} apartamentos">Aptos ${esc(aps.join(' · '))}</span>`;
             return l.unidade ? `<span class="lead-un">Apto ${esc(l.unidade)}</span>` : '';
           })()}
@@ -1884,7 +1980,7 @@
           ${admin && l.corretorNome ? `<span class="lead-cor">${esc(l.corretorNome)}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</span>` : ''}
           ${quando}
           <span class="lead-chevron">▾</span>
-        </div>
+        </button>
         <div class="lead-corpo">
           ${faixa}
           <div class="lead-form">
@@ -1907,6 +2003,7 @@
           </div>
           <label class="lead-obs">Observações / o que o cliente perguntou<textarea class="l-obs" rows="3" placeholder="dúvidas, preferências, o que falta para fechar…">${esc(l.obs || '')}</textarea></label>
           <div class="lead-acoes">
+            ${l.id ? `<a class="btn-mini" href="${esc(rotaRegistro('cliente', l.id))}">👤 Histórico do cliente</a>` : ''}
             ${l.clienteTel ? `<a class="btn-mini lead-wa" href="https://wa.me/${telWa(l.clienteTel)}" target="_blank" rel="noopener">📱 WhatsApp</a>` : ''}
             <button type="button" class="btn-lime lead-salvar">salvar</button>
             <button type="button" class="btn-mini lead-del">excluir</button>
@@ -1928,7 +2025,7 @@
     };
   }
   function wireLeadCard(card) {
-    $('.lead-cab', card).onclick = () => card.classList.toggle('recolhido'); // recolher/expandir
+    $('.lead-cab', card).onclick = () => { card.classList.toggle('recolhido'); $('.lead-cab', card).setAttribute('aria-expanded', String(!card.classList.contains('recolhido'))); }; // recolher/expandir
     $$('.l-temp .segb', card).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); _sujo = true; card.dataset.temp = b.dataset.temp; $$('.l-temp .segb', card).forEach((x) => x.classList.toggle('on', x === b)); $('.lead-temp', card).textContent = tempIc(b.dataset.temp); card.className = card.className.replace(/temp-\w+/, 'temp-' + b.dataset.temp); }; });
     $$('.l-estagio .segb', card).forEach((b) => { b.onclick = (e) => { e.stopPropagation(); _sujo = true; card.dataset.est = b.dataset.est; $$('.l-estagio .segb', card).forEach((x) => x.classList.toggle('on', x === b)); const bd = $('.lead-badge', card); if (bd) { bd.textContent = estLab(b.dataset.est); bd.className = 'lead-badge est-' + b.dataset.est; } }; });
     const selCor = $('.l-corretor', card);
@@ -1980,9 +2077,7 @@
     interesse: { lab: '🙋 Interessados', fn: (l) => leadInteresse(l), cls: 'kpi-interesse' },
     aberto: { lab: 'Em aberto', fn: (l) => leadAtivo(l), cls: '' },
     vencido: { lab: 'Retornos vencidos', fn: (l) => leadVenc(l), cls: 'kpi-venc' },
-    fechado: { lab: 'Propostas fechadas', fn: (l) => l.estagio === 'fechado', cls: 'kpi-venda',
-      // 1 cliente pode ter levado vários aptos — mostra também quantas unidades saíram
-      sub: (arr) => { const n = arr.reduce((s, l) => s + ((_aptosPorCliente.get(_nrmNome(l.cliente)) || []).length || (l.unidade ? 1 : 0)), 0); return n ? (n === 1 ? '1 unidade vendida' : n + ' unidades vendidas') : ''; } },
+    fechado: { lab: 'Clientes fechados', fn: (l) => l.estagio === 'fechado', cls: 'kpi-venda' },
   };
   function crmResumo(leads) {
     const foco = (_crm.filtro || {}).foco || '';
@@ -1995,27 +2090,31 @@
     return `<div class="dash-kpis crm-kpis">${Object.keys(CRM_FOCOS).map(kpi).join('')}</div>`;
   }
   let _crm = { resumo: '', lista: '', admin: false, filtro: null };
+  const _crmFiltros = { pessoal: {}, geral: {} };
+  const clienteFiltroAtual = () => new URLSearchParams(location.hash.split('?')[1] || '').get('cliente') || '';
+  const crmContextoHTML = () => clienteFiltroAtual() ? '<div class="registro-contexto">Cliente selecionado <a href="' + location.hash.split('?')[0] + '">Ver todos os clientes</a></div>' : '';
   // sinais do cliente (abriu o PDF / tenho interesse / dúvida) por leadId — vêm dos envios
   let _sinais = {};
   // clientes que têm proposta de SCP (forma:'scp') → o card do CRM e a régua marcam "💠 SCP"
-  const _nrmNome = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
-  let _scpNomes = new Set();
-  let _aptosPorCliente = new Map(); // cliente normalizado → TODOS os aptos dele (1 cliente pode levar vários)
+  let _scpClientes = new Set();
+  let _aptosPorCliente = new Map(); // leadId → unidades de propostas vinculadas
+  let _enviosCrm = [];
   function crmScpKeys() {
     const set = new Set(); const mapa = new Map();
-    (STORE.getPropostas() || []).forEach((p) => {
-      if (!p.cliente) return;
-      const k = _nrmNome(p.cliente);
-      if (p.forma === 'scp') set.add(k);
-      if (p.unidade) { const a = mapa.get(k) || []; const un = String(p.unidade); if (!a.includes(un)) a.push(un); mapa.set(k, a); }
+    const propostas = STORE.getPropostas() || [];
+    (STORE.getLeads() || []).forEach((l) => {
+      const refs = clienteReferencias(l, propostas, _enviosCrm).propostas;
+      if (refs.some((p) => p.forma === 'scp')) set.add(l.id);
+      const aptos = [...new Set(refs.map((p) => String(p.unidade || '')).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'pt-BR', {numeric:true}));
+      mapa.set(l.id, aptos);
     });
-    mapa.forEach((a) => a.sort((x, y) => x.padStart(5, '0') < y.padStart(5, '0') ? -1 : 1));
-    _scpNomes = set; _aptosPorCliente = mapa;
+    _scpClientes = set; _aptosPorCliente = mapa;
   }
-  const isScpLead = (l) => !!(l && l.cliente && _scpNomes.size && _scpNomes.has(_nrmNome(l.cliente)));
+  const isScpLead = (l) => !!(l && _scpClientes.has(l.id));
   async function crmSinais() {
     try {
       const envios = await STORE.listEnvios();
+      _enviosCrm = envios;
       const m = {};
       for (const e of envios) {
         if (!e.leadId) continue;
@@ -2066,11 +2165,14 @@
     return out;
   }
   function crmPinta() {
+    if (_crm.rota && location.hash !== _crm.rota) return;
     crmScpKeys(); // recomputa quais clientes têm proposta SCP (p/ o selo no card e na régua)
     _roster = crmVeVariosCorretores() ? rosterReatribuir() : []; // quem pode receber um lead reatribuído
     const todos = STORE.getLeads().slice();
     let leads = todos;
     const f = _crm.filtro || {};
+    if (!f.clienteId) _crmFiltros[_crm.admin ? 'geral' : 'pessoal'] = { ...f };
+    if (f.clienteId) leads = leads.filter((l) => l.id === f.clienteId);
     if (f.empresa) leads = leads.filter((l) => (l.empresaNome || '') === f.empresa);
     if (f.estagio) leads = leads.filter((l) => l.estagio === f.estagio);
     if (f.corretor) leads = leads.filter((l) => (l.corretorNome || '') === f.corretor);
@@ -2092,7 +2194,7 @@
     const temFiltro = !!(f.empresa || f.estagio || f.corretor || f.foco);
     box.innerHTML = ord.length ? ord.map((l) => leadCard(l, crmVeVariosCorretores())).join('')
       : (novo ? '' : '<div class="vazio">nenhum cliente ' + (temFiltro ? 'com esse filtro' : (_crm.admin ? 'cadastrado ainda' : 'ainda — toque em ＋ novo cliente')) + '.</div>');
-    $$('.lead-card', box).forEach((c) => wireLeadCard(c));
+    $$('.lead-card', box).forEach((c) => { wireLeadCard(c); if (f.clienteId === c.dataset.id) { c.classList.remove('recolhido'); $('.lead-cab', c).setAttribute('aria-expanded', 'true'); } });
     $$('.kpi-btn', $(_crm.resumo) || document).forEach((b) => { b.onclick = () => { _crm.filtro = { ...(_crm.filtro || {}), foco: (_crm.filtro || {}).foco === b.dataset.foco ? '' : b.dataset.foco }; crmPinta(); }; });
     if (novo) box.insertBefore(novo, box.firstChild); // recoloca o card novo (já vinculado) no topo
     marcarSujo(_crm.lista); // digitar num card sem salvar bloqueia o re-render do pull
@@ -2140,9 +2242,6 @@
     const total = leads.length;
     const ativos = leads.filter(leadAtivo).length;
     const fechados = leads.filter((l) => l.estagio === 'fechado').length;
-    // quantos APARTAMENTOS os clientes fechados levaram (1 cliente pode ter levado vários)
-    const aptosFechados = leads.filter((l) => l.estagio === 'fechado')
-      .reduce((s, l) => s + ((_aptosPorCliente.get(_nrmNome(l.cliente)) || []).length || (l.unidade ? 1 : 0)), 0);
     const taxa = total ? Math.round(fechados / total * 100) : 0;
     const porCor = {};
     leads.forEach((l) => { const k = (l.empresaNome || '') + '|' + (l.corretorNome || '—'); const o = porCor[k] = porCor[k] || { corretor: l.corretorNome || '—', empresa: l.empresaNome || '', total: 0, fechados: 0 }; o.total++; if (l.estagio === 'fechado') o.fechados++; });
@@ -2166,12 +2265,12 @@
       <div class="dash-kpis">
         ${kpi(total, 'Leads totais')}
         ${kpi(ativos, 'Em aberto')}
-        ${kpi(fechados, 'Propostas fechadas', 'kpi-venda', aptosFechados ? (aptosFechados === 1 ? '1 unidade vendida' : aptosFechados + ' unidades vendidas') : '')}
+        ${kpi(fechados, 'Clientes fechados', 'kpi-venda')}
         ${kpi(taxa + '%', 'Taxa de conversão', taxa ? 'kpi-lime' : '')}
       </div>
       <div class="dash-grid">
         <div class="dash-card">
-          <div class="dash-tit">Conversão por corretor <span class="dash-sub">propostas fechadas ÷ leads</span></div>
+          <div class="dash-tit">Conversão por corretor <span class="dash-sub">clientes fechados ÷ clientes cadastrados</span></div>
           <div class="bars">${rank.length ? rank.map((r) => { const tx = r.total ? Math.round(r.fechados / r.total * 100) : 0; return `<div class="bar-row"><div class="bar-lbl" title="${esc(r.corretor + (r.empresa ? ' · ' + r.empresa : ''))}">${esc(r.corretor)}<span class="bar-emp">${r.empresa ? esc(r.empresa) : 'Domo'}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, tx)}%"></div></div><div class="bar-val">${r.fechados}/${r.total} <span class="bar-sub">${tx}%</span></div></div>`; }).join('') : '<div class="nota">sem dados ainda</div>'}</div>
         </div>
         <div class="dash-card">
@@ -2212,12 +2311,12 @@
         </div>
         ${chaves.length ? chaves.map((un) => `
           <div class="hist-grupo">
-            <div class="hist-grupo-cab">Apto ${esc(un)} <span class="hist-grupo-n">${grupos[un].length} proposta(s)</span><span class="grupo-chevron">▾</span></div>
+            <button type="button" class="hist-grupo-cab" aria-expanded="true">Apto ${esc(un)} <span class="hist-grupo-n">${grupos[un].length} proposta(s)</span><span class="grupo-chevron">▾</span></button>
             <div class="tabela-wrap"><table class="tabela">
               <thead><tr><th>Data</th><th>Cliente</th><th>Corretor</th><th>Valor</th><th>Forma</th></tr></thead>
               <tbody>${grupos[un].map((p) => `<tr>
                 <td>${fmtData(p.criadoEm)}</td>
-                <td>${esc(p.cliente)}${p.clienteTel ? '<br><span class="hist-tel">' + esc(p.clienteTel) + '</span>' : ''}</td>
+                <td><a href="${esc(rotaRegistro('proposta', p.id))}">${esc(p.cliente || 'Sem nome')}</a>${p.clienteTel ? '<br><span class="hist-tel">' + esc(p.clienteTel) + '</span>' : ''}</td>
                 <td>${esc(p.corretor || '—')}</td>
                 <td>${fmt(p.neg)}</td>
                 <td>${esc(p.formaLabel || p.forma)}</td>
@@ -2227,7 +2326,7 @@
       const sel = $('#he-cor');
       sel.innerHTML = `<option value="">Todos os corretores (${todas.length})</option>` +
         nomes.map((n) => `<option value="${esc(n)}" ${histEq.corretor === n ? 'selected' : ''}>${esc(n)} (${cont[n]})</option>`).join('');
-      $$('.hist-grupo-cab').forEach((cab) => { cab.onclick = () => cab.closest('.hist-grupo').classList.toggle('recolhido'); });
+      $$('.hist-grupo-cab').forEach((cab) => { cab.onclick = () => { const grupo = cab.closest('.hist-grupo'); grupo.classList.toggle('recolhido'); cab.setAttribute('aria-expanded', String(!grupo.classList.contains('recolhido'))); }; });
     };
     app().innerHTML = `
       <div class="crm">
@@ -2244,12 +2343,12 @@
   }
 
   async function vClientes() {
-    if (STORE.isAdmin()) { location.hash = '#/admin/clientes'; render(); return; }
+    if (STORE.isAdmin()) { location.hash = '#/admin/clientes' + (clienteFiltroAtual() ? '?cliente=' + encodeURIComponent(clienteFiltroAtual()) : ''); render(); return; }
     const ehMaster = !!(STORE.getUser() || {}).ehMaster;
     app().innerHTML = `
       <div class="crm">
         <a class="volta" href="#/home">← espelho</a>
-        <div class="crm-top"><h2>CRM</h2><button class="btn-lime" id="crm-novo">＋ novo cliente</button></div>
+        <div class="crm-top"><h2>Clientes</h2><button class="btn-lime" id="crm-novo">＋ novo cliente</button></div>${crmContextoHTML()}
         <div class="crm-filtros">
           <input id="crm-busca" placeholder="buscar cliente, telefone ou apto…" autocomplete="off">
           ${ehMaster ? '<select id="crm-cor" title="ver a carteira de um corretor"></select><a class="btn-mini crm-hist" href="#/historico">📄 histórico da equipe</a>' : ''}
@@ -2257,7 +2356,8 @@
         <div id="crm-resumo"></div>
         <div id="crm-lista"><div class="nota">carregando…</div></div>
       </div>`;
-    _crm = { resumo: '#crm-resumo', lista: '#crm-lista', selCorretor: ehMaster ? '#crm-cor' : '', admin: false, filtro: {} };
+    _crm = { resumo: '#crm-resumo', lista: '#crm-lista', selCorretor: ehMaster ? '#crm-cor' : '', admin: false, rota: location.hash, filtro: clienteFiltroAtual() ? {clienteId: clienteFiltroAtual()} : {..._crmFiltros.pessoal} };
+    $('#crm-busca').value = _crm.filtro.busca || '';
     $('#crm-novo').onclick = crmNovo;
     $('#crm-busca').oninput = (e) => { _crm.filtro.busca = e.target.value; crmPinta(); const b = $('#crm-busca'); b.focus(); b.setSelectionRange(b.value.length, b.value.length); };
     if (ehMaster) $('#crm-cor').onchange = (e) => { _crm.filtro.corretor = e.target.value; crmPinta(); };
@@ -2267,11 +2367,12 @@
   async function aClientes() {
     $('#aba-corpo').innerHTML = `
       <div class="crm-topbar"><span class="nota" style="margin:0">Todos os clientes de todos os corretores. Os vencidos aparecem no topo, em vermelho.</span></div>
-      <div class="filtros" id="crm-filtros"></div>
+      ${crmContextoHTML()}<div class="filtros" id="crm-filtros"></div>
       <div id="crm-resumo"></div>
       <div id="crm-lista"><div class="nota">carregando…</div></div>`;
-    _crm = { resumo: '#crm-resumo', lista: '#crm-lista', selCorretor: '#cf-cor', admin: true, filtro: { empresa: '', estagio: '', corretor: '', foco: '' } };
+    _crm = { resumo: '#crm-resumo', lista: '#crm-lista', selCorretor: '#cf-cor', admin: true, rota: location.hash, filtro: clienteFiltroAtual() ? {clienteId: clienteFiltroAtual()} : {..._crmFiltros.geral} };
     await STORE.pullLeads();
+    if (location.hash !== _crm.rota || !$('#crm-filtros')) return;
     const todosLeads = STORE.getLeads();
     $('#crm-resumo').innerHTML = crmDashAdmin(todosLeads); // dashboard de conversão (global, não filtrado)
     // "unidades vendidas por corretor": clicar abre os apartamentos daquele vendedor
@@ -2291,6 +2392,9 @@
       <select id="cf-emp"><option value="">Todas as empresas</option>${empresas.map((e) => `<option>${esc(e)}</option>`).join('')}</select>
       <select id="cf-cor"></select>
       <select id="cf-est"><option value="">Todos os estágios</option>${CRM_ESTAGIOS.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select>`;
+    $('#cf-busca').value = _crm.filtro.busca || '';
+    $('#cf-emp').value = _crm.filtro.empresa || '';
+    $('#cf-est').value = _crm.filtro.estagio || '';
     $('#cf-busca').oninput = (e) => { _crm.filtro.busca = e.target.value; crmPinta(); const b = $('#cf-busca'); b.focus(); b.setSelectionRange(b.value.length, b.value.length); };
     $('#cf-emp').onchange = (e) => { _crm.filtro.empresa = e.target.value; _crm.filtro.corretor = ''; crmPinta(); }; // trocar empresa zera o corretor (era de outra)
     $('#cf-cor').onchange = (e) => { _crm.filtro.corretor = e.target.value; crmPinta(); };
@@ -3280,8 +3384,9 @@
     const aptosComProp = new Set(todas.map((p) => String(p.unidade))).size;
     const valorTotal = todas.reduce((s, p) => s + (+p.neg || 0), 0);
     const ticket = nTotal ? valorTotal / nTotal : 0;
-    const comPlano = todas.filter((p) => (p.forma || '') !== 'avista').length;
-    const aVista = nTotal - comPlano;
+    const comPlano = todas.filter((p) => !['avista', 'scp'].includes(p.forma || '')).length;
+    const scpTotal = todas.filter((p) => p.forma === 'scp').length;
+    const aVista = todas.filter((p) => p.forma === 'avista').length;
     const fmtC = (v) => !v ? 'R$ 0'
       : v >= 1e6 ? 'R$ ' + (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi'
         : v >= 1e3 ? 'R$ ' + Math.round(v / 1e3).toLocaleString('pt-BR') + ' mil'
@@ -3352,8 +3457,8 @@
           </div>
           <div class="dash-card">
             <div class="dash-tit">Forma de pagamento</div>
-            <div class="seg">${comPlano ? `<div class="seg-fill seg-plano" style="width:${Math.round(comPlano / nTotal * 100)}%">${comPlano / nTotal >= 0.12 ? comPlano : ''}</div>` : ''}${aVista ? `<div class="seg-fill seg-avista" style="width:${Math.round(aVista / nTotal * 100)}%">${aVista / nTotal >= 0.12 ? aVista : ''}</div>` : ''}</div>
-            <div class="seg-leg"><span><i class="dot dot-plano"></i>Com plano <b>${comPlano}</b></span><span><i class="dot dot-avista"></i>À vista <b>${aVista}</b></span></div>
+            <div class="seg">${comPlano ? `<div class="seg-fill seg-plano" style="width:${comPlano / nTotal * 100}%">${comPlano / nTotal >= 0.12 ? comPlano : ''}</div>` : ''}${scpTotal ? `<div class="seg-fill seg-scp" style="width:${scpTotal / nTotal * 100}%">${scpTotal / nTotal >= 0.12 ? scpTotal : ''}</div>` : ''}${aVista ? `<div class="seg-fill seg-avista" style="width:${aVista / nTotal * 100}%">${aVista / nTotal >= 0.12 ? aVista : ''}</div>` : ''}</div>
+            <div class="seg-leg"><span><i class="dot dot-plano"></i>Parcelado <b>${comPlano}</b></span><span><i class="dot dot-scp"></i>SCP <b>${scpTotal}</b></span><span><i class="dot dot-avista"></i>À vista <b>${aVista}</b></span></div>
           </div>
           <div class="dash-card">
             <div class="dash-tit">Apartamentos mais procurados</div>
@@ -3377,19 +3482,19 @@
       </div>
       ${Object.keys(grupos).length ? Object.keys(grupos).sort((a, b) => String(a).padStart(5, '0') < String(b).padStart(5, '0') ? -1 : 1).map((un) => `
         <div class="hist-grupo">
-          <div class="hist-grupo-cab">Apto ${esc(un)} <span class="hist-grupo-n">${grupos[un].length} proposta(s)</span><span class="grupo-chevron">▾</span></div>
+          <button type="button" class="hist-grupo-cab" aria-expanded="true">Apto ${esc(un)} <span class="hist-grupo-n">${grupos[un].length} proposta(s)</span><span class="grupo-chevron">▾</span></button>
           <div class="tabela-wrap"><table class="tabela">
             <thead><tr><th>Data</th><th>Cliente</th><th>Corretor</th><th>Perfil</th><th>Valor</th><th>Forma</th><th></th></tr></thead>
             <tbody>${grupos[un].map((p) => `
               <tr data-busca="${esc(((p.cliente || '') + ' ' + (p.clienteTel || '') + ' ' + (p.corretor || '') + ' ' + (empresaDe(p) || '')).toLowerCase())}">
                 <td>${fmtData(p.criadoEm)}</td>
-                <td>${esc(p.cliente)}${p.clienteTel ? '<br><span class="hist-tel">' + esc(p.clienteTel) + '</span>' : ''}</td>
+                <td><a href="${esc(rotaRegistro('proposta', p.id))}">${esc(p.cliente || 'Sem nome')}</a>${p.clienteTel ? '<br><span class="hist-tel">' + esc(p.clienteTel) + '</span>' : ''}</td>
                 <td>${esc(p.corretor)}${empresaDe(p) ? '<br><span class="hist-tel">' + esc(empresaDe(p)) + '</span>' : ''}</td>
                 <td>${badgePapel(papelDe(p))}</td>
                 <td>${fmt(p.neg)}</td>
                 <td>${esc(p.formaLabel || p.forma)}</td>
                 <td class="hist-acoes">
-                  <button class="btn-mini p-abrir" data-uid="${esc(p.unidadeId)}" data-pid="${esc(p.id)}">abrir</button>
+                  <button class="btn-mini p-abrir" data-uid="${esc(p.unidadeId)}" data-pid="${esc(p.id)}">Ver proposta</button>
                   <button class="btn-mini p-del" data-id="${esc(p.id)}">excluir</button>
                 </td>
               </tr>`).join('')}</tbody>
@@ -3401,9 +3506,9 @@
     $('#h-emp').onchange = (e) => { histFiltro.empresa = e.target.value; histFiltro.corretor = ''; vAdmin('historico'); }; // troca empresa zera o corretor (podia ser de outra)
     $('#h-cor').onchange = (e) => { histFiltro.corretor = e.target.value; vAdmin('historico'); };
     if ($('#h-limpar')) $('#h-limpar').onclick = () => { histFiltro.un = ''; histFiltro.corretor = ''; histFiltro.empresa = ''; vAdmin('historico'); };
-    $$('.p-abrir').forEach((b) => { b.onclick = () => { location.hash = '#/sim/' + encodeURIComponent(b.dataset.uid) + '?p=' + encodeURIComponent(b.dataset.pid); }; }); // sem onclick inline (evita XSS via campos da proposta)
+    $$('.p-abrir').forEach((b) => { b.onclick = () => { location.hash = rotaRegistro('proposta', b.dataset.pid); }; }); // sem onclick inline (evita XSS via campos da proposta)
     $$('.p-del').forEach((b) => { b.onclick = () => { if (confirm('Excluir esta proposta do histórico?')) { STORE.excluirProposta(b.dataset.id); vAdmin('historico'); } }; });
-    $$('.hist-grupo-cab').forEach((cab) => { cab.onclick = () => cab.closest('.hist-grupo').classList.toggle('recolhido'); }); // clica p/ recolher o apto
+    $$('.hist-grupo-cab').forEach((cab) => { cab.onclick = () => { const grupo = cab.closest('.hist-grupo'); grupo.classList.toggle('recolhido'); cab.setAttribute('aria-expanded', String(!grupo.classList.contains('recolhido'))); }; }); // clica p/ recolher o apto
     // ranking de vendas: clicar no corretor abre a lista das unidades que ele fechou
     $$('.bar-clic').forEach((r) => {
       r.onclick = () => {
@@ -3429,10 +3534,12 @@
 
   // painel de ENVIOS: links de proposta enviados por WhatsApp — aberturas + respostas do cliente
   async function aEnvios() {
+    const rotaEnvios = location.hash;
     $('#aba-corpo').innerHTML = '<div class="nota">carregando envios…</div>';
     let envios = [];
     try { const r = await STORE.api('listEnvios'); envios = r.envios || []; }
     catch (e) { $('#aba-corpo').innerHTML = '<div class="aviso">Erro ao carregar: ' + esc(e.message) + '</div>'; return; }
+    if (location.hash !== rotaEnvios || !$('#aba-corpo')) return;
     envios.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0) || (String(b.em || '') < String(a.em || '') ? -1 : 1)); // nº mais alto (mais recente) no topo
     const cont = (e, t) => (e.eventos || []).filter((x) => x.tipo === t).length;
     const dt = (x) => x ? new Date(x).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -3441,12 +3548,13 @@
     const totDuv = envios.reduce((s, e) => s + cont(e, 'duvida'), 0);
     $('#aba-corpo').innerHTML = `
       <div class="hist-resumo">
-        <span class="chip">Propostas enviadas: <b>${envios.length}</b></span>
+        <span class="chip">Envios: <b>${envios.length}</b></span>
         <span class="chip">Aberturas: <b>${totViews}</b></span>
-        <span class="chip">✅ Interesses: <b>${totInt}</b></span>
+        <span class="chip">✅ Respostas de interesse: <b>${totInt}</b></span>
         <span class="chip">💬 Dúvidas: <b>${totDuv}</b></span>
         <button class="btn-mini" id="env-refresh">atualizar</button>
       </div>
+      <p class="nota">Aberturas e respostas são interações, não pessoas únicas. Use a referência junto ao número para distinguir envios antigos.</p>
       ${envios.length ? `<div class="filtros"><input id="env-busca" placeholder="buscar por nº, cliente, apto ou corretor…"></div>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Nº</th><th>Enviado</th><th>Cliente</th><th>Apto</th><th>Corretor</th><th>Aberturas</th><th>Última</th><th>Cliente respondeu</th><th></th></tr></thead>
@@ -3455,15 +3563,15 @@
           const resp = [inter ? '<span class="perfil perfil-adm">✅ interesse</span>' : '', duv ? '<span class="perfil perfil-cor">💬 dúvida</span>' : ''].filter(Boolean).join(' ') || '<span class="hist-tel">—</span>';
           const nn = e.numero ? '#' + String(e.numero).padStart(3, '0') : '—';
           return `<tr data-busca="${esc((nn + ' ' + String(e.numero || '') + ' ' + (e.cliente || '') + ' ' + (e.unidade || '') + ' ' + (e.corretor || '')).toLowerCase())}">
-            <td><b>${nn}</b></td>
+            <td><b>${nn}</b><small class="hist-tel">Ref. ${esc(String(e.id).slice(-8))}</small></td>
             <td>${dt(e.em)}</td>
-            <td>${esc(e.cliente || '—')}</td>
+            <td>${e.leadId && STORE.getLeads().some((l) => l.id === e.leadId) ? `<a href="${esc(rotaRegistro('cliente', e.leadId))}">${esc(e.cliente || 'Ver cliente')}</a>` : `${esc(e.cliente || '—')}<small class="vinculo-pendente">Cliente sem vínculo</small>`}</td>
             <td>${esc(e.unidade || '—')}</td>
             <td>${esc(e.corretor || '—')}${e.empresa ? '<br><span class="hist-tel">' + esc(e.empresa) + '</span>' : ''}</td>
             <td><b>${e.views || 0}</b>${pdf ? ' <span class="hist-tel">· ' + pdf + '× PDF</span>' : ''}</td>
             <td>${dt(e.lastView)}</td>
             <td>${resp}</td>
-            <td><button class="btn-mini env-ver" data-id="${esc(e.id)}">ver link</button> <button class="btn-mini env-copy" data-id="${esc(e.id)}">📋 copiar</button>${STORE.isAdmin() ? ' <button class="btn-mini env-del" data-id="' + esc(e.id) + '">✕</button>' : ''}</td>
+            <td class="env-acoes">${STORE.getPropostas().some((p) => p.id === e.propostaId) ? `<a class="btn-mini" href="${esc(rotaRegistro('proposta', e.propostaId))}">Proposta original</a>` : '<small class="vinculo-pendente">Proposta sem vínculo</small>'}<button class="btn-mini env-ver" data-id="${esc(e.id)}">Prévia</button> <button class="btn-mini env-copy" data-id="${esc(e.id)}">📋 copiar</button>${STORE.isAdmin() ? ' <button class="btn-mini env-del" data-id="' + esc(e.id) + '">✕</button>' : ''}</td>
           </tr>`;
         }).join('')}</tbody></table></div>`
       : '<div class="vazio">Nenhum link enviado ainda. Os links criados no botão <b>“Enviar link no WhatsApp”</b> aparecem aqui com quantas vezes o cliente abriu e se respondeu (interesse/dúvida).</div>'}`;
@@ -3593,8 +3701,9 @@
     const registrarScp = async (proposta) => {
       const p = proposta || scpProposta(u, base, _scp, cfg, ator());
       if (!p.cliente) return null;
-      STORE.salvarProposta(p);
-      return crmRegistrar({ cliente: p.cliente, clienteTel: p.clienteTel, unidade: u.unidade, estagio: 'proposta' });
+      const cr = await crmRegistrar({ cliente: p.cliente, clienteTel: p.clienteTel, unidade: u.unidade, estagio: 'proposta' });
+      STORE.salvarProposta({ ...p, ...(cr && cr.id ? {leadId: cr.id} : {}) });
+      return cr;
     };
     $('#scp-pdf').onclick = async () => {
       if (!validaScp()) return;
@@ -3794,14 +3903,24 @@
       }
     }
     if (h === '#/predio') { vPredio(); return; }
-    if (h === '#/clientes') { vClientes(); return; }
+    if (h.split('?')[0] === '#/clientes') { vClientes(); return; }
+    const registro = h.match(/^#\/(proposta|cliente|conexoes)\/([^?]+)(?:\?.*)?$/);
+    if (registro) {
+      let id; try { id = decodeURIComponent(registro[2]); } catch (_) { app().innerHTML = '<p class="vazio">Endereço inválido.</p>'; return; }
+      if (registro[1] === 'proposta') vProposta(id);
+      else if (registro[1] === 'cliente') vCliente(id);
+      else vConexoesUnidade(id);
+      return;
+    }
     if (h === '#/scp') { if (ehLoginDomo()) vScp(); else location.hash = '#/home'; return; } // SCP: só o cadastro da Domo
     if (h === '#/retorno') { if (STORE.isAdmin() || ehLoginDomo()) vRetorno(); else location.hash = '#/home'; return; } // Retorno: análise interna adm/Domo
     if (h === '#/historico') { vHistoricoEquipe(); return; }
-    const mSim = h.match(/^#\/sim\/([^?]+)(\?p=(.+))?$/);
+    const mSim = h.match(/^#\/sim\/([^?]+)(?:\?(.*))?$/);
     if (mSim) {
       const uid = decodeURIComponent(mSim[1]);
-      if (STORE.isAdmin()) vSim(uid, mSim[3] ? decodeURIComponent(mSim[3]) : null);
+      const params = new URLSearchParams(mSim[2] || '');
+      if (params.get('p')) { vProposta(params.get('p')); return; }
+      if (STORE.isAdmin()) vSim(uid, params.get('editar'));
       else vUnidade(uid); // corretor: tela estática (sem cálculo de venda)
       return;
     }
@@ -3810,7 +3929,13 @@
     vHome();
   }
 
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+  document.addEventListener('click', (e) => {
+    if (!_sujo || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const a = e.target.closest && e.target.closest('a[href^="#/"]');
+    if (!a || a.target === '_blank' || a.matches('.admin .aba, .admin .volta') || a.getAttribute('href') === location.hash) return;
+    if (!confirm('Há alterações não salvas. Sair sem salvar?')) e.preventDefault();
+  });
   window.addEventListener('beforeunload', (e) => { if (_sujo) { e.preventDefault(); e.returnValue = ''; } }); // fechar/recarregar com edição pendente
   STORE.on('sync', atualizaSync);
   // leads mudaram (pull/sync trouxe novidade) → repinta só a lista do CRM, sem re-render da rota

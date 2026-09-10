@@ -750,3 +750,75 @@ button.amen-link-chip:hover { background: var(--lime-b); color: #000; }
 .btn-lista-pdf { background: #1a1a1a; color: var(--lime-b); border: 1px solid #1a1a1a; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
 .btn-lista-pdf:hover { background: #000; border-color: var(--lime-b); }
 .btn-lista-pdf:disabled { opacity: .6; cursor: default; }
+
+/* Consulta comercial: contexto contínuo, sem alterar a identidade Diamond. */
+.marca-home { display: inline-flex; align-items: center; flex-shrink: 0; min-height: 40px; }
+a.lin { text-decoration: none; color: inherit; }
+button.lead-cab, button.hist-grupo-cab { width: 100%; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; }
+.lead-cab { min-height: 60px; }
+.registro { max-width: 1080px; margin: 0 auto; padding-bottom: 32px; }
+.registro-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 10px 0 20px; }
+.registro-top h1 { font-size: clamp(24px, 3vw, 34px); line-height: 1.18; margin: 6px 0 8px; overflow-wrap: anywhere; }
+.registro-top p { color: #575757; line-height: 1.5; }
+.registro-kicker { font-size: 12px; font-weight: 700; color: #626262; letter-spacing: .035em; }
+.registro-valor { background: #171717; color: var(--lime-b); border-radius: 14px; padding: 18px 22px; flex-shrink: 0; }
+.registro-valor small { display: block; color: #d4d4d4; font-size: 12px; margin-bottom: 6px; }
+.registro-valor strong { font-size: clamp(24px, 2.5vw, 32px); font-variant-numeric: tabular-nums; }
+.registro-grade { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; align-items: start; }
+.registro .painel { padding: 22px; margin-bottom: 16px; min-width: 0; }
+.registro h2 { font-size: 18px; margin: 0 0 16px; }
+.registro h3 { font-size: 15px; margin: 22px 0 10px; }
+.registro-dados { display: grid; gap: 0; }
+.registro-dados > div { display: flex; justify-content: space-between; gap: 18px; padding: 11px 0; border-bottom: 1px solid #eee; }
+.registro-dados dt { color: #666; font-size: 13px; }
+.registro-dados dd { text-align: right; font-size: 14px; font-weight: 650; overflow-wrap: anywhere; min-width: 0; }
+.registro-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.registro-acoes .btn-mini, .registro .btn-lime, .registro .volta, .lead-acoes a, .env-acoes a { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-family: inherit; }
+.registro-lista { display: grid; gap: 10px; }
+.registro-item { display: flex; align-items: center; gap: 14px; padding: 16px; border: 1px solid var(--edge); border-radius: 12px; text-decoration: none; color: var(--ink); min-width: 0; }
+a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
+.registro-icone { width: 36px; height: 36px; border-radius: 10px; background: var(--lime-s); display: grid; place-items: center; flex-shrink: 0; }
+.registro-texto { flex: 1; min-width: 0; }
+.registro-texto strong { font-size: 14px; display: block; overflow-wrap: anywhere; }
+.registro-texto small { font-size: 12px; line-height: 1.5; color: #666; display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.registro-item > b { font-size: 15px; white-space: nowrap; }
+.registro-item .registro-acoes { margin: 0; }
+.registro-status { font-size: 12px; color: #615728; background: #f7f3df; border-radius: 7px; padding: 8px 10px; }
+.registro-contexto { display: flex; gap: 12px; justify-content: space-between; padding: 12px 16px; margin-bottom: 14px; background: var(--lime-s); border: 1px solid #d8debb; border-radius: 10px; font-size: 13px; }
+.registro-contexto a { font-weight: 700; }
+.registro-proximo { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.registro .painel > p { line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.uni-conexoes { padding-top: 16px; border-top: 1px solid var(--edge); }
+.vinculo-pendente { display: block; font-size: 11px; color: #80631a; margin: 5px 0; }
+.env-acoes { min-width: 200px; }
+.env-acoes .btn-mini { display: inline-flex; margin: 3px 4px 3px 0; text-decoration: none; align-items: center; }
+#app .btn-mini, #app .btn-lime, #app .btn, #app .aba, #app .btn-crm, #app button.chip, #app .btn-baixar, #app .segb { min-height: 40px; }
+.topo-acao, #topo .btn-mini { display: inline-flex; align-items: center; min-height: 36px; }
+:where(a, button, input, select, textarea, summary):focus-visible { outline: 3px solid #617000; outline-offset: 3px; }
+#topo :focus-visible, .espelho-top :focus-visible, .chips :focus-visible { outline-color: var(--lime-b); }
+@media (max-width: 700px) {
+  .registro-grade { grid-template-columns: 1fr; gap: 0; }
+  .registro-top { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .registro-valor { width: 100%; }
+  .registro .painel { padding: 17px; }
+  .registro-item { flex-wrap: wrap; padding: 13px; gap: 10px; }
+  .registro-item > .registro-texto { flex-basis: calc(100% - 48px); }
+  .registro-item > b { margin-left: 46px; }
+  .registro-item > .registro-acoes { margin-left: 46px; }
+  .registro-dados > div { gap: 12px; }
+  .registro-dados dd { max-width: 60%; }
+  .registro .nota { font-size: 12px; }
+  .crm-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .crm-kpis .kpi { padding: 12px; text-align: left; }
+  .crm-kpis .kpi-v { font-size: 23px; }
+  .crm-kpis .kpi-l { font-size: 11px; line-height: 1.4; }
+  #app .btn-mini, #app .btn-lime, #app .btn, #app .aba, #app .btn-crm, #app button.chip, #app .btn-baixar, #app .segb { min-height: 44px; }
+  .espelho-top { flex-wrap: wrap; }
+  .registro-acoes .btn-mini { flex: 1 1 auto; }
+  .topo-in { flex-wrap: wrap; }
+  .topo-dir { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+  .topo-acao, #topo .btn-mini { min-height: 40px; }
+}
+
+.seg-scp, .dot-scp { background: #57788b; color: white; }
+.seg-leg { flex-wrap: wrap; }
