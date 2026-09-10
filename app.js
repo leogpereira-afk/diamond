@@ -11,7 +11,11 @@
   // ---------- formatação ----------
   const fmt = (v, dec = 0) => (v == null || isNaN(v)) ? '—'
     : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: dec, maximumFractionDigits: dec });
-  const fmtData = (d) => d instanceof Date ? d.toLocaleDateString('pt-BR') : (d ? new Date(d).toLocaleDateString('pt-BR') : '—');
+  const fmtData = (d) => {
+    if (!d) return '—';
+    const data = d instanceof Date ? d : new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? d + 'T12:00:00' : d);
+    return isNaN(data) ? '—' : data.toLocaleDateString('pt-BR');
+  };
   const pct = (v) => ((v || 0) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%';
   const pctStr = (v) => (+v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'; // v já em pontos percentuais (ex.: 20)
   const telDigits = (t) => String(t || '').replace(/\D/g, '');
@@ -102,8 +106,9 @@
     if (st.conflito) toast('Outro acesso salvou antes. Atualizei para a versão da nuvem — confira o preço.', true);
     if (st.descartado) toast('⚠ Uma alteração não foi aceita pela nuvem. Abra a unidade e salve de novo.', true);
     const el = $('#sync-badge'); if (!el) return;
-    const erroTxt = st.motivo === 'auth' ? 'sessão expirou' : 'não salvou';
+    const erroTxt = st.motivo === 'auth' ? 'sessão expirou' : st.motivo === 'leitura' ? 'atualização falhou' : 'não salvou';
     const map = {
+      checking: ['↻', 'verificando nuvem', 'pend'],
       ok: ['●', 'nuvem ok', 'ok'], pending: ['↻', st.pendentes + ' pendente(s)', 'pend'],
       offline: ['✕', 'offline', 'off'], erro: ['⚠', erroTxt, 'erro'],
     };
@@ -113,8 +118,11 @@
     el.title = st.estado === 'erro'
       ? (st.motivo === 'auth'
           ? 'Sua sessão expirou. Toque aqui para tentar reenviar; se não resolver, saia e entre de novo.'
+          : st.motivo === 'leitura' ? 'Não foi possível buscar atualizações. Os dados exibidos podem estar desatualizados. Toque para tentar novamente.'
           : 'Uma alteração não subiu para a nuvem. Toque para tentar de novo.')
-      : '';
+      : (st.ultimaAtualizacao ? 'Última atualização completa: ' + new Date(st.ultimaAtualizacao).toLocaleString('pt-BR') : 'Aguardando a primeira atualização completa.');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-label', txt + '. ' + el.title);
     el.style.cursor = st.estado === 'erro' ? 'pointer' : '';
     el.onclick = st.estado === 'erro'
       ? async () => { toast('Reenviando alterações…'); await STORE.retentarTudo(); await STORE.pull(render); }
@@ -750,7 +758,7 @@
 
     const montaP = (comPlano) => {
       const criadoEm = d.criadoEm || (d.criadoEm = new Date().toISOString());
-      const dataProposta = criadoEm.slice(0, 10); // YYYY-MM-DD — base do cronograma ao reabrir no simulador
+      const dataProposta = STORE.diaLocalISO(criadoEm); // mesma data local usada no cronograma inicial
       return {
         id: d.propostaId || (d.propostaId = 'p-' + Date.now() + '-' + u.unidade),
         unidadeId: u.id, unidade: u.unidade, area: u.area,
@@ -3498,6 +3506,20 @@
       p12: valor / 12, pNom, p13: pNom * Math.pow(1 + incc, 1), p24: pNom * Math.pow(1 + incc, 12),
       marcado: o.desc10 || o.p12 || o.p2412 || corrPct > 0 };
   }
+  function scpProposta(u, base, opcoes, cfg, usr) {
+    const nome = String(opcoes.cliente || '').trim();
+    const normalizado = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const s = scpCalcular(base, opcoes, cfg);
+    return {
+      id: 'p-scp-' + u.unidade + '-' + normalizado,
+      unidadeId: u.id, unidade: u.unidade, area: u.area,
+      cliente: nome, clienteTel: String(opcoes.tel || '').trim(),
+      corretor: usr.nome, corretorUsuario: usr.usuario, corretorTel: usr.telefone || '', corretorPapel: usr.papel, corretorEmpresa: usr.empresa || '',
+      neg: s.valor, forma: 'scp', formaLabel: 'SCP',
+      inp: { forma: 'scp', desc10: !!opcoes.desc10, p12: !!opcoes.p12, p2412: !!opcoes.p2412, corr: opcoes.corr },
+      criadoEm: new Date().toISOString(),
+    };
+  }
   function scpResumoHTML(base, o, cfg) {
     if (!base) return '<div class="nota">Escolha a unidade para calcular.</div>';
     const s = scpCalcular(base, o, cfg); const idx = esc((cfg && cfg.indice) || 'INCC');
@@ -3568,20 +3590,11 @@
     $('#scp-tel').oninput = (e) => { _scp.tel = e.target.value; };
     const validaScp = () => { if (!u) { toast('Escolha a unidade primeiro.', true); return false; } if (!scpCalcular(base, _scp, cfg).marcado) { toast('Marque ao menos uma opção.', true); return false; } return true; };
     // registra a proposta SCP no Histórico (salvarProposta) E no CRM (crmRegistrar) — só se houver nome do cliente
-    const registrarScp = async () => {
-      const nome = _scp.cliente.trim(); if (!nome) return null;
-      const usr = ator(); const s = scpCalcular(base, _scp, cfg);
-      const nrm = (x) => (x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      STORE.salvarProposta({
-        id: 'p-scp-' + u.unidade + '-' + nrm(nome).replace(/[^a-z0-9]/g, ''), // id estável (formato p-… exigido pelo servidor); reenvio atualiza, não duplica
-        unidadeId: u.id, unidade: u.unidade, area: u.area,
-        cliente: nome, clienteTel: _scp.tel.trim(),
-        corretor: usr.nome, corretorUsuario: usr.usuario, corretorTel: usr.telefone || '', corretorPapel: usr.papel, corretorEmpresa: usr.empresa || '',
-        neg: s.valor, forma: 'scp', formaLabel: 'SCP',
-        inp: { forma: 'scp', desc10: _scp.desc10, p12: _scp.p12, p2412: _scp.p2412, corr: _scp.corr },
-        criadoEm: new Date().toISOString(),
-      });
-      return crmRegistrar({ cliente: nome, clienteTel: _scp.tel, unidade: u.unidade, estagio: 'proposta' });
+    const registrarScp = async (proposta) => {
+      const p = proposta || scpProposta(u, base, _scp, cfg, ator());
+      if (!p.cliente) return null;
+      STORE.salvarProposta(p);
+      return crmRegistrar({ cliente: p.cliente, clienteTel: p.clienteTel, unidade: u.unidade, estagio: 'proposta' });
     };
     $('#scp-pdf').onclick = async () => {
       if (!validaScp()) return;
@@ -3593,15 +3606,17 @@
     // WhatsApp: gera o PDF → hospeda → manda saudação + resumo + LINK (o cliente abre a landing com o PDF)
     $('#scp-whats').onclick = async () => {
       if (!validaScp()) return;
+      if (!_scp.cliente.trim()) { toast('Preencha o nome do cliente para vincular a proposta.', true); return; }
       if (!_scp.tel.trim()) { toast('Preencha o telefone do cliente para enviar no WhatsApp.', true); return; }
       const win = window.open('about:blank', '_blank'); // pré-abre no clique (evita bloqueio de popup)
       const btn = $('#scp-whats'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'gerando…';
       try {
         const usr = ator();
         const { doc } = await gerarPdfScp(u, base, _scp, cfg, usr, _scp.cliente.trim(), _scp.tel.trim());
-        const cr = await registrarScp(); // Histórico + CRM
+        const proposta = scpProposta(u, base, _scp, cfg, usr);
+        const cr = await registrarScp(proposta); // Histórico + CRM compartilham o mesmo identificador
         const base64 = doc.output('datauristring').split(',')[1];
-        const link = await STORE.enviarPropostaPdf(base64, { unidade: u.unidade, valor: base, area: u.area || 0, andar: u.andar, cliente: _scp.cliente, corretor: usr.nome, corretorTel: usr.telefone, empresa: usr.empresa, propostaId: 'scp-' + Date.now() + '-' + u.unidade, leadId: (cr && cr.id) || '' });
+        const link = await STORE.enviarPropostaPdf(base64, { unidade: u.unidade, valor: proposta.neg, area: u.area || 0, andar: u.andar, cliente: proposta.cliente, corretor: usr.nome, corretorTel: usr.telefone, empresa: usr.empresa, propostaId: proposta.id, leadId: (cr && cr.id) || '' });
         const saud = _scp.cliente.trim() ? `Olá ${_scp.cliente.trim()}! 😊 ` : '';
         const msg = saud + scpMsgTexto(u.unidade, base, _scp, cfg) + `\n\n📄 Abra a proposta completa aqui: ${link}` + (usr.nome ? `\n\nQualquer dúvida, estou à disposição!\n${usr.nome}${usr.telefone ? ' — ' + usr.telefone : ''}` : '');
         const url = 'https://wa.me/' + telWa(_scp.tel) + '?text=' + encodeURIComponent(msg);

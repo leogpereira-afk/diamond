@@ -4,6 +4,7 @@ const STORE = (() => {
   const API_URL = window.API_BASE + '/dmd-api'; // Supabase Edge Function (antes: /.netlify/functions/api)
   const K = { un: 'dv_unidades', cfg: 'dv_cfg', user: 'dv_user', fila: 'dv_fila', last: 'dv_lastsync', prop: 'dv_propostas', usuarios: 'dv_usuarios', leads: 'dv_leads', reservas: 'dv_reservas' };
   let _syncing = false;
+  let _erroLeitura = null;
   const _flagged = new Set();
   const _falhas = {};
   let _ultimoErro = null; // { tipo:'descartado'|'auth' } — alteração que NÃO subiu; some quando um item volta a sincronizar
@@ -29,14 +30,21 @@ const STORE = (() => {
     const sess = getUser();
     const payload = { action, ...body };
     if (sess && !payload.auth) payload.auth = { usuario: sess.usuario, senhaHash: sess.senhaHash };
-    const r = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-token': window.APP_TOKEN },
-      body: JSON.stringify(payload),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) { const e = new Error(data.erro || ('HTTP ' + r.status)); e.status = r.status; throw e; }
-    return data;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const r = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-token': window.APP_TOKEN },
+        body: JSON.stringify(payload), signal: controller.signal,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { const e = new Error(data.erro || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+      return data;
+    } catch (e) {
+      if (controller.signal.aborted) { const erro = new Error('A nuvem demorou para responder. Tente novamente.'); erro.status = 408; throw erro; }
+      throw e;
+    } finally { clearTimeout(timeout); }
   }
 
   // ---------- sessão (localStorage = manter conectado; sessionStorage = só nesta aba) ----------
@@ -154,9 +162,9 @@ const STORE = (() => {
   async function listEnvios() { const r = await api('listEnvios', { comoCorretor: _como() }); return r.envios || []; }
   // ---------- pedidos de reserva pendentes (todos veem: é o aviso do espelho) ----------
   const getReservas = () => lsGet(K.reservas, []);
-  async function pullReservas() {
+  async function pullReservas(propagarErro = false) {
     if (!navigator.onLine || !getUser()) return getReservas();
-    try { const r = await api('listReservas'); lsSet(K.reservas, r.reservas || []); emit('dados', { tipo: 'reservas' }); } catch (e) {}
+    try { const r = await api('listReservas'); lsSet(K.reservas, r.reservas || []); emit('dados', { tipo: 'reservas' }); } catch (e) { _erroLeitura = e; emit('sync', status()); if (propagarErro) throw e; }
     return getReservas();
   }
   async function pedirReserva(dados, mesmoAssim) {
@@ -195,7 +203,7 @@ const STORE = (() => {
     return true;
   }
   // puxa os leads do servidor p/ o espelho local (escopo = corretor ativo; o servidor filtra)
-  async function pullLeads() {
+  async function pullLeads(propagarErro = false) {
     const s = getUser(); if (!s || !navigator.onLine) return getLeads();
     if (s.papel !== 'admin' && !_como()) return getLeads(); // empresa sem corretor escolhido: nada a puxar
     try {
@@ -211,7 +219,7 @@ const STORE = (() => {
       const recente = (l) => (agora - Date.parse(l.atualizadoEm || l.criadoEm || 0)) < 120000;
       lsSet(K.leads, getLeads().filter((l) => vistas.has(l.id) || upPend.has(l.id) || delPend.has(l.id) || recente(l)));
       emit('dados', { tipo: 'leads' });
-    } catch (e) { /* offline/transitório: fica com o espelho local */ }
+    } catch (e) { _erroLeitura = e; emit('sync', status()); if (propagarErro) throw e; }
     return getLeads();
   }
 
@@ -549,11 +557,12 @@ const STORE = (() => {
 
   // ---------- sync ----------
   function status() {
-    const n = filaGet().length;
-    const travados = _flagged.size;
-    if (!navigator.onLine) return { estado: 'offline', pendentes: n, travados };
-    if (travados || _ultimoErro) return { estado: 'erro', pendentes: n, travados, motivo: _ultimoErro ? _ultimoErro.tipo : 'auth' };
-    return n ? { estado: 'pending', pendentes: n, travados: 0 } : { estado: 'ok', pendentes: 0, travados: 0 };
+    const base = { pendentes: filaGet().length, travados: _flagged.size, ultimaAtualizacao: lsGet(K.last, null) };
+    if (!navigator.onLine) return { ...base, estado: 'offline' };
+    if (base.travados || _ultimoErro) return { ...base, estado: 'erro', motivo: _ultimoErro ? _ultimoErro.tipo : 'auth' };
+    if (_erroLeitura) return { ...base, estado: 'erro', motivo: [401, 403].includes(_erroLeitura.status) ? 'auth' : 'leitura' };
+    if (base.pendentes) return { ...base, estado: 'pending' };
+    return { ...base, estado: base.ultimaAtualizacao ? 'ok' : 'checking' };
   }
   // re-tenta tudo, inclusive o que foi barrado por auth (401/403) — usar após re-login
   function retentarTudo() { _flagged.clear(); _ultimoErro = null; return trySync(); }
@@ -662,30 +671,34 @@ const STORE = (() => {
         }
       }
 
-      // propostas
-      const delPropPend = new Set(filaInicio.filter((x) => x.action === 'delProposta').map((x) => x.id));
-      let afterP = null; const vistasP = new Set();
-      for (let pg = 0; pg < 50; pg++) {
-        const r = await api('listPropostas', { after: afterP, comoCorretor: _como() }); // servidor escopa: master vê a equipe, corretor só as suas
-        for (const p of r.propostas) {
-          vistasP.add(p.id);
-          if (delPropPend.has(p.id)) continue;
-          aplicaProposta(p);
+      // Clientes acessam somente o espelho; suas credenciais não abrem o CRM.
+      if (getUser().papel !== 'cliente') {
+        // propostas
+        const delPropPend = new Set(filaInicio.filter((x) => x.action === 'delProposta').map((x) => x.id));
+        let afterP = null; const vistasP = new Set();
+        for (let pg = 0; pg < 50; pg++) {
+          const r = await api('listPropostas', { after: afterP, comoCorretor: _como() }); // servidor escopa: master vê a equipe, corretor só as suas
+          for (const p of r.propostas) {
+            vistasP.add(p.id);
+            if (delPropPend.has(p.id)) continue;
+            aplicaProposta(p);
+          }
+          if (!r.nextAfter) break;
+          afterP = r.nextAfter;
         }
-        if (!r.nextAfter) break;
-        afterP = r.nextAfter;
+        const upsertsPropPend = new Set(filaGet().filter((x) => x.action === 'upsertProposta').map((x) => x.proposta.id));
+        const listaP = getPropostas().filter((p) => vistasP.has(p.id) || upsertsPropPend.has(p.id) || delPropPend.has(p.id));
+        lsSet(K.prop, listaP);
+
+        await pullLeads(true); // CRM (escopado pelo corretor ativo)
+        await pullReservas(true); // pedidos de reserva pendentes (aviso do espelho)
+
       }
-      const upsertsPropPend = new Set(filaGet().filter((x) => x.action === 'upsertProposta').map((x) => x.proposta.id));
-      const listaP = getPropostas().filter((p) => vistasP.has(p.id) || upsertsPropPend.has(p.id) || delPropPend.has(p.id));
-      lsSet(K.prop, listaP);
-
-      await pullLeads(); // CRM (escopado pelo corretor ativo)
-      await pullReservas(); // pedidos de reserva pendentes (aviso do espelho)
-
+      _erroLeitura = null;
       lsSet(K.last, now());
       if (mudou && onRefresh) onRefresh();
       emit('sync', status());
-    } catch (e) { /* offline/erro transitório */ }
+    } catch (e) { _erroLeitura = e; emit('sync', status()); }
   }
 
   // ---------- ciclo ----------

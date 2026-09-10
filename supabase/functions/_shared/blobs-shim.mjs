@@ -25,16 +25,22 @@ function storeKv(store) {
       const { error } = await sb.from('dmd_kv').upsert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
       if (error) throw new Error('kv set ' + store + '/' + key + ': ' + error.message);
     },
+    async insertJSON(key, val) {
+      const { error } = await sb.from('dmd_kv').insert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
+      if (error && error.code === '23505') return false;
+      if (error) throw new Error('kv insert ' + store + '/' + key + ': ' + error.message);
+      return true;
+    },
     async delete(key) {
       const { error } = await sb.from('dmd_kv').delete().eq('store', store).eq('key', key);
       if (error) throw new Error('kv del ' + store + '/' + key + ': ' + error.message);
     },
-    async list() {
+    async list({ prefix = '' } = {}) {
       const keys = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await sb.from('dmd_kv').select('key').eq('store', store).order('key').range(from, from + 999);
         if (error) throw new Error('kv list ' + store + ': ' + error.message);
-        (data || []).forEach((r) => keys.push(r.key));
+        (data || []).forEach((r) => { if (r.key.startsWith(prefix)) keys.push(r.key); });
         if (!data || data.length < 1000) break;
       }
       return { blobs: keys.map((key) => ({ key })) };
@@ -59,12 +65,12 @@ function storeBucket(store) {
     async delete(key) {
       await sb.storage.from(BUCKET).remove([path(key)]); // best-effort, igual ao delFoto
     },
-    async list() {
+    async list({ prefix = '' } = {}) {
       const keys = [];
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await sb.storage.from(BUCKET).list(store, { limit: 1000, offset });
         if (error) throw new Error('bucket list ' + store + ': ' + error.message);
-        (data || []).forEach((f) => { if (f.name.endsWith('.json')) keys.push(f.name.slice(0, -5)); });
+        (data || []).forEach((f) => { if (f.name.endsWith('.json') && f.name.slice(0, -5).startsWith(prefix)) keys.push(f.name.slice(0, -5)); });
         if (!data || data.length < 1000) break;
       }
       return { blobs: keys.map((key) => ({ key })) };

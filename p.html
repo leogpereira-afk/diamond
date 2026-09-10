@@ -57,6 +57,7 @@
   var id = par.get('id') || '';
   if (!/^pp-[a-z0-9]+$/i.test(id)) { aviso('Link incompleto. Peça ao corretor para reenviar a proposta.'); return; }
   var SELF = API + encodeURIComponent(id);
+  var preview = par.get('preview') === '1';
 
   fetch(SELF + '?dados=1').then(function (r) {
     if (!r.ok) throw new Error(r.status === 404 ? 'Proposta não encontrada — o link pode ter sido removido.' : 'Não consegui carregar sua proposta agora. Tente de novo em instantes.');
@@ -91,33 +92,60 @@
       + '<div class="oi">Olá, <span>' + cli + '</span>! 👋</div>'
       + '<div class="un">Sua proposta da <b>unidade ' + esc(d.unidade || '') + '</b> está pronta:</div>'
       + teaser
-      + '<a class="btn btn-pdf" href="' + esc(SELF) + '?pdf=1" target="_blank" rel="noopener">📄 Ver proposta completa (PDF)</a>'
+      + '<a class="btn btn-pdf" href="' + esc(SELF + '?pdf=1' + (preview ? '&preview=1' : '')) + '" target="_blank" rel="noopener">📄 Ver proposta completa (PDF)</a>'
       + validade
       + '<div class="q">O que você achou? Responda ao corretor:</div>'
       + '<div class="acoes" id="acoes">'
       +   '<button class="btn btn-sim" data-acao="interesse">✅ Tenho interesse</button>'
       +   '<button class="btn btn-duv" data-acao="duvida">💬 Tirar dúvida</button>'
       + '</div>'
-      + '<div class="ok" id="ok">Perfeito! ' + cor + ' foi avisado e já vai te chamar aqui no WhatsApp. 🎉</div>'
+      + '<div id="resposta-erro" role="alert" style="color:#f4a79c;margin-top:12px"></div>'
+      + '<div class="ok" id="ok" role="status"></div>'
       + '</div>'
       + (d.logoUri ? '<div class="imob-logo"><span>apresentado por</span><img src="' + esc(d.logoUri) + '" alt="' + emp + '"></div>' : '')
       + '<div class="foot">' + (d.numero ? 'Proposta nº ' + String(d.numero).padStart(3, '0') + ' · ' : '') + 'enviada por ' + cor + (emp ? ' · ' + emp : '') + '</div>';
 
-    // Resposta do cliente: grava no servidor e leva para o WhatsApp do corretor.
-    // fetch com keepalive (e não sendBeacon): o beacon manda Content-Type que
-    // exige verificação prévia entre domínios, e ela ele não sabe fazer.
-    Array.prototype.forEach.call(document.querySelectorAll('[data-acao]'), function (b) {
-      b.onclick = function () {
-        var t = b.getAttribute('data-acao');
-        try { fetch(SELF, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: t }), keepalive: true }); } catch (e) {}
-        document.getElementById('acoes').style.display = 'none';
-        var q = document.querySelector('.q'); if (q) q.style.display = 'none';
-        document.getElementById('ok').style.display = 'block';
-        if (d.whats) {
-          var m = t === 'duvida'
-            ? 'Olá! Tenho uma dúvida sobre a proposta da unidade ' + (d.unidade || '') + ' do Edifício Diamond.'
-            : 'Olá! Tenho interesse na unidade ' + (d.unidade || '') + ' do Edifício Diamond. Podemos conversar?';
-          setTimeout(function () { location.href = 'https://wa.me/' + d.whats + '?text=' + encodeURIComponent(m); }, 700);
+    if (preview) {
+      document.getElementById('acoes').style.display = 'none';
+      var pergunta = document.querySelector('.q');
+      if (pergunta) pergunta.textContent = 'Prévia interna · esta visita não registra interesse nem abertura do PDF.';
+      return;
+    }
+    // Confirma somente depois que o servidor registrou a resposta.
+    var enviando = false;
+    var botoes = Array.prototype.slice.call(document.querySelectorAll('[data-acao]'));
+    botoes.forEach(function (b) {
+      b.onclick = async function () {
+        if (enviando) return;
+        enviando = true;
+        botoes.forEach(function (botao) { botao.disabled = true; });
+        var erro = document.getElementById('resposta-erro');
+        erro.textContent = '';
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 20000);
+        try {
+          var t = b.getAttribute('data-acao');
+          var resposta = await fetch(SELF, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: t }), signal: controller.signal });
+          var dados = await resposta.json().catch(function () { return {}; });
+          if (!resposta.ok || dados.ok !== true) throw new Error(dados.erro || 'Não foi possível registrar sua resposta. Tente novamente.');
+          document.getElementById('acoes').style.display = 'none';
+          var q = document.querySelector('.q'); if (q) q.style.display = 'none';
+          var ok = document.getElementById('ok');
+          ok.style.display = 'block';
+          ok.innerHTML = 'Sua resposta foi registrada para ' + cor + '.';
+          var whats = String(d.whats || '').replace(/\D/g, '');
+          if (whats) {
+            var m = t === 'duvida'
+              ? 'Olá! Tenho uma dúvida sobre a proposta da unidade ' + (d.unidade || '') + ' do Edifício Diamond.'
+              : 'Olá! Tenho interesse na unidade ' + (d.unidade || '') + ' do Edifício Diamond. Podemos conversar?';
+            ok.innerHTML += '<p style="font-size:14px;font-weight:400;margin:12px 0">Para conversar agora, abra o WhatsApp e envie a mensagem.</p><a class="btn btn-sim" target="_blank" rel="noopener" href="https://wa.me/' + whats + '?text=' + encodeURIComponent(m) + '">Continuar no WhatsApp</a>';
+          }
+        } catch (e) {
+          erro.textContent = e.name === 'AbortError' ? 'A resposta demorou. Tente novamente ou entre em contato com o corretor.' : (e.message || 'Falha de conexão. Tente novamente.');
+        } finally {
+          clearTimeout(timer);
+          enviando = false;
+          botoes.forEach(function (botao) { botao.disabled = false; });
         }
       };
     });

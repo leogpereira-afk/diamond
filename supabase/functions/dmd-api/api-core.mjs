@@ -305,6 +305,8 @@ export const handler = async (event) => {
     }
 
     if (action === 'list') {
+      const usr = await validarUsuario(stores.cfg, body.auth, false, true);
+      if (!usr) return json(403, { erro: 'sessão inválida' });
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = (await Promise.all(fatia.map((k) => stores.unidades.get(k, { type: 'json' })))).filter(Boolean);
@@ -378,7 +380,7 @@ export const handler = async (event) => {
         logoId: String(body.logoId || '').slice(0, 80), // logo da imobiliária → aparece na landing
         cliente: String(body.cliente || '').slice(0, 80),
         corretor: String(body.corretor || '').slice(0, 60), corretorTel: String(body.corretorTel || '').slice(0, 30),
-        empresa: String(body.empresa || '').slice(0, 60), propostaId: String(body.propostaId || '').slice(0, 60),
+        empresa: String(body.empresa || '').slice(0, 60), propostaId: String(body.propostaId || '').slice(0, 200),
         leadId: String(body.leadId || '').slice(0, 60), // amarra ao cliente no CRM → o sinal volta pro corretor certo
         por: usr.usuario, em: now(), views: 0, firstView: null, lastView: null, eventos: [],
       });
@@ -865,6 +867,9 @@ export const handler = async (event) => {
       if (!usr) return json(403, { erro: 'sessão inválida' });
       const unidadeId = String(body.unidadeId || '').replace(/[^\w -]/g, '').slice(0, 40);
       if (!unidadeId) return json(400, { erro: 'unidade inválida' });
+      const unidadeAtual = await stores.unidades.get(unidadeId, { type: 'json' });
+      if (!unidadeAtual) return json(404, { erro: 'Unidade não encontrada. Atualize o espelho.' });
+      if (unidadeAtual.status !== 'Disponível') return json(409, { erro: 'Esta unidade já não está disponível. Atualize o espelho.' });
       const existente = await stores.reservas.get(unidadeId, { type: 'json' });
       // redige o pedido de OUTRA empresa: o concorrente sabe que existe, mas não vê cliente/corretor
       const paraOlhosDe = (r) => {
@@ -876,14 +881,20 @@ export const handler = async (event) => {
       // já existe pedido → devolve p/ o app avisar (não sobrescreve: quem pediu primeiro fica)
       if (existente && !body.mesmoAssim) return json(200, { jaPedida: true, reserva: paraOlhosDe(existente) });
       const nova = {
-        unidadeId, unidade: String(body.unidade || '').slice(0, 20),
+        unidadeId, unidade: String(unidadeAtual.unidade || '').slice(0, 20),
         cliente: String(body.cliente || '').slice(0, 80),
         corretor: String(body.corretor || '').slice(0, 60),
         empresa: usr.papel === 'admin' ? 'Domo' : (usr.nome || ''),
         empresaUsuario: usr.usuario, em: now(),
       };
       if (existente) return json(200, { jaPedida: true, reserva: paraOlhosDe(existente), avisado: true }); // mantém o 1º pedido
-      await stores.reservas.setJSON(unidadeId, nova);
+      // INSERT usa a chave única (store, key): outro pedido nunca é sobrescrito.
+      const inserido = await stores.reservas.insertJSON(unidadeId, nova);
+      if (!inserido) {
+        const primeiro = await stores.reservas.get(unidadeId, { type: 'json' });
+        if (!primeiro) return json(409, { erro: 'A disponibilidade mudou durante o pedido. Atualize e tente novamente.' });
+        return json(200, { jaPedida: true, reserva: paraOlhosDe(primeiro) });
+      }
       return json(200, { ok: true, reserva: nova });
     }
     if (action === 'delReserva') { // a construtora resolveu (reservou de fato ou recusou)

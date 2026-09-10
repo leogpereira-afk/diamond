@@ -34,17 +34,19 @@ export const handler = async (event) => {
 
   // POST → registra interação do cliente. Exige envio VIVO (bloqueia spam/órfãos) e limita a MAX_EVENTOS por link.
   if (event.httpMethod === 'POST') {
+    if (q.preview) return json(200, { ok: true, preview: true });
     let acao = '';
     try { acao = (JSON.parse(event.body || '{}').acao || '').slice(0, 20); } catch (e) {}
-    if (!/^[a-z_]+$/.test(acao)) return json(400, { erro: 'ação inválida' });
+    if (!['interesse', 'duvida'].includes(acao)) return json(400, { erro: 'ação inválida' });
     try {
       const ev = await envios.get(id, { type: 'json' });
       if (!ev) return json(404, { erro: 'não encontrado' });
+      if ((ev.nEv || 0) >= MAX_EVENTOS) return json(429, { erro: 'Limite de respostas atingido. Fale diretamente com o corretor.' });
       if ((ev.nEv || 0) < MAX_EVENTOS) {
         await getStore('enviosEv').setJSON(id + '-' + crypto.randomBytes(6).toString('hex'), { envioId: id, tipo: acao, em: now() });
         try { ev.nEv = (ev.nEv || 0) + 1; await envios.setJSON(id, ev); } catch (e) {} // contador do limite (aprox., best-effort)
       }
-    } catch (e) { /* best-effort */ }
+    } catch (e) { return json(503, { erro: 'Não conseguimos registrar sua resposta. Tente novamente.' }); }
     return json(200, { ok: true });
   }
 

@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {source} from './helpers.mjs';
+async function landing({preview=false,failure=false}={}){
+ const el=()=>({innerHTML:'',textContent:'',style:{},disabled:false,setAttribute(){}});const nodes={conteudo:el(),acoes:el(),ok:el(),'resposta-erro':el(),q:el()};nodes.ok.style.display='none';
+ const buttons=[{...el(),getAttribute:()=> 'interesse'},{...el(),getAttribute:()=> 'duvida'}];let posts=0;
+ const ctx=vm.createContext({Date,URLSearchParams,AbortController,clearTimeout,location:{search:'?id=pp-aaaaaaaaaaaaaaaa'+(preview?'&preview=1':'')},document:{getElementById:k=>nodes[k],querySelector:s=>nodes.q,querySelectorAll:()=>buttons},fetch:async(_,opts)=>{if(opts?.method==='POST'){posts++;return {ok:!failure,status:failure?503:200,json:async()=>failure?{erro:'Falha simulada'}:{ok:true}};}return{ok:true,json:async()=>({cliente:'Cliente',corretor:'Corretor',valor:100,whats:'5511999999999'})}},setTimeout:()=>{}});
+ const script=source('p.html').match(/<script>([\s\S]*?)<\/script>/)[1];vm.runInContext(script,ctx);await new Promise(r=>setImmediate(r));return {nodes,buttons,posts:()=>posts};
+}
+test('PDF da previa preserva indicador para nao contar como cliente',async()=>{const p=await landing({preview:true});const href=p.nodes.conteudo.innerHTML.match(/class="btn btn-pdf" href="([^"]+)/)[1];assert.ok(new URL(href.replaceAll('&amp;','&')).searchParams.has('preview'));});
+test('interesse na previa nao faz gravacao',async()=>{const p=await landing({preview:true});await p.buttons[0].onclick?.();assert.equal(p.posts(),0);});
+test('falha de envio preserva botoes e nao mostra sucesso',async()=>{const p=await landing({failure:true});await p.buttons[0].onclick();assert.notEqual(p.nodes.ok.style.display,'block');assert.notEqual(p.nodes.acoes.style.display,'none');assert.equal(p.buttons[0].disabled,false);assert.match(p.nodes['resposta-erro'].textContent,/Falha/);});
+test('sucesso oferece WhatsApp sem afirmar mensagem ja enviada',async()=>{const p=await landing();await p.buttons[0].onclick();assert.equal(p.posts(),1);assert.equal(p.nodes.ok.style.display,'block');assert.match(p.nodes.ok.innerHTML,/https:\/\/wa.me\//);assert.doesNotMatch(p.nodes.ok.innerHTML,/foi avisado/);});
