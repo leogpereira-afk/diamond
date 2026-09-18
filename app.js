@@ -65,9 +65,12 @@
     const add = (rotulo, valor) => { if (valor !== undefined && valor !== null && valor !== '') linhas.push(`<div><dt>${esc(rotulo)}</dt><dd>${esc(valor)}</dd></div>`); };
     if (p.forma === 'scp') {
       add('Modalidade', 'SCP');
-      add('Desconto', i.desc10 == null ? 'Não informado' : i.desc10 ? '10%' : 'Sem desconto de 10%');
-      if (i.p12) add('Opção registrada', '12 parcelas');
-      if (i.p2412) add('Opção registrada', '24 parcelas · correção a partir da 13ª');
+      // propostas antigas guardam desc10/p12/p2412 (10% e 12 fixos); as novas guardam o número digitado
+      const pct = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%';
+      if (i.descPct != null) add('Desconto', i.descPct > 0 ? pct(i.descPct) : 'Sem desconto');
+      else add('Desconto', i.desc10 == null ? 'Não informado' : i.desc10 ? '10%' : 'Sem desconto');
+      if (i.p12) add('Opção registrada', (i.nParc || 12) + 'x sem juros');
+      if (i.p2412) { const f = i.nFix || 12, c = i.nCor || 12; add('Opção registrada', `${f} + ${c} parcelas · correção a partir da ${f + 1}ª`); }
       if (i.corr !== undefined && i.corr !== '') add('Corretagem', i.corr + '%');
     } else {
       add('Modalidade', p.formaLabel || p.forma);
@@ -1510,10 +1513,11 @@
     doc.setFillColor(245, 249, 218); doc.rect(M, y, W - 2 * M, 52, 'F');
     doc.setFillColor(LIME[0], LIME[1], LIME[2]); doc.rect(M, y, 4, 52, 'F');
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90, 96, 20);
-    doc.text(opts.desc10 ? 'VALOR (10% DE DESCONTO)' : 'VALOR DE TABELA', M + 18, y + 19);
+    const comDesc = s.descPct > 0;
+    doc.text(comDesc ? 'VALOR (' + s.descTxt + '% DE DESCONTO)' : 'VALOR DE TABELA', M + 18, y + 19);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(23); doc.setTextColor(26, 26, 26);
-    doc.text(fmt(opts.desc10 ? s.valor : s.base), M + 18, y + 43);
-    if (opts.desc10) { // valor de tabela "de R$ X" riscado, no canto direito
+    doc.text(fmt(comDesc ? s.valor : s.base), M + 18, y + 43);
+    if (comDesc) { // valor de tabela "de R$ X" riscado, no canto direito
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(120, 120, 120);
       const deTxt = 'de ' + fmt(s.base); const tw = doc.getTextWidth(deTxt); const rx = W - M - 18;
       doc.text(deTxt, rx, y + 32, { align: 'right' });
@@ -1529,14 +1533,14 @@
       doc.setFont('helvetica', forte ? 'bold' : 'normal'); doc.setTextColor(26, 26, 26); doc.text(val, W - M, y, { align: 'right' }); y += 21;
     };
     const idx = cfg.indice || 'INCC';
-    if (opts.desc10) { linhaC('Desconto 10% (sobre o valor de tabela)', '- ' + fmt(s.desc)); linhaC('Valor negociado', fmt(s.valor), true); }
-    if (opts.p12) linhaC('12x sem juros', fmt(s.p12, 2) + '/mês', true);
-    if (opts.p2412) { linhaC('12 + 12 · parcelas 1ª a 12ª (fixas)', fmt(s.pNom, 2) + '/mês', true); linhaC('12 + 12 · parcelas 13ª a 24ª (' + idx + ')', fmt(s.p13, 2) + ' a ' + fmt(s.p24, 2) + '/mês', true); }
-    if (s.corrPct > 0) { linhaC('Corretagem ' + String(s.corrPct).replace('.', ',') + '%', '- ' + fmt(s.corrValor)); linhaC('Valor líquido (Domo recebe)', fmt(s.liquido), true); }
+    if (comDesc) { linhaC('Desconto ' + s.descTxt + '% (sobre o valor de tabela)', '- ' + fmt(s.desc)); linhaC('Valor negociado', fmt(s.valor), true); }
+    if (s.nParc) linhaC(s.nParc + 'x sem juros', fmt(s.pParc, 2) + '/mês', true);
+    if (s.nTot) { const nm = s.nFix + ' + ' + s.nCor; linhaC(nm + ' · parcela' + (s.nFix > 1 ? 's ' : ' ') + scpFaixa(1, s.nFix, ' a ') + ' (fixas)', fmt(s.pNom, 2) + '/mês', true); linhaC(nm + ' · parcela' + (s.nCor > 1 ? 's ' : ' ') + scpFaixa(s.nFix + 1, s.nTot, ' a ') + ' (' + idx + ')', fmt(s.pCor1, 2) + (s.nCor > 1 ? ' a ' + fmt(s.pCorN, 2) : '') + '/mês', true); }
+    if (s.corrPct > 0) { linhaC('Corretagem ' + scpPct(s.corrPct) + '%', '- ' + fmt(s.corrValor)); linhaC('Valor líquido (Domo recebe)', fmt(s.liquido), true); }
     y += 6;
     doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(115, 115, 115);
     const notas = [];
-    if (opts.p2412) notas.push('As 12 últimas parcelas são corrigidas por ' + idx + ' (estimativa pela taxa mensal vigente).');
+    if (s.nTot) notas.push(scpNotaCor(s, idx) + ' (estimativa pela taxa mensal vigente).');
     if (s.corrPct > 0) notas.push('A corretagem é deduzida do valor que a Domo recebe.');
     notas.push('SCP — Sociedade em Conta de Participação. Valores nominais, sujeitos a análise e formalização em contrato.');
     const wrap = doc.splitTextToSize(notas.join(' '), W - 2 * M);
@@ -3600,19 +3604,34 @@
   // ---------- roteador ----------
   // ===== SCP (Sociedade em Conta de Participação) — aba exclusiva do cadastro da Domo =====
   const ehLoginDomo = () => (STORE.getUser() || {}).usuario === 'domo';
-  let _scp = { unidadeId: '', desc10: false, p12: false, p2412: false, corr: '', cliente: '', tel: '' };
+  let _scp = { unidadeId: '', descPct: '', p12: false, nParc: '12', p2412: false, nFix: '12', nCor: '12', corr: '', cliente: '', tel: '' };
+  const scpNum = (v) => parseFloat(String(v ?? '').trim().replace(',', '.'));
+  // quantidade de parcelas: inteiro de 1 a 240, senão null — e null TRAVA o envio.
+  // Cair num "12 padrão" imprimiria uma condição que o corretor não digitou.
+  const scpVezes = (v) => { const n = scpNum(v); return Number.isInteger(n) && n >= 1 && n <= 240 ? n : null; };
+  const scpPct = (n) => n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  const scpFaixa = (a, b, sep) => (a === b ? a + 'ª' : a + 'ª' + sep + b + 'ª');
   function scpCalcular(base, o, cfg) {
     base = +base || 0;
-    const corrPct = Math.max(0, Math.min(100, parseFloat(String(o.corr).replace(',', '.')) || 0));
-    const desc = o.desc10 ? base * 0.10 : 0;     // 10% de DESCONTO sobre o valor de tabela
+    const corrPct = Math.max(0, Math.min(100, scpNum(o.corr) || 0));
+    const descPct = Math.max(0, Math.min(100, scpNum(o.descPct) || 0));
+    const desc = base * descPct / 100;            // DESCONTO digitado, sobre o valor de tabela
     const valor = base - desc;                    // valor negociado (o cliente paga isto; o parcelamento incide sobre ele)
     const corrValor = valor * corrPct / 100;      // corretagem sobre o valor negociado
     const liquido = valor - corrValor;            // corretagem DEDUZ do que a Domo recebe
     const incc = (cfg && cfg.correcaoMensal) || 0;
-    const pNom = valor / 24;
-    return { base, desc, valor, corrPct, corrValor, liquido,
-      p12: valor / 12, pNom, p13: pNom * Math.pow(1 + incc, 1), p24: pNom * Math.pow(1 + incc, 12),
-      marcado: o.desc10 || o.p12 || o.p2412 || corrPct > 0 };
+    const nParc = o.p12 ? scpVezes(o.nParc) : null;
+    const nFix = o.p2412 ? scpVezes(o.nFix) : null;
+    const nCor = o.p2412 ? scpVezes(o.nCor) : null;
+    const nTot = nFix && nCor ? nFix + nCor : 0;
+    const pNom = nTot ? valor / nTot : 0;
+    const erro = (o.p12 && !nParc) ? 'Digite a quantidade de parcelas sem juros (de 1 a 240).'
+      : (o.p2412 && !nTot) ? 'Digite as duas quantidades do parcelamento com correção (de 1 a 240 cada).'
+      : ((o.p12 || o.p2412) && valor <= 0) ? 'Com esse desconto não sobra valor para parcelar.' : '';
+    return { base, descPct, descTxt: scpPct(descPct), desc, valor, corrPct, corrValor, liquido,
+      nParc, pParc: nParc ? valor / nParc : 0, nFix, nCor, nTot, pNom,
+      pCor1: pNom * (1 + incc), pCorN: pNom * Math.pow(1 + incc, nCor || 0),
+      marcado: descPct > 0 || o.p12 || o.p2412 || corrPct > 0, erro };
   }
   function scpProposta(u, base, opcoes, cfg, usr) {
     const nome = String(opcoes.cliente || '').trim();
@@ -3624,33 +3643,34 @@
       cliente: nome, clienteTel: String(opcoes.tel || '').trim(),
       corretor: usr.nome, corretorUsuario: usr.usuario, corretorTel: usr.telefone || '', corretorPapel: usr.papel, corretorEmpresa: usr.empresa || '',
       neg: s.valor, forma: 'scp', formaLabel: 'SCP',
-      inp: { forma: 'scp', desc10: !!opcoes.desc10, p12: !!opcoes.p12, p2412: !!opcoes.p2412, corr: opcoes.corr },
+      inp: { forma: 'scp', descPct: s.descPct, p12: !!opcoes.p12, nParc: s.nParc, p2412: !!opcoes.p2412, nFix: s.nFix, nCor: s.nCor, corr: opcoes.corr },
       criadoEm: new Date().toISOString(),
     };
   }
+  const scpNotaCor = (s, idx) => (s.nCor === 1 ? 'A última parcela é corrigida' : 'As ' + s.nCor + ' últimas parcelas são corrigidas') + ' por ' + idx;
   function scpResumoHTML(base, o, cfg) {
     if (!base) return '<div class="nota">Escolha a unidade para calcular.</div>';
     const s = scpCalcular(base, o, cfg); const idx = esc((cfg && cfg.indice) || 'INCC');
-    if (!s.marcado) return '<div class="nota">Marque as opções acima para montar o cálculo.</div>';
+    if (!s.marcado) return '<div class="nota">Preencha as opções acima para montar o cálculo.</div>';
     const L = [`<div><span>Valor de tabela</span><b>${fmt(s.base)}</b></div>`];
-    if (o.desc10) { L.push(`<div><span>Desconto 10%</span><b class="txt-desc">− ${fmt(s.desc)}</b></div>`); L.push(`<div><span>Valor negociado</span><b>${fmt(s.valor)}</b></div>`); }
-    if (o.p12) L.push(`<div><span>12x sem juros</span><b>${fmt(s.p12, 2)}/mês</b></div>`);
-    if (o.p2412) { L.push(`<div><span>12+12 · 1ª–12ª (fixas)</span><b>${fmt(s.pNom, 2)}/mês</b></div>`); L.push(`<div><span>12+12 · 13ª–24ª (${idx})</span><b>${fmt(s.p13, 2)} → ${fmt(s.p24, 2)}/mês</b></div>`); }
-    if (s.corrPct > 0) { L.push(`<div><span>Corretagem ${String(s.corrPct).replace('.', ',')}%</span><b class="txt-desc">− ${fmt(s.corrValor)}</b></div>`); L.push(`<div><span>Líquido (Domo recebe)</span><b>${fmt(s.liquido)}</b></div>`); }
+    if (s.descPct > 0) { L.push(`<div><span>Desconto ${s.descTxt}%</span><b class="txt-desc">− ${fmt(s.desc)}</b></div>`); L.push(`<div><span>Valor negociado</span><b>${fmt(s.valor)}</b></div>`); }
+    if (s.nParc) L.push(`<div><span>${s.nParc}x sem juros</span><b>${fmt(s.pParc, 2)}/mês</b></div>`);
+    if (s.nTot) { L.push(`<div><span>${s.nFix}+${s.nCor} · ${scpFaixa(1, s.nFix, '–')} (fixas)</span><b>${fmt(s.pNom, 2)}/mês</b></div>`); L.push(`<div><span>${s.nFix}+${s.nCor} · ${scpFaixa(s.nFix + 1, s.nTot, '–')} (${idx})</span><b>${fmt(s.pCor1, 2)}${s.nCor > 1 ? ' → ' + fmt(s.pCorN, 2) : ''}/mês</b></div>`); }
+    if (s.corrPct > 0) { L.push(`<div><span>Corretagem ${scpPct(s.corrPct)}%</span><b class="txt-desc">− ${fmt(s.corrValor)}</b></div>`); L.push(`<div><span>Líquido (Domo recebe)</span><b>${fmt(s.liquido)}</b></div>`); }
     const notas = [];
-    if (o.p2412) notas.push('As 12 últimas parcelas são corrigidas por ' + idx + ' (estimativa pela taxa mensal atual).');
+    if (s.nTot) notas.push(scpNotaCor(s, idx) + ' (estimativa pela taxa mensal atual).');
     if (s.corrPct > 0) notas.push('A corretagem deduz do valor que a Domo recebe.');
     // valor em DESTAQUE: com desconto mostra o valor negociado grande (+ tabela riscado); senão o valor de tabela
-    const destaque = `<div class="scp-destaque"><span>${o.desc10 ? 'VALOR · com 10% de desconto' : 'VALOR DE TABELA'}</span><b>${fmt(o.desc10 ? s.valor : s.base)}</b>${o.desc10 ? '<s>de ' + fmt(s.base) + '</s>' : ''}</div>`;
-    return destaque + `<div class="linhas uni-plano">${L.join('')}</div>${notas.length ? '<div class="nota">' + notas.join(' ') + '</div>' : ''}`;
+    const destaque = `<div class="scp-destaque"><span>${s.descPct > 0 ? 'VALOR · com ' + s.descTxt + '% de desconto' : 'VALOR DE TABELA'}</span><b>${fmt(s.descPct > 0 ? s.valor : s.base)}</b>${s.descPct > 0 ? '<s>de ' + fmt(s.base) + '</s>' : ''}</div>`;
+    return (s.erro ? `<div class="nota scp-erro">⚠ ${esc(s.erro)}</div>` : '') + destaque + `<div class="linhas uni-plano">${L.join('')}</div>${notas.length ? '<div class="nota">' + notas.join(' ') + '</div>' : ''}`;
   }
   function scpMsgTexto(unidade, base, o, cfg) {
     const s = scpCalcular(base, o, cfg); const idx = (cfg && cfg.indice) || 'INCC';
     let t = `*SCP · Edifício Diamond — Unidade ${unidade}*\n\nValor de tabela: ${fmt(s.base)}\n`;
-    if (o.desc10) t += `Desconto 10%: − ${fmt(s.desc)} → valor negociado ${fmt(s.valor)}\n`;
-    if (o.p12) t += `• 12x sem juros: ${fmt(s.p12, 2)}/mês\n`;
-    if (o.p2412) t += `• 12 + 12: ${fmt(s.pNom, 2)}/mês — as 12 últimas corrigidas por ${idx}\n`;
-    if (s.corrPct > 0) t += `Corretagem ${String(s.corrPct).replace('.', ',')}%: − ${fmt(s.corrValor)} (líquido ${fmt(s.liquido)})\n`;
+    if (s.descPct > 0) t += `Desconto ${s.descTxt}%: − ${fmt(s.desc)} → valor negociado ${fmt(s.valor)}\n`;
+    if (s.nParc) t += `• ${s.nParc}x sem juros: ${fmt(s.pParc, 2)}/mês\n`;
+    if (s.nTot) t += `• ${s.nFix} + ${s.nCor}: ${fmt(s.pNom, 2)}/mês — ${scpNotaCor(s, idx).replace(/^./, (c) => c.toLowerCase())}\n`;
+    if (s.corrPct > 0) t += `Corretagem ${scpPct(s.corrPct)}%: − ${fmt(s.corrValor)} (líquido ${fmt(s.liquido)})\n`;
     return t;
   }
   function vScp() {
@@ -3672,9 +3692,9 @@
             </label>
           </div>
           <div class="scp-box">
-            <label class="scp-opt"><input type="checkbox" id="scp-desc" ${_scp.desc10 ? 'checked' : ''}> Desconto 10% <small>sobre o valor de tabela</small></label>
-            <label class="scp-opt"><input type="checkbox" id="scp-12" ${_scp.p12 ? 'checked' : ''}> 12x sem juros</label>
-            <label class="scp-opt"><input type="checkbox" id="scp-2412" ${_scp.p2412 ? 'checked' : ''}> 12 + 12 <small>INCC nas 12 últimas</small></label>
+            <label class="scp-corr scp-desc">Desconto <small>sobre o valor de tabela</small> <span><input type="number" id="scp-desc" min="0" max="100" step="0.01" inputmode="decimal" value="${esc(_scp.descPct)}" placeholder="0"> %</span></label>
+            <label class="scp-opt"><input type="checkbox" id="scp-12" ${_scp.p12 ? 'checked' : ''}> <input type="number" class="scp-n" id="scp-n" min="1" max="240" step="1" inputmode="numeric" value="${esc(_scp.nParc)}" aria-label="quantidade de parcelas sem juros"> x sem juros</label>
+            <label class="scp-opt"><input type="checkbox" id="scp-2412" ${_scp.p2412 ? 'checked' : ''}> <input type="number" class="scp-n" id="scp-nfix" min="1" max="240" step="1" inputmode="numeric" value="${esc(_scp.nFix)}" aria-label="parcelas fixas"> + <input type="number" class="scp-n" id="scp-ncor" min="1" max="240" step="1" inputmode="numeric" value="${esc(_scp.nCor)}" aria-label="parcelas corrigidas"> <small>${esc(cfg.indice || 'INCC')} nas últimas</small></label>
             <label class="scp-corr">Corretagem <small>deduz do valor</small> <span><input type="number" id="scp-corr" min="0" max="100" step="0.5" inputmode="decimal" value="${esc(_scp.corr)}" placeholder="0"> %</span></label>
           </div>
           <div class="scp-res" id="scp-res">${scpResumoHTML(base, _scp, cfg)}</div>
@@ -3690,13 +3710,18 @@
       </div>`;
     $('#scp-unidade').onchange = (e) => { _scp.unidadeId = e.target.value; vScp(); };
     const reScp = () => { const r = $('#scp-res'); if (r) r.innerHTML = scpResumoHTML(base, _scp, cfg); };
-    $('#scp-desc').onchange = (e) => { _scp.desc10 = e.target.checked; reScp(); };
+    $('#scp-desc').oninput = (e) => { _scp.descPct = e.target.value; reScp(); };
     $('#scp-12').onchange = (e) => { _scp.p12 = e.target.checked; reScp(); };
     $('#scp-2412').onchange = (e) => { _scp.p2412 = e.target.checked; reScp(); };
+    // digitar a quantidade já liga a opção: quem escreveu "18" quer o 18x, não um clique a mais
+    const vezes = (id, campo, liga, caixa) => { $(id).oninput = (e) => { _scp[campo] = e.target.value; if (e.target.value.trim()) { _scp[liga] = true; $(caixa).checked = true; } reScp(); }; };
+    vezes('#scp-n', 'nParc', 'p12', '#scp-12');
+    vezes('#scp-nfix', 'nFix', 'p2412', '#scp-2412');
+    vezes('#scp-ncor', 'nCor', 'p2412', '#scp-2412');
     $('#scp-corr').oninput = (e) => { _scp.corr = e.target.value; reScp(); };
     $('#scp-cliente').oninput = (e) => { _scp.cliente = e.target.value; };
     $('#scp-tel').oninput = (e) => { _scp.tel = e.target.value; };
-    const validaScp = () => { if (!u) { toast('Escolha a unidade primeiro.', true); return false; } if (!scpCalcular(base, _scp, cfg).marcado) { toast('Marque ao menos uma opção.', true); return false; } return true; };
+    const validaScp = () => { if (!u) { toast('Escolha a unidade primeiro.', true); return false; } const sc = scpCalcular(base, _scp, cfg); if (!sc.marcado) { toast('Preencha ao menos uma opção.', true); return false; } if (sc.erro) { toast(sc.erro, true); return false; } return true; };
     // registra a proposta SCP no Histórico (salvarProposta) E no CRM (crmRegistrar) — só se houver nome do cliente
     const registrarScp = async (proposta) => {
       const p = proposta || scpProposta(u, base, _scp, cfg, ator());

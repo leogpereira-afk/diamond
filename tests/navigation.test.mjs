@@ -21,7 +21,7 @@ test('historico consulta proposta vendida com preco, cliente e condicoes origina
   await f.api.vProposta(p.id);
   const html=[...f.nodes.values()].map(n=>n.innerHTML).join(' ');
   assert.match(html,/Cliente original/);assert.match(html,/Corretor original/);assert.match(html,/270\.000,45/);
-  assert.match(html,/SCP/);assert.match(html,/12 parcelas/);assert.match(html,/preview=1/);
+  assert.match(html,/SCP/);assert.match(html,/Desconto<\/dt><dd>10%/);assert.match(html,/12x sem juros/);assert.match(html,/preview=1/);
   assert.doesNotMatch(html,/999\.999|Unidade indisponível/);
   assert.equal(f.STORE.getPropostas()[0],p);
 });

@@ -822,3 +822,8 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
 
 .seg-scp, .dot-scp { background: #57788b; color: white; }
 .seg-leg { flex-wrap: wrap; }
+/* SCP: desconto e quantidade de parcelas digitáveis (16px: abaixo disso o iPhone dá zoom ao focar) */
+.scp-desc { border-top: none; padding-top: 0; }
+.scp-desc input, .scp-opt .scp-n { font-size: 16px; }
+.scp-opt .scp-n { width: 64px; height: auto; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 8px; text-align: center; font-weight: 700; }
+.scp-erro { color: var(--red, #c62828); font-weight: 600; font-style: normal; }
