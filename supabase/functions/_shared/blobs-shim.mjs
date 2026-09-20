@@ -3,7 +3,7 @@
 // Stores de BINÁRIOS (fotos, propostasPdf) → bucket dmd-arquivos (não incha o banco).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const sb = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+export const sb = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
 const BINARIOS = new Set(['fotos', 'propostasPdf']);
 const BUCKET = 'dmd-arquivos';
 

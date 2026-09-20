@@ -2411,8 +2411,8 @@
     if (!STORE.podeVerPainel()) { location.hash = '#/home'; return; }
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
-      ? [['vendas', 'Vendas'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
-      : [['unidades', 'Unidades'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
+      ? [['vendas', 'Vendas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
+      : [['unidades', 'Unidades'], ['vendas', 'Vendas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
       <div class="admin">
@@ -2420,7 +2420,7 @@
         <div class="abas">${tabs.map(([id, l]) => `<a class="aba ${tab === id ? 'on' : ''}" href="#/admin/${id}">${l}</a>`).join('')}</div>
         <div id="aba-corpo"></div>
       </div>`;
-    ({ unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas }[tab] || (soDomo ? aVendas : aUnidades))();
+    ({ unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas, vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
     // sair da aba (outra aba ou "← espelho") com edição pendente → confirma antes de perder
     $$('.admin .aba, .admin .volta').forEach((a) => a.addEventListener('click', (e) => {
       if (_sujo && !confirm('Você tem alterações não salvas nesta aba. Sair sem salvar?')) e.preventDefault();
@@ -2571,6 +2571,11 @@
   }
 
   // Apenas vínculo explícito ou um único cliente fechado: proposta não comprova compra.
+  function aVagas(){
+    $('#aba-corpo').innerHTML='<section class="diamond-vagas"><div id="vgHeader"></div><div id="vgPagina"></div></section>';
+    window.DiamondVagas(document.getElementById('vgPagina'));
+  }
+
   function compradorVenda(u, leads) {
     if (u.status === 'Disponível') return '—';
     const direto = String(u.compradorNome || u.comprador || u.clienteNome || u.cliente || '').trim();

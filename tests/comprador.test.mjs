@@ -13,3 +13,14 @@ test('CRM fechado com vínculo exato e conflito explícito',()=>{
  assert.equal(ctx.comprador(u,[l,{...l,cliente:'Bruno'}]),'Conferir compradores no CRM');
  assert.equal(ctx.comprador(u,[{...l,unidadeId:'u-402'}]),'Não informado');
 });
+import {backend} from './helpers.mjs';
+test('compradores internos nunca saem no espelho de clientes',async()=>{
+ const b=backend();b.table('unidades').set('u-2',{id:'u-2',unidade:'2',status:'Vendido',compradorNome:'Privado',compradorFonte:{arquivo:'privado'}});
+ const cli=await b.request('list',{},'cliente');assert.equal(cli.unidades.find(u=>u.id==='u-2').compradorNome,undefined);
+ assert.equal((await b.request('list',{},'domo')).unidades.find(u=>u.id==='u-2').compradorNome,'Privado');
+});
+test('cliente e corretor comum não abrem vagas internas',async()=>{
+ const b=backend();assert.equal((await b.request('vagas',{operacao:'carregar'},'cliente')).status,403);
+ b.table('cfg').get('usuarios').push({usuario:'corretor',hash:'fake',papel:'corretor',ativo:true});
+ assert.equal((await b.request('vagas',{operacao:'carregar'},'corretor')).status,403);
+});

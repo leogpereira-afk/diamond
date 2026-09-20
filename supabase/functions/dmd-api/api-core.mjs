@@ -1,6 +1,7 @@
 // api-core.mjs — PORTE FIEL do netlify/functions/api.js para Deno/Supabase.
 // Mesmo contrato (36 actions, x-token), mesmo código; só o armazenamento mudou (blobs-shim → Postgres/Storage).
 import { getStore, connectLambda } from '../_shared/blobs-shim.mjs';
+import { executarVagas } from './vagas-api.mjs';
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import SEED from './seed-units.json' with { type: 'json' };
@@ -213,6 +214,11 @@ export const handler = async (event) => {
   };
 
   try {
+    if(action === 'vagas') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      if(!usr || !ehSuper(usr))return json(403,{erro:'Acesso restrito à gestão Diamond.'});
+      return await executarVagas(body,usr,json);
+    }
     // ---------- básicos ----------
     if (action === 'ping') return json(200, { ok: true, em: now() });
 
@@ -310,7 +316,7 @@ export const handler = async (event) => {
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = (await Promise.all(fatia.map((k) => stores.unidades.get(k, { type: 'json' })))).filter(Boolean);
-      return json(200, { unidades, total, nextAfter });
+      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,...publica})=>publica), total, nextAfter });
     }
 
     if (action === 'upsert') {
