@@ -30,7 +30,13 @@
   function tabela(rows,first) { const i=rows.findIndex(r=>r.some(c=>norm(c)===first)); if(i<0)throw Error('Cabeçalho não encontrado: '+first); const headers=rows[i].map(norm);return rows.slice(i+1).filter(r=>r.some(c=>clean(c))).map(r=>Object.fromEntries(headers.map((h,j)=>[h,clean(r[j])]))); }
   function importar(source) {
     const unidades=tabela(source.vinculos,'apartamento').filter(r=>/^apto\s*\d+$/i.test(r.apartamento));
-    const gestao=tabela(source.gestao,'vaga').filter(r=>numero(r.vaga));
+    const unica=!source.gestao;
+    const gestao=unica?Array.from({length:82},(_,i)=>{
+      const n=i+1,u=unidades.find(u=>numero(u['vaga vinculada'])===n);
+      return {vaga:codigo(n),pavimento:PISOS[piso(n)].nome,apartamento:u?.apartamento||'',
+        'cliente / proprietario':u?.['cliente / proprietario']||'',status:u?STATUS[status(u['confirmacao (v/r)']||u.status)]:'Disponível',
+        'data da reserva':u?.inicio||'','prazo de expiracao':u?.termino||'',observacoes:u?.observacoes||''};
+    }):tabela(source.gestao,'vaga').filter(r=>numero(r.vaga));
     if(unidades.length!==82)throw Error('A aba Vagas de Garagem deve conter os 82 apartamentos. Recebidos: '+unidades.length);
     if(gestao.length!==82||new Set(gestao.map(r=>numero(r.vaga))).size!==82)throw Error('A aba Gestão de Vagas deve conter V01 a V82, uma vez cada.');
     if(new Set(unidades.map(r=>r.apartamento)).size!==82)throw Error('Há apartamentos repetidos na planilha.');
@@ -52,7 +58,7 @@
       return {numero:n,codigo:codigo(n),piso:pisoEsperado,apartamento:u?.apartamento||g.apartamento||'',cliente:u?.['cliente / proprietario']||g['cliente / proprietario']||'',area:u?.['tipologia / area']||'',situacao:alertas.length?'conferir':sg,contrato:u?.contratos||'',reserva,expiracao,observacoes:g.observacoes||'',alertas,avisos,origem,assinatura:JSON.stringify(origem)};
     }).sort((a,b)=>a.numero-b.numero);
     for(const u of unidades)if(u['vaga vinculada']&&!numero(u['vaga vinculada']))throw Error('Vaga inválida em '+u.apartamento);
-    return {vagas,unidades,fonte:{spreadsheetId:source.spreadsheetId||'',lidoEm:source.lidoEm||new Date().toISOString(),tipo:'Google Sheets'},historico:[]};
+    return {vagas,unidades,fonte:{spreadsheetId:source.spreadsheetId||'',lidoEm:source.lidoEm||new Date().toISOString(),tipo:'Google Sheets',abaUnica:unica},historico:[]};
   }
   function efetivas(state,hoje=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})) {
     return (state.vagas||[]).map(v=>{const m=state.ajustes?.[v.codigo];const mudou=m&&m.assinatura!==v.assinatura; const r=m?{...v,...m}: {...v};

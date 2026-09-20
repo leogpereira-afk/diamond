@@ -33,18 +33,18 @@ export function reconcile(V,old,fonte,now,id,spreadsheetId){
     if(local.alertas.length||local.situacao==='conferir'){conflitos.push(cod);continue;}
     novo.ajustes[cod]={...ajuste,assinatura:raw.assinatura};
     if(local.situacao!=='disponivel'&&!local.apartamento){conflitos.push(cod);continue;}
-    const gr=fonte.gestao.findIndex((r,i)=>i>0&&num(r[0])===String(raw.numero));
+    const gr=fonte.gestao?.findIndex((r,i)=>i>0&&num(r[0])===String(raw.numero));
     const ur=local.apartamento?fonte.vinculos.findIndex((r,i)=>i>0&&r[0]===local.apartamento):-1;
     // Do not move another occupied slot automatically; require an explicit review.
     if(ur>0&&fonte.vinculos[ur][3]&&num(fonte.vinculos[ur][3])!==String(raw.numero)){
       conflitos.push(cod);continue;
     }
     const start=patches.length;
-    for(const [col,val] of [[2,local.apartamento],[3,local.cliente],[4,V.STATUS[local.situacao]],[5,date(local.reserva)],[6,date(local.expiracao)],[7,local.observacoes]])patch('Gestão de Vagas',fonte.gestao,gr,col,val);
+    if(fonte.gestao)for(const [col,val] of [[2,local.apartamento],[3,local.cliente],[4,V.STATUS[local.situacao]],[5,date(local.reserva)],[6,date(local.expiracao)],[7,local.observacoes]])patch('Gestão de Vagas',fonte.gestao,gr,col,val);
     // Free only the parking link on the old apartment. Apartment sale/owner are independent.
     fonte.vinculos.forEach((r,i)=>{if(i>0&&num(r[3])===String(raw.numero)&&i!==ur){patch('Vagas de Garagem',fonte.vinculos,i,3,'');patch('Vagas de Garagem',fonte.vinculos,i,4,'');}});
     if(ur>0){
-      for(const [col,val] of [[2,local.cliente],[3,cod],[4,local.situacao==='vendida'?'V':'R'],[6,V.STATUS[local.situacao]],[7,local.contrato],[8,date(local.reserva)],[9,date(local.expiracao)]])patch('Vagas de Garagem',fonte.vinculos,ur,col,val);
+      for(const [col,val] of [[2,local.cliente],[3,cod],[4,local.situacao==='vendida'?'V':'R'],[6,V.STATUS[local.situacao]],[7,local.contrato],[8,date(local.reserva)],[9,date(local.expiracao)],...(!fonte.gestao&&fonte.vinculos[0][11]==='Observações'?[[11,local.observacoes]]:[])])patch('Vagas de Garagem',fonte.vinculos,ur,col,val);
     }
     if(patches.length>start)codigos.push(cod);
   }

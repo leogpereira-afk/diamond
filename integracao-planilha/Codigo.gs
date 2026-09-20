@@ -22,9 +22,9 @@ function planilhaDiamond_() {
   return s;
 }
 function fonteDiamond_(s) {
-  return { spreadsheetId: DIAMOND_SHEET,
-    vinculos:s.getSheetByName('Vagas de Garagem').getRange('B8:M90').getDisplayValues(),
-    gestao:s.getSheetByName('Gestão de Vagas').getRange('B8:I90').getDisplayValues() };
+  const aba=s.getSheetByName('Vagas de Garagem');
+  if(!aba) throw Error('A aba Vagas de Garagem não foi encontrada.');
+  return {spreadsheetId:DIAMOND_SHEET,vinculos:aba.getRange('B8:M90').getDisplayValues()};
 }
 function apiDiamond_(body) {
   const r = UrlFetchApp.fetch(DIAMOND_API, {method:'post',contentType:'application/json',

@@ -1,6 +1,6 @@
 # Conexão Diamond / Vagas Estacionamento
 
-Projeto vinculado à planilha oficial. O identificador autorizado fica na configuração privada do servidor.
+Projeto vinculado à aba única `Vagas de Garagem` da planilha oficial. Vagas sem vínculo nessa aba são apresentadas como disponíveis. O identificador autorizado fica na configuração privada do servidor.
 
 1. Código e manifesto desta pasta no Apps Script da planilha oficial.
 2. `verificarConexao` identifica o OAuth audience, sem imprimir tokens ou alterar dados.
