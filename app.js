@@ -63,6 +63,7 @@
     const i = p.inp || {};
     const linhas = [];
     const add = (rotulo, valor) => { if (valor !== undefined && valor !== null && valor !== '') linhas.push(`<div><dt>${esc(rotulo)}</dt><dd>${esc(valor)}</dd></div>`); };
+    if(p.vaga)add('Vaga de garagem', vagaTexto(p.vaga));
     if (p.forma === 'scp') {
       add('Modalidade', 'SCP');
       // propostas antigas guardam desc10/p12/p2412 (10% e 12 fixos); as novas guardam o número digitado
@@ -627,6 +628,42 @@
   // chegava a aparecer. Vive só na memória: recarregar a página volta ao master.
   let _trocaPedida = false;
   let _painelEquipe = false; // true enquanto o painel de equipe (fora de rota) está aberto — evita o pull de 30s destruí-lo
+  const vagaTexto = v => v ? v.codigo + ' · ' + v.pavimento : 'A escolher';
+  function vagaHTML(id, d) {
+    return `<details class="proposta-vaga" id="${id}"><summary>Vaga de garagem · <span id="${id}-resumo">${esc(vagaTexto(d.vaga))}</span></summary><div class="proposta-vaga-conteudo"><label for="${id}-lista">Escolha uma vaga disponível</label><select id="${id}-lista"><option value="">Escolher depois</option></select><button type="button" class="btn btn-sec" id="${id}-atualizar">Atualizar vagas</button><p class="nota" id="${id}-estado" role="status">Escolha opcional. A vaga entra na proposta; a reserva depende da confirmação da Domo.</p></div></details>`;
+  }
+  async function consultarVagas() {
+    const r = await STORE.api('vagas', {operacao:'paraProposta'});
+    if (r.erro || !Array.isArray(r.vagas)) throw Error(r.erro || 'Não foi possível carregar as vagas.');
+    return r.vagas;
+  }
+  function wireVaga(id, d) {
+    const box=$('#'+id), select=$('#'+id+'-lista'), estado=$('#'+id+'-estado');
+    let carregando=false;
+    const carregar=async()=>{
+      if(carregando)return; carregando=true; select.disabled=true; estado.textContent='Consultando vagas…';
+      try {
+        const vagas=await consultarVagas();
+        select.innerHTML='<option value="">Escolher depois</option>'+vagas.map(v=>`<option value="${esc(v.codigo)}">${esc(vagaTexto(v))}</option>`).join('');
+        if(d.vaga&&!vagas.some(v=>v.codigo===d.vaga.codigo)) { d.vaga=null; $('#'+id+'-resumo').textContent='A escolher'; }
+        select.value=d.vaga?.codigo||'';
+        select.onchange=()=>{d.vaga=vagas.find(v=>v.codigo===select.value)||null;$('#'+id+'-resumo').textContent=vagaTexto(d.vaga);};
+        estado.textContent=vagas.length?'A escolha entra na proposta. Reserva sujeita à confirmação da Domo.':'Nenhuma vaga disponível. Você pode continuar e escolher depois.';
+        select.disabled=false;
+      }catch(e){estado.textContent=e.message+' Use Atualizar vagas para tentar novamente.';}
+      finally{carregando=false;}
+    };
+    box.ontoggle=()=>{if(box.open)carregar();};
+    $('#'+id+'-atualizar').onclick=carregar;
+  }
+  async function conferirVaga(d) {
+    if(!d.vaga)return true;
+    try { const atual=(await consultarVagas()).find(v=>v.codigo===d.vaga.codigo);
+      if(!atual)throw Error('A vaga escolhida não está mais disponível. Abra a escolha de vagas e atualize a lista.');
+      d.vaga=atual;return true;
+    }catch(e){toast(e.message,true);return false;}
+  }
+
   function vUnidade(id) {
     const cfg = STORE.getCfg() || {};
     const u = STORE.unidadePorId(id);
@@ -742,6 +779,7 @@
           </div>
 
           ${u.precoBase ? `
+          ${vagaHTML('u-vaga', d)}
           <h3>Plano de pagamento</h3>
           <label class="uni-toggle"><input type="checkbox" id="u-plano" ${d.planoOn ? 'checked' : ''}> Incluir plano de pagamento na proposta</label>
           ${d.planoOn && plano
@@ -853,13 +891,14 @@
       if (dil) dil.onchange = () => { d.diluirBaloes = dil.checked; repintarPlano(); };
     }
     wirePlanoBox();
+    wireVaga('u-vaga', d);
 
     const montaP = (comPlano) => {
       const criadoEm = d.criadoEm || (d.criadoEm = new Date().toISOString());
       const dataProposta = STORE.diaLocalISO(criadoEm); // mesma data local usada no cronograma inicial
       return {
         id: d.propostaId || (d.propostaId = 'p-' + Date.now() + '-' + u.unidade),
-        unidadeId: u.id, unidade: u.unidade, area: u.area,
+        unidadeId: u.id, unidade: u.unidade, area: u.area, vaga: d.vaga || null,
         cliente: d.cliente.trim(), clienteTel: d.clienteTel.trim(),
         corretor: user.nome, corretorUsuario: user.usuario, corretorTel: user.telefone || '', corretorPapel: user.papel, corretorEmpresa: user.empresa || '',
         neg: vt, forma: comPlano ? 'perso' : 'avista', formaLabel: comPlano ? 'Personalizado' : 'À vista',
@@ -875,6 +914,7 @@
     const assina = () => `\n\nQualquer dúvida, estou à disposição!\n${user.nome}${user.telefone ? ' — ' + user.telefone : ''}`;
     const msgSimples = () => saud() + `Segue a proposta da unidade ${u.unidade} do Edifício Diamond — Domo Construtora:\n\n`
       + `• Unidade ${u.unidade} · ${u.andar === 0 ? 'Térreo' : u.andar + 'º andar'} · ${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : ''}\n`
+      + (d.vaga ? `• Vaga: ${vagaTexto(d.vaga)}\n` : '')
       + `• Valor: ${u.precoBase ? fmt(vt) + (temDesc ? ' (de ' + fmt(valorTabela(u, cfg)) + ' · −' + pct(u.desconto) + ')' : '') : 'sob consulta'}` + assina();
     const msgComPlano = (p, pln) => saud() + `Proposta da unidade ${u.unidade} — Edifício Diamond:\n\n${resumoTexto(pln, p)}` + assina();
 
@@ -891,10 +931,11 @@
       // valor) — mensagem e anexo discordando na frente do cliente.
       if (comPlano && planoInviavel(pln)) { toast('Não sobra valor para as parcelas mensais: a entrada + a parcela final já cobrem a unidade. Reduza uma das duas (ou dilua os balões) antes de enviar.', true); return null; }
       if (comPlano && !pln.fecha) { toast('Plano indisponível para esta unidade — fale com a administração.', true); return null; }
+      if (!await conferirVaga(d)) return null;
       const p = montaP(comPlano);
       STORE.salvarProposta(p); // rastreio: fica no Histórico com corretor + empresa
       if (comPlano) { const g = await gerarPDF(p, pln, cfg); return { ...g, proposta: p, msg: msgComPlano(p, pln) }; }
-      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user); return { ...g, proposta: p, msg: msgSimples() };
+      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga); return { ...g, proposta: p, msg: msgSimples() };
     };
 
     $('#u-pdf').onclick = async () => { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } };
@@ -985,6 +1026,7 @@
         const p = STORE.getPropostas().find((x) => x.id === propostaId);
         if (p) {
           sim.inp = { ...sim.inp, ...p.inp, cliente: p.cliente, clienteTel: p.clienteTel };
+          sim.vaga = p.vaga || null;
           sim.criadoEm = p.criadoEm; // preserva a data original da proposta ao re-salvar
           sim.negSalvo = p.neg > 0 ? p.neg : 0; // reabre com o valor exato que a proposta guardou
           if (p.corretor) sim.corretorKey = (p.corretorUsuario || '') + '|' + p.corretor; // reabre já no corretor da proposta
@@ -1138,7 +1180,7 @@
     const montaProposta = () => {
       const c = resolveCorr(); // corretor escolhido no seletor (resolvido na hora de salvar/gerar)
       return {
-        id: sim.propostaId || ('p-' + Date.now() + '-' + u.unidade),
+        id: sim.propostaId || ('p-' + Date.now() + '-' + u.unidade), vaga: sim.vaga || null,
         unidadeId: u.id, unidade: u.unidade, area: u.area,
         cliente: inp.cliente.trim(), clienteTel: inp.clienteTel.trim(),
         corretor: c.nome, corretorUsuario: c.usuario, corretorTel: c.telefone || '', corretorPapel: c.papel, corretorEmpresa: c.empresa || '',
@@ -1260,6 +1302,7 @@
     const validade = new Date(propData.getTime()); validade.setDate(validade.getDate() + 7);
     const area = p.area ? ' · ' + p.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '';
     const fichas = [
+      ...(p.vaga ? [[['Vaga', p.vaga.codigo], ['Pavimento', p.vaga.pavimento]]] : []),
       [['Cliente', p.cliente || '—'], ['Telefone', p.clienteTel || '—']],
       [['Corretor', p.corretor || '—'], ['Telefone', p.corretorTel || '—']],
       [['Unidade', p.unidade + area], ['Forma', plano.formaLabel]],
@@ -1400,7 +1443,7 @@
   }
 
   // ---------- proposta simples (só o valor da unidade — usada pelo corretor) ----------
-  async function gerarPropostaSimples(u, cfg, cliente, clienteTel, user) {
+  async function gerarPropostaSimples(u, cfg, cliente, clienteTel, user, vaga = null) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const W = 595, H = 842, M = 40, CX = W / 2, LIME = [228, 247, 43];
@@ -1420,6 +1463,7 @@
     const prop = new Date();
     const validade = new Date(prop.getTime()); validade.setDate(validade.getDate() + 7);
     const fichas = [
+      ...(vaga ? [[['Vaga', vaga.codigo], ['Pavimento', vaga.pavimento]]] : []),
       [['Cliente', cliente || '—'], ['Telefone', clienteTel || '—']],
       [['Corretor', (user && user.nome) || '—'], ['Telefone', (user && user.telefone) || '—']],
       [['Unidade', String(u.unidade)], ['Andar', u.andar === 0 ? 'Térreo' : u.andar + 'º']],
@@ -1491,6 +1535,7 @@
     const s = scpCalcular(base, opts, cfg);
     const areaS = u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—';
     const fichas = [
+      ...(opts.vaga ? [[['Vaga', opts.vaga.codigo], ['Pavimento', opts.vaga.pavimento]]] : []),
       [['Cliente', cliente || '—'], ['Telefone', tel || '—']],
       [['Corretor', (user && user.nome) || '—'], ['Telefone', (user && user.telefone) || '—']],
       [['Unidade', String(u.unidade)], ['Andar', u.andar === 0 ? 'Térreo' : u.andar + 'º']],
@@ -1793,6 +1838,7 @@
   function resumoTexto(plano, p) {
     const perso = plano.forma === 'perso';
     const li = [];
+    if(p.vaga)li.push('• Vaga: '+vagaTexto(p.vaga));
     li.push(`• Valor: ${fmt(plano.neg)}`);
     li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
     if (plano.nParc) li.push(`• ${plano.nParc} parcelas de ${fmt(plano.vParc, 2)} (todo dia ${p.inp.diaVenc})`);
@@ -3658,7 +3704,7 @@
     const s = scpCalcular(base, opcoes, cfg);
     return {
       id: 'p-scp-' + u.unidade + '-' + normalizado,
-      unidadeId: u.id, unidade: u.unidade, area: u.area,
+      unidadeId: u.id, unidade: u.unidade, area: u.area, vaga: opcoes.vaga || null,
       cliente: nome, clienteTel: String(opcoes.tel || '').trim(),
       corretor: usr.nome, corretorUsuario: usr.usuario, corretorTel: usr.telefone || '', corretorPapel: usr.papel, corretorEmpresa: usr.empresa || '',
       neg: s.valor, forma: 'scp', formaLabel: 'SCP',
@@ -3690,6 +3736,7 @@
     if (s.nParc) t += `• ${s.nParc}x sem juros: ${fmt(s.pParc, 2)}/mês\n`;
     if (s.nTot) t += `• ${s.nFix} + ${s.nCor}: ${fmt(s.pNom, 2)}/mês — ${scpNotaCor(s, idx).replace(/^./, (c) => c.toLowerCase())}\n`;
     if (s.corrPct > 0) t += `Corretagem ${scpPct(s.corrPct)}%: − ${fmt(s.corrValor)} (líquido ${fmt(s.liquido)})\n`;
+    if(o.vaga)t += 'Vaga: '+vagaTexto(o.vaga)+'\n';
     return t;
   }
   function vScp() {
@@ -3710,6 +3757,7 @@
               </select>
             </label>
           </div>
+          ${u ? vagaHTML('scp-vaga', _scp) : ''}
           <div class="scp-box">
             <label class="scp-corr scp-desc">Desconto <small>sobre o valor de tabela</small> <span><input type="number" id="scp-desc" min="0" max="100" step="0.01" inputmode="decimal" value="${esc(_scp.descPct)}" placeholder="0"> %</span></label>
             <label class="scp-opt"><input type="checkbox" id="scp-12" ${_scp.p12 ? 'checked' : ''}> <input type="number" class="scp-n" id="scp-n" min="1" max="240" step="1" inputmode="numeric" value="${esc(_scp.nParc)}" aria-label="quantidade de parcelas sem juros"> x sem juros</label>
@@ -3727,7 +3775,8 @@
           </div>
         </div>
       </div>`;
-    $('#scp-unidade').onchange = (e) => { _scp.unidadeId = e.target.value; vScp(); };
+    if(u)wireVaga('scp-vaga', _scp);
+    $('#scp-unidade').onchange = (e) => { _scp.unidadeId = e.target.value; _scp.vaga=null; vScp(); };
     const reScp = () => { const r = $('#scp-res'); if (r) r.innerHTML = scpResumoHTML(base, _scp, cfg); };
     $('#scp-desc').oninput = (e) => { _scp.descPct = e.target.value; reScp(); };
     $('#scp-12').onchange = (e) => { _scp.p12 = e.target.checked; reScp(); };
@@ -3750,7 +3799,7 @@
       return cr;
     };
     $('#scp-pdf').onclick = async () => {
-      if (!validaScp()) return;
+      if (!validaScp() || !await conferirVaga(_scp)) return;
       const btn = $('#scp-pdf'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'gerando…';
       try { const { doc, nome } = await gerarPdfScp(u, base, _scp, cfg, ator(), _scp.cliente.trim(), _scp.tel.trim()); doc.save(nome); await registrarScp(); toast('PDF gerado ✓' + (_scp.cliente.trim() ? ' · cliente salvo 👥' : '')); }
       catch (e) { toast('Erro ao gerar o PDF: ' + e.message, true); }
@@ -3758,7 +3807,7 @@
     };
     // WhatsApp: gera o PDF → hospeda → manda saudação + resumo + LINK (o cliente abre a landing com o PDF)
     $('#scp-whats').onclick = async () => {
-      if (!validaScp()) return;
+      if (!validaScp() || !await conferirVaga(_scp)) return;
       if (!_scp.cliente.trim()) { toast('Preencha o nome do cliente para vincular a proposta.', true); return; }
       if (!_scp.tel.trim()) { toast('Preencha o telefone do cliente para enviar no WhatsApp.', true); return; }
       const win = window.open('about:blank', '_blank'); // pré-abre no clique (evita bloqueio de popup)

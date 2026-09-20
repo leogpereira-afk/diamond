@@ -76,6 +76,11 @@
     if(out.reserva&&out.expiracao&&out.expiracao<out.reserva)throw Error('O prazo não pode ser anterior à reserva.');
     out.situacao=a.situacao;out.assinatura=v.assinatura;return out;
   }
-  const api={STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
+  function paraProposta(state) {
+    if(state.sync?.pendente)throw Error('Aguarde a atualização das vagas e tente novamente.');
+    return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length)
+      .map(v=>({codigo:v.codigo,pavimento:PISOS[v.piso].nome}));
+  }
+  const api={paraProposta,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
   root.DomoVagas=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

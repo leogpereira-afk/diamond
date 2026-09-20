@@ -216,7 +216,7 @@ export const handler = async (event) => {
   try {
     if(action === 'vagas') {
       const usr=await validarUsuario(stores.cfg,body.auth,false);
-      if(!usr || !ehSuper(usr))return json(403,{erro:'Acesso restrito à gestão Diamond.'});
+      if(!usr || (body.operacao !== 'paraProposta' && !ehSuper(usr)))return json(403,{erro:'Acesso restrito à gestão Diamond.'});
       return await executarVagas(body,usr,json);
     }
     // ---------- básicos ----------

@@ -830,3 +830,5 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
 
 /* Nome completo do comprador na lista interna de vendas. */
 .adm-un .td-comprador{min-width:160px;max-width:280px;white-space:normal;overflow-wrap:anywhere;font-weight:600}
+
+.proposta-vaga{border:1px solid #ddd;border-radius:10px;margin:16px 0;padding:12px 16px}.proposta-vaga summary{cursor:pointer;font-weight:600}.proposta-vaga-conteudo{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:12px}.proposta-vaga select{padding:10px;max-width:100%;flex:1;min-width:180px}.proposta-vaga .nota{flex-basis:100%;margin:0}

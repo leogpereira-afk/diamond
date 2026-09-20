@@ -6,6 +6,7 @@ try{
     const {data:row,error}=await sb.from('domo_vagas_estado').select('estado,revisao,atualizado_em').eq('obra','diamond').maybeSingle();
     if(error)throw Error('Não foi possível consultar o espelho.');
     if(!row)return reply({error:'O espelho ainda não foi importado.'},404);
+    if(acao==='paraProposta')return reply({ok:true,vagas:V.paraProposta(row.estado)});
     if(acao==='carregar')return reply({ok:true,...row});
     if(!['salvar','preverImportacao','importar'].includes(acao))return reply({error:'Ação inválida'},400);
     if(row.estado.sync?.pendente)return reply({error:'A planilha está confirmando uma atualização. Aguarde a sincronização antes de alterar os dados.'},409);
