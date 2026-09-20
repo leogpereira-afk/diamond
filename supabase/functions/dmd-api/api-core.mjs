@@ -1,6 +1,7 @@
 // api-core.mjs — PORTE FIEL do netlify/functions/api.js para Deno/Supabase.
 // Mesmo contrato (36 actions, x-token), mesmo código; só o armazenamento mudou (blobs-shim → Postgres/Storage).
-import { getStore, connectLambda } from '../_shared/blobs-shim.mjs';
+import { getStore, connectLambda, sb } from '../_shared/blobs-shim.mjs';
+import { executarReservas } from './reservas-api.mjs';
 import { executarVagas } from './vagas-api.mjs';
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
@@ -310,13 +311,19 @@ export const handler = async (event) => {
       return json(200, { registros, nextAfter });
     }
 
+    if (action === 'reservasPainel') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      if(!usr||!ehSuper(usr))return json(403,{erro:'Somente a Domo pode gerir reservas.'});
+      return executarReservas(body,usr,json);
+    }
+
     if (action === 'list') {
       const usr = await validarUsuario(stores.cfg, body.auth, false, true);
       if (!usr) return json(403, { erro: 'sessão inválida' });
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = (await Promise.all(fatia.map((k) => stores.unidades.get(k, { type: 'json' })))).filter(Boolean);
-      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,...publica})=>publica), total, nextAfter });
+      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,reserva,...publica})=>publica), total, nextAfter });
     }
 
     if (action === 'upsert') {
@@ -329,12 +336,15 @@ export const handler = async (event) => {
       if (existente && u.atualizadoEm && existente.atualizadoEm > u.atualizadoEm) {
         return json(200, { conflito: true, servidor: existente });
       }
+      if(u.status!==existente?.status&&(u.status==='Reservado'||existente?.status==='Reservado'))return json(409,{erro:'Use a aba Reservas para alterar esta situação.'});
       const grava = { ...existente, ...u, id, atualizadoPor: adm.usuario };
       // regra 4 do blueprint: NÃO reescrever atualizadoEm do cliente
       if (!grava.atualizadoEm) grava.atualizadoEm = now();
-      await stores.unidades.setJSON(id, grava);
+      if(existente){
+        const {error}=await sb.rpc('dmd_reserva_confirmar',{p_id:id,p_antes:existente,p_depois:grava,p_evento:{id:crypto.randomUUID(),unidadeId:id,unidade:grava.unidade,acao:'atualizar',em:now(),por:grava.atualizadoPor,motivo:'Atualização da unidade',antes:{status:existente.status},depois:{status:grava.status}},p_pedido_em:null,p_vagas_revisao:null,p_vagas_estado:null,p_resolver_pedido:grava.status==='Reservado'||grava.status==='Vendido'});
+        if(error)return json(409,{erro:'A unidade mudou durante a gravação. Atualize e tente novamente.'});
+      }else await stores.unidades.setJSON(id,grava);
       // resolveu o status → o pedido de reserva pendente cumpriu seu papel e sai do espelho
-      if (grava.status === 'Reservado' || grava.status === 'Vendido') { try { await stores.reservas.delete(id); } catch (e) {} }
       return json(200, { ok: true, unidade: grava });
     }
 
@@ -347,13 +357,16 @@ export const handler = async (event) => {
       const existente = await stores.unidades.get(id, { type: 'json' });
       if (!existente) return json(404, { erro: 'unidade não encontrada' });
       const st = ['Disponível', 'Reservado', 'Vendido'].includes(body.status) ? body.status : existente.status;
+      if(st==='Reservado'||existente.status==='Reservado')return json(409,{erro:'Use a aba Reservas para confirmar, prorrogar, cancelar ou vender.'});
       const disp = st === 'Disponível';
       const grava = { ...existente, status: st,
         vendedorNome: disp ? '' : String(body.vendedorNome || '').slice(0, 60),
         vendedorEmpresa: disp ? '' : String(body.vendedorEmpresa || '').slice(0, 60),
         atualizadoEm: now(), atualizadoPor: usr.usuario };
-      await stores.unidades.setJSON(id, grava);
-      if (st === 'Reservado' || st === 'Vendido') { try { await stores.reservas.delete(id); } catch (e) {} }
+      if(existente){
+        const {error}=await sb.rpc('dmd_reserva_confirmar',{p_id:id,p_antes:existente,p_depois:grava,p_evento:{id:crypto.randomUUID(),unidadeId:id,unidade:grava.unidade,acao:'atualizar',em:now(),por:grava.atualizadoPor,motivo:'Atualização da unidade',antes:{status:existente.status},depois:{status:grava.status}},p_pedido_em:null,p_vagas_revisao:null,p_vagas_estado:null,p_resolver_pedido:grava.status==='Reservado'||grava.status==='Vendido'});
+        if(error)return json(409,{erro:'A unidade mudou durante a gravação. Atualize e tente novamente.'});
+      }else await stores.unidades.setJSON(id,grava);
       return json(200, { ok: true, unidade: grava });
     }
 
@@ -385,6 +398,7 @@ export const handler = async (event) => {
         unidade, valor: Number(body.valor) || 0, area: Number(body.area) || 0, andar: Number.isFinite(+body.andar) ? +body.andar : null, // teaser da landing (sem abrir o PDF)
         logoId: String(body.logoId || '').slice(0, 80), // logo da imobiliária → aparece na landing
         cliente: String(body.cliente || '').slice(0, 80),
+        telefone: String(body.telefone || '').slice(0, 40),
         corretor: String(body.corretor || '').slice(0, 60), corretorTel: String(body.corretorTel || '').slice(0, 30),
         empresa: String(body.empresa || '').slice(0, 60), propostaId: String(body.propostaId || '').slice(0, 200),
         leadId: String(body.leadId || '').slice(0, 60), // amarra ao cliente no CRM → o sinal volta pro corretor certo
@@ -889,13 +903,14 @@ export const handler = async (event) => {
       const nova = {
         unidadeId, unidade: String(unidadeAtual.unidade || '').slice(0, 20),
         cliente: String(body.cliente || '').slice(0, 80),
+        telefone: String(body.telefone || '').slice(0, 40),
         corretor: String(body.corretor || '').slice(0, 60),
         empresa: usr.papel === 'admin' ? 'Domo' : (usr.nome || ''),
         empresaUsuario: usr.usuario, em: now(),
       };
       if (existente) return json(200, { jaPedida: true, reserva: paraOlhosDe(existente), avisado: true }); // mantém o 1º pedido
       // INSERT usa a chave única (store, key): outro pedido nunca é sobrescrito.
-      const inserido = await stores.reservas.insertJSON(unidadeId, nova);
+      const inserido = await stores.reservas.insertReserva(unidadeId, nova);
       if (!inserido) {
         const primeiro = await stores.reservas.get(unidadeId, { type: 'json' });
         if (!primeiro) return json(409, { erro: 'A disponibilidade mudou durante o pedido. Atualize e tente novamente.' });
@@ -903,12 +918,7 @@ export const handler = async (event) => {
       }
       return json(200, { ok: true, reserva: nova });
     }
-    if (action === 'delReserva') { // a construtora resolveu (reservou de fato ou recusou)
-      const usr = await validarUsuario(stores.cfg, body.auth, false);
-      if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão para resolver pedidos de reserva' });
-      await stores.reservas.delete(String(body.unidadeId || ''));
-      return json(200, { ok: true });
-    }
+    if(action==='delReserva')return json(409,{erro:'Use a aba Reservas e informe o motivo da decisão.'});
 
     // ---------- CRM / leads ----------
     // Visibilidade: admin vê tudo; o MASTER da empresa vê tudo dela; corretor comum só os seus.

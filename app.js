@@ -543,6 +543,7 @@
         ${label}: <b>${arr.length}</b>${STORE.isAdmin() && soma > 0 ? ' · ' + fmt(soma) : ''}</button>`;
     app().innerHTML = `
       <div class="espelho-top">
+        ${STORE.podeVerPainel()?'<a class="btn-crm" href="#/admin/reservas">🔖 Reservar apartamento</a>':''}
         ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/clientes">📊 Gestão comercial</a>' : ''}
         ${(STORE.isAdmin() || (STORE.getUser() || {}).usuario === 'domo') ? '<a class="btn-crm" href="#/retorno">📈 Retorno</a>' : ''}
         ${STORE.isAdmin() ? '' : '<a class="btn-crm" href="#/clientes">👥 Clientes</a>'}`}
@@ -965,19 +966,10 @@
       const rb = ev.currentTarget; if (rb.disabled) return; rb.disabled = true; // trava contra duplo-toque (evita lead/mensagem duplicados)
       // registra o pedido: se JÁ existe um de outro corretor, avisa antes de mandar (dois no mesmo apto = briga)
       try {
-        const pr = await STORE.pedirReserva({ unidadeId: u.id, unidade: u.unidade, cliente: d.cliente.trim(), corretor: user.nome });
-        if (pr && pr.jaPedida) {
-          const r0 = pr.reserva || {};
-          const meu = !r0.deOutraEmpresa && r0.corretor === user.nome;
-          const txt = meu
-            ? `Você já pediu a reserva desta unidade para "${r0.cliente}" em ${fmtData(r0.em)}.\n\nMandar a mensagem de novo?`
-            : r0.deOutraEmpresa
-              ? `⚠️ ATENÇÃO: a unidade ${u.unidade} já tem um pedido de reserva de OUTRA imobiliária, feito em ${fmtData(r0.em)}.\n\nA Domo ainda não confirmou. Quer pedir mesmo assim?`
-              : `⚠️ ATENÇÃO: já existe um pedido de reserva para a unidade ${u.unidade}, da sua equipe:\n\n• Cliente: ${r0.cliente}\n• Corretor: ${r0.corretor}\n• Em: ${fmtData(r0.em)}\n\nA Domo ainda não confirmou. Quer pedir mesmo assim?`;
-          if (!confirm(txt)) { rb.disabled = false; return; }
-          await STORE.pedirReserva({ unidadeId: u.id, unidade: u.unidade, cliente: d.cliente.trim(), corretor: user.nome }, true);
-        }
-      } catch (e) { /* offline: segue e manda o WhatsApp mesmo assim */ }
+        const pr = await STORE.pedirReserva({ unidadeId: u.id, unidade: u.unidade, cliente: d.cliente.trim(), telefone: d.clienteTel.trim(), corretor: user.nome });
+        if(pr?.jaPedida){toast('Já existe um pedido para esta unidade. A Domo precisa resolver o primeiro pedido.',true);rb.disabled=false;return;}
+
+      } catch (e) { toast('Pedido não registrado: '+e.message,true); rb.disabled=false; return; }
       const num = telWa(cfg.contatoWhats || '11972746113');
       const msg = [
         '🔖 *Solicitação de reserva* — Edifício Diamond',
@@ -992,7 +984,7 @@
       window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(msg), '_blank');
       try {
         const cr = await crmRegistrar({ cliente: d.cliente, clienteTel: d.clienteTel, unidade: u.unidade, estagio: 'negociando', temp: 'quente', forceTemp: true });
-        toast('Reserva solicitada' + (cr && cr.acao === 'novo' ? ' · cliente salvo no CRM 👥' : cr && cr.acao === 'atualizado' ? ' · CRM atualizado 👥' : '') + ' ✓');
+        toast('Pedido registrado · aguardando confirmação da Domo' + (cr && cr.acao === 'novo' ? ' · cliente salvo no CRM 👥' : cr && cr.acao === 'atualizado' ? ' · CRM atualizado 👥' : '') + ' ✓');
       } finally { rb.disabled = false; }
     };
     montarFabDomo();
@@ -2457,8 +2449,8 @@
     if (!STORE.podeVerPainel()) { location.hash = '#/home'; return; }
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
-      ? [['vendas', 'Vendas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
-      : [['unidades', 'Unidades'], ['vendas', 'Vendas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
+      ? [['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
+      : [['unidades', 'Unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
       <div class="admin">
@@ -2466,7 +2458,7 @@
         <div class="abas">${tabs.map(([id, l]) => `<a class="aba ${tab === id ? 'on' : ''}" href="#/admin/${id}">${l}</a>`).join('')}</div>
         <div id="aba-corpo"></div>
       </div>`;
-    ({ unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas, vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
+    ({ unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas, reservas: () => window.DiamondReservas.render(), vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
     // sair da aba (outra aba ou "← espelho") com edição pendente → confirma antes de perder
     $$('.admin .aba, .admin .volta').forEach((a) => a.addEventListener('click', (e) => {
       if (_sujo && !confirm('Você tem alterações não salvas nesta aba. Sair sem salvar?')) e.preventDefault();
@@ -2623,6 +2615,7 @@
   }
 
   function compradorVenda(u, leads) {
+    if(u.status==='Reservado'&&u.reserva?.cliente)return u.reserva.cliente;
     if (u.status === 'Disponível') return '—';
     const direto = String(u.compradorNome || u.comprador || u.clienteNome || u.cliente || '').trim();
     if (direto) return direto;
@@ -2670,7 +2663,7 @@
         <button type="button" class="chip chip-f" data-st="Reservado">Reservadas: <b>${nRes}</b></button>
         <button type="button" class="chip chip-f" data-st="Vendido">Vendidas: <b>${nVend}</b></button>
         <button type="button" class="chip chip-f" data-st="">Total: <b>${uns.length}</b></button>
-        <button type="button" class="btn-lista-pdf" id="v-baixar">⬇ Baixar esta lista (PDF)</button>
+        <a class="btn-lista-pdf" href="#/admin/reservas">🔖 Reservas</a><button type="button" class="btn-lista-pdf" id="v-baixar">⬇ Baixar esta lista (PDF)</button>
       </div>
       ${pedidos.length ? `
       <div class="pedidos-box">
@@ -2751,6 +2744,10 @@
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
         const vv = ($('.v-vend', tr).value) || '|'; const corte = vv.indexOf('|'); const st = stSel.value;
         const vEmp = st === 'Disponível' ? '' : vv.slice(0, corte); const vNome = st === 'Disponível' ? '' : vv.slice(corte + 1);
+        if(st==='Reservado'||tr.dataset.status==='Reservado') {
+          btn.disabled=false;btn.textContent=t;
+          window.DiamondReservas.abrir(tr.dataset.id,tr.dataset.status==='Reservado'?(st==='Vendido'?'vender':st==='Disponível'?'cancelar':'prorrogar'):'reservar',STORE.getReservas().find(r=>r.unidadeId===tr.dataset.id));return;
+        }
         try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; $('.td-comprador', tr).textContent = compradorVenda(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {status:st}, STORE.getLeads()); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
@@ -2763,24 +2760,17 @@
       b.onclick = async (e) => {
         const btn = e.currentTarget; const un = btn.dataset.un;
         const linha = btn.closest('tr'); const unidadeId = linha.dataset.pedido;
-        if (!confirm(`Reservar a unidade ${un}?\n\nEla passa a constar como Reservada no espelho de todas as imobiliárias, e o pedido sai da fila.`)) return;
-        btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
-        try {
-          await STORE.setVendedor(un, 'Reservado', '', '');
-          await STORE.excluirReserva(unidadeId);
-          toast(`Unidade ${un} reservada ✓`);
-          vAdmin('vendas');
-        } catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = t; }
+        const pedido=STORE.getReservas().find(r=>r.unidadeId===unidadeId);
+        window.DiamondReservas.abrir(unidadeId,'reservar',pedido);
+
       };
     });
     $$('.ped-no').forEach((b) => {
       b.onclick = async (e) => {
         const btn = e.currentTarget; const un = btn.dataset.un;
         const unidadeId = btn.closest('tr').dataset.pedido;
-        if (!confirm(`Recusar o pedido da unidade ${un}?\n\nO pedido sai da fila e a unidade continua Disponível. O corretor não é avisado pelo sistema — combine com ele.`)) return;
-        btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
-        try { await STORE.excluirReserva(unidadeId); toast('Pedido recusado'); vAdmin('vendas'); }
-        catch (err) { toast(err.message, true); btn.disabled = false; btn.textContent = t; }
+        window.DiamondReservas.abrir(unidadeId,'recusar',STORE.getReservas().find(r=>r.unidadeId===unidadeId));
+
       };
     });
     // Baixar a lista em PDF: o mesmo recorte da tela (busca e filtro de status),

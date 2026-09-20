@@ -25,6 +25,11 @@ function storeKv(store) {
       const { error } = await sb.from('dmd_kv').upsert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
       if (error) throw new Error('kv set ' + store + '/' + key + ': ' + error.message);
     },
+    async insertReserva(key,val) {
+      const {data,error}=await sb.rpc('dmd_reserva_pedir',{p_id:key,p_valor:val});
+      if(error)throw new Error('A unidade mudou. Atualize o espelho antes de pedir a reserva.');
+      return data;
+    },
     async insertJSON(key, val) {
       const { error } = await sb.from('dmd_kv').insert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
       if (error && error.code === '23505') return false;
