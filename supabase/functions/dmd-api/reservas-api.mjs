@@ -26,8 +26,9 @@ export async function executarReservas(b,usr,json){
  try{
  const unidades=getStore('unidades'),pedidos=getStore('reservas'),hist=getStore('reservas_historico');
  if(b.operacao==='listar'){
-  const l=await hist.list();const historico=(await Promise.all(l.blobs.map(x=>hist.get(x.key,{type:'json'})))).filter(x=>x&&x.acao!=='atualizar').sort((a,b)=>b.em.localeCompare(a.em));
-  return json(200,{ok:true,historico});
+  const [uu,pp,hh]=await Promise.all([unidades.listJSON(),pedidos.listJSON(),hist.listJSON()]);
+  const historico=hh.map(r=>r.valor).filter(x=>x&&x.acao!=='atualizar').sort((a,b)=>b.em.localeCompare(a.em));
+  return json(200,{ok:true,unidades:uu.map(r=>r.valor).filter(Boolean),pedidos:pp.map(r=>r.valor).filter(Boolean),historico});
  }
  const u=await unidades.get(texto(b.unidadeId,40),{type:'json'});if(!u)return json(404,{erro:'Apartamento não encontrado.'});
  const pedido=await pedidos.get(u.id,{type:'json'});

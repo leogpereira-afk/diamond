@@ -424,8 +424,8 @@ export const handler = async (event) => {
     if (action === 'listEnvios') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const [le, lev] = await Promise.all([stores.envios.list(), stores.enviosEv.list()]);
-      let envios = (await Promise.all(le.blobs.map((b) => stores.envios.get(b.key, { type: 'json' }).then((e) => e && { id: b.key, ...e, eventos: [] }).catch(() => null)))).filter(Boolean);
+      const [le, lev] = await Promise.all([stores.envios.listJSON(), stores.enviosEv.listJSON()]);
+      let envios = le.filter(r => r.valor).map(({key,valor}) => ({id:key,...valor,eventos:[]}));
       if (!ehSuper(usr)) { // admin e domo veem TUDO; demais, só o próprio
         const meus = new Set([usr.usuario, ...(usr.loginsAntigos || [])]);
         envios = envios.filter((e) => meus.has(e.por)); // isolamento entre empresas
@@ -433,7 +433,7 @@ export const handler = async (event) => {
         if (!ehMasterDe(usr)) { const meusNomes = nomesDoCorretor(usr, como); envios = envios.filter((e) => meusNomes.has(e.corretor || '')); }
       }
       const porId = Object.fromEntries(envios.map((e) => [e.id, e]));
-      const evs = (await Promise.all(lev.blobs.map((b) => stores.enviosEv.get(b.key, { type: 'json' }).catch(() => null)))).filter(Boolean);
+      const evs = lev.map(r => r.valor).filter(Boolean);
       for (const ev of evs) { const dest = porId[ev.envioId]; if (dest) dest.eventos.push({ tipo: ev.tipo, em: ev.em }); }
       envios.sort((a, b) => String(b.em).localeCompare(String(a.em)));
       return json(200, { envios });

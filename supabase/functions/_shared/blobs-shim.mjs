@@ -21,6 +21,17 @@ function storeKv(store) {
       if (!data) return null;
       return (opts && opts.type === 'json') ? data.valor : JSON.stringify(data.valor);
     },
+    // Read whole records per page instead of one database request per key.
+    async listJSON() {
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await sb.from('dmd_kv').select('key,valor').eq('store', store).order('key').range(from, from + 999);
+        if (error) throw new Error('kv listJSON ' + store + ': ' + error.message);
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      return rows;
+    },
     async setJSON(key, val) {
       const { error } = await sb.from('dmd_kv').upsert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
       if (error) throw new Error('kv set ' + store + '/' + key + ': ' + error.message);
