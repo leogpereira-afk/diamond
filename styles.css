@@ -827,3 +827,6 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
 .scp-desc input, .scp-opt .scp-n { font-size: 16px; }
 .scp-opt .scp-n { width: 64px; height: auto; padding: 6px 8px; border: 1px solid var(--edge); border-radius: 8px; text-align: center; font-weight: 700; }
 .scp-erro { color: var(--red, #c62828); font-weight: 600; font-style: normal; }
+
+/* Nome completo do comprador na lista interna de vendas. */
+.adm-un .td-comprador{min-width:160px;max-width:280px;white-space:normal;overflow-wrap:anywhere;font-weight:600}

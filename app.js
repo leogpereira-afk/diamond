@@ -2570,6 +2570,19 @@
     ativarFotos();
   }
 
+  // Apenas vínculo explícito ou um único cliente fechado: proposta não comprova compra.
+  function compradorVenda(u, leads) {
+    if (u.status === 'Disponível') return '—';
+    const direto = String(u.compradorNome || u.comprador || u.clienteNome || u.cliente || '').trim();
+    if (direto) return direto;
+    if (u.status !== 'Vendido') return 'Não informado';
+    const nomes = new Map();
+    (leads || []).filter(l => l.estagio === 'fechado' &&
+      (l.unidadeId ? String(l.unidadeId) === String(u.id) : String(l.unidade || '').trim() === String(u.unidade).trim()))
+      .forEach(l => { const nome = String(l.cliente || '').trim(); if (nome) nomes.set(nome.toLocaleLowerCase('pt-BR'), nome); });
+    return nomes.size === 1 ? [...nomes.values()][0] : nomes.size > 1 ? 'Conferir compradores no CRM' : 'Não informado';
+  }
+
   // VENDAS (domo): muda só o STATUS + VENDEDOR das unidades (não mexe em preço). Salva direto via setVendedor.
   function aVendas() {
     // Puxa os pedidos de reserva ao abrir (uma vez), senão a fila mostrada seria a
@@ -2626,14 +2639,15 @@
         <div class="nota">“Reservar” marca a unidade como <b>Reservada</b> e tira o pedido da fila. “Recusar” só tira o pedido — a unidade continua disponível.</div>
       </div>` : ''}
       <div class="nota">Marque o <b>status</b> e <b>quem vendeu</b> cada unidade. Preços e configuração ficam com o administrador.</div>
-      <div class="filtros"><input id="v-busca" placeholder="🔎 buscar unidade…" autocomplete="off"><select id="v-status"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
+      <div class="filtros"><input id="v-busca" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
       <div class="tabela-wrap"><table class="tabela adm-un">
-        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor</th><th>Status</th><th>Vendedor</th><th></th></tr></thead>
+        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor</th><th>Status</th><th>Comprador</th><th>Vendedor</th><th></th></tr></thead>
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
           <td data-lab="Unidade"><b>${esc(u.unidade)}</b></td>
           <td data-lab="Andar">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
           <td data-lab="Valor">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
           <td data-lab="Status"><select class="v-status">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
+          <td data-lab="Comprador" class="td-comprador">${esc(compradorVenda(u, STORE.getLeads()))}</td>
           <td data-lab="Vendedor" class="td-vendedor">${vendSel(u)}</td>
           <td class="td-salvar"><button class="btn-mini v-salvar">salvar</button></td>
         </tr>`).join('')}</tbody></table></div>`;
@@ -2642,7 +2656,7 @@
       const q = ($('#v-busca').value || '').trim().toLowerCase();
       const st = ($('#v-status') || {}).value || '';
       linhas.forEach((tr) => {
-        const okBusca = (!q || (tr.dataset.un || '').toLowerCase().includes(q));
+        const okBusca = (!q || ((tr.dataset.un || '') + ' ' + ($('.td-comprador', tr)?.textContent || '')).toLowerCase().includes(q));
         const okStatus = (!st || (tr.dataset.status || '') === st);
         tr.style.display = (okBusca && okStatus) ? '' : 'none';
       });
@@ -2686,7 +2700,7 @@
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
         const vv = ($('.v-vend', tr).value) || '|'; const corte = vv.indexOf('|'); const st = stSel.value;
         const vEmp = st === 'Disponível' ? '' : vv.slice(0, corte); const vNome = st === 'Disponível' ? '' : vv.slice(corte + 1);
-        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
+        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; $('.td-comprador', tr).textContent = compradorVenda(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {status:st}, STORE.getLeads()); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
       };
@@ -2732,7 +2746,7 @@
       const qf = (($('#v-busca') || {}).value || '').trim();
       const q = qf.toLowerCase();
       const sel = todas.filter((u) => (!stf || (u.status || 'Disponível') === stf)
-        && (!q || String(u.unidade).toLowerCase().includes(q)));
+        && (!q || (String(u.unidade) + ' ' + compradorVenda(u, STORE.getLeads())).toLowerCase().includes(q)));
       if (!sel.length) { toast('Nenhuma unidade nesta lista para baixar.', true); return; }
       // Pendência medida linha a linha contra o que está salvo. Não dá para confiar
       // no _sujo global: salvar UMA linha o zera, e as outras edições abertas
