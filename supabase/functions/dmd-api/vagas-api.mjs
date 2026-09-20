@@ -8,6 +8,7 @@ try{
     if(!row)return reply({error:'O espelho ainda não foi importado.'},404);
     if(acao==='carregar')return reply({ok:true,...row});
     if(!['salvar','preverImportacao','importar'].includes(acao))return reply({error:'Ação inválida'},400);
+    if(row.estado.sync?.pendente)return reply({error:'A planilha está confirmando uma atualização. Aguarde a sincronização antes de alterar os dados.'},409);
     const estado=structuredClone(row.estado);
     const por=usr.nome||usr.usuario;
     let novo=estado,detalhe;
