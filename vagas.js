@@ -148,7 +148,7 @@ function tirarDaPilha(fundo) {
   function abrir(codigo){
     const original=base.estado.vagas.find(x=>x.codigo===codigo),v=V.efetivas(base.estado).find(x=>x.codigo===codigo),revisao=base.revisao;
     const campo=(nome,label,type='text')=>`<label>${label}<input type="${type}" name="${nome}" value="${esc(v[nome]||'')}"></label>`;
-    const m=abrirModal({titulo:codigo+' · '+V.PISOS[v.piso].nome,largo:true,corpo:`<form id="vgForm"><div class="vg-form-resumo">${badge(v)}<span>${v.manual?'Decisão salva no Diamond':'Informações da planilha'} · ${esc(v.area||'Área não informada')}</span></div>${v.alertas.length?`<div class="aviso">${v.alertas.map(esc).join('<br>')}</div>`:''}<div class="vg-form-grid"><label>Situação<select name="situacao"><option value="">Selecione para conferir</option>${Object.entries(V.STATUS).filter(([k])=>k!=='conferir').map(([k,t])=>`<option value="${k}" ${v.situacao===k?'selected':''}>${t}</option>`).join('')}</select></label><label>Apartamento<select name="apartamento"><option value="">Sem vínculo</option>${base.estado.unidades.map(u=>`<option ${u.apartamento===v.apartamento?'selected':''}>${esc(u.apartamento)}</option>`).join('')}</select></label>${campo('cliente','Cliente / proprietário')}<label>Etapa do contrato<select name="contrato">${['','Documentos','Elaboração','Assinaturas','Finalizado',...(!['','Documentos','Elaboração','Assinaturas','Finalizado'].includes(v.contrato)?[v.contrato]:[])].map(t=>`<option value="${esc(t)}" ${v.contrato===t?'selected':''}>${esc(t||'Não informado')}</option>`).join('')}</select></label>${campo('reserva','Início da reserva','date')}${campo('expiracao','Prazo da reserva','date')}</div><label>Observações<textarea name="observacoes" rows="3">${esc(v.observacoes)}</textarea></label><label>Motivo da alteração ou conferência<input name="motivo" required maxlength="300" placeholder="Ex.: conferido com o contrato assinado"></label><p id="vgErroForm" role="alert" class="vg-danger"></p><details class="vg-fontes"><summary>Conferir as informações originais</summary><div class="vg-origens"><div><h3>Vagas de Garagem</h3>${original.origem.vinculos.map(u=>`<p>${esc(u.apartamento)} · ${esc(u['cliente / proprietario'])}<br><b>${esc(u.status)}</b> · ${esc(u.contratos||'Sem contrato')}</p>`).join('')||'<p>Sem vínculo informado.</p>'}</div><div><h3>${base.estado.fonte.abaUnica?'Espelho da aba única':'Gestão de Vagas'}</h3><p>${esc(original.origem.gestao.apartamento||'Sem apartamento')} · ${esc(original.origem.gestao['cliente / proprietario']||'Sem cliente')}<br><b>${esc(original.origem.gestao.status)}</b> · ${esc(original.origem.gestao.pavimento)}</p></div></div><p>${esc(v.avisos.join(' '))}</p></details></form>`,acoes:[{texto:'Fechar',aoClicar:fecharModal},{texto:'Trocar de vaga',aoClicar:()=>trocar(codigo)},{texto:'Salvar alterações',classe:'primario',aoClicar:async f=>{
+    const m=abrirModal({titulo:codigo+' · '+V.PISOS[v.piso].nome,largo:true,corpo:`<form id="vgForm"><div class="vg-form-resumo">${badge(v)}<span>${v.manual?'Decisão salva no Diamond':'Informações da planilha'} · ${esc(v.area||'Área não informada')}</span></div>${v.alertas.length?`<div class="aviso">${v.alertas.map(esc).join('<br>')}</div>`:''}<div class="vg-form-grid"><label>Situação<select name="situacao"><option value="">Selecione para conferir</option>${Object.entries(V.STATUS).filter(([k])=>k!=='conferir').map(([k,t])=>`<option value="${k}" ${v.situacao===k?'selected':''}>${t}</option>`).join('')}</select></label><label>Apartamento<select name="apartamento"><option value="">Sem vínculo</option>${base.estado.unidades.map(u=>`<option ${u.apartamento===v.apartamento?'selected':''}>${esc(u.apartamento)}</option>`).join('')}</select></label>${campo('cliente','Cliente / proprietário')}<label>Etapa do contrato<select name="contrato">${['','Documentos','Elaboração','Assinaturas','Finalizado',...(!['','Documentos','Elaboração','Assinaturas','Finalizado'].includes(v.contrato)?[v.contrato]:[])].map(t=>`<option value="${esc(t)}" ${v.contrato===t?'selected':''}>${esc(t||'Não informado')}</option>`).join('')}</select></label>${campo('reserva','Início da reserva','date')}${campo('expiracao','Prazo da reserva','date')}</div><label>Observações<textarea name="observacoes" rows="3">${esc(v.observacoes)}</textarea></label><label>Motivo da alteração ou conferência<input name="motivo" required maxlength="300" placeholder="Ex.: conferido com o contrato assinado"></label><p id="vgErroForm" role="alert" class="vg-danger"></p><details class="vg-fontes"><summary>Conferir as informações originais</summary><div class="vg-origens"><div><h3>Vagas de Garagem</h3>${original.origem.vinculos.map(u=>`<p>${esc(u.apartamento)} · ${esc(u['cliente / proprietario'])}<br><b>${esc(u.status)}</b> · ${esc(u.contratos||'Sem contrato')}</p>`).join('')||'<p>Sem vínculo informado.</p>'}</div><div><h3>${base.estado.fonte.abaUnica?'Espelho da aba única':'Gestão de Vagas'}</h3><p>${esc(original.origem.gestao.apartamento||'Sem apartamento')} · ${esc(original.origem.gestao['cliente / proprietario']||'Sem cliente')}<br><b>${esc(original.origem.gestao.status)}</b> · ${esc(original.origem.gestao.pavimento)}</p></div></div><p>${esc(v.avisos.join(' '))}</p></details></form>`,acoes:[{texto:'Fechar',aoClicar:fecharModal},{texto:'Trocar de vaga',aoClicar:()=>{trocar(codigo);}},{texto:'Salvar alterações',classe:'primario',aoClicar:async f=>{
       const form=f.querySelector('form'),error=f.querySelector('#vgErroForm'),button=f.querySelector('footer .primario');
       if(button.disabled)return;
       error.textContent='';
@@ -158,7 +158,8 @@ function tirarDaPilha(fundo) {
     m.classList.add('vg-modal');
     { // sem vínculo conferido não há o que transferir: o botão diz por quê em vez de sumir
       const bt=[...m.querySelectorAll('footer .btn')].find(x=>x.textContent==='Trocar de vaga');
-      const impedimento=v.alertas.length?'Confira e salve esta vaga antes de trocar.'
+      const impedimento=typeof V.validarTroca!=='function'?''
+        :v.alertas.length?'Confira e salve esta vaga antes de trocar.'
         :!['reservada','vendida'].includes(v.situacao)?'Só é possível trocar uma vaga reservada ou vendida.':'';
       if(bt&&impedimento){bt.disabled=true;bt.title=impedimento;}
     }
@@ -168,7 +169,24 @@ function tirarDaPilha(fundo) {
   // Troca de vaga: mostra SÓ as livres (mesma régua da proposta) e grava as duas
   // vagas de uma vez. A tela usa o que está salvo — edição aberta no modal de trás
   // não entra, por isso o aviso.
-  function trocar(codigo){
+  // A tela (vagas.js) e as regras (vagas-domain.js) são arquivos separados. Se o
+  // navegador servir uma cópia velha das regras, o botão morre com "is not a
+  // function" e a pessoa fica sem saída. Aqui a tela percebe a incompatibilidade,
+  // limpa o que estiver guardado e recarrega UMA vez (marca na sessão evita laço).
+  async function regrasAtuais(){
+    if(V&&typeof V.validarTroca==='function'&&typeof V.livres==='function'){sessionStorage.removeItem('vgRecarregado');return true;}
+    if(sessionStorage.getItem('vgRecarregado')){toast('Esta tela está desatualizada e o navegador continua entregando a versão antiga. Feche o aplicativo por completo e abra de novo.','ruim');return false;}
+    sessionStorage.setItem('vgRecarregado','1');
+    toast('Atualizando a tela para a versão nova…');
+    try{
+      if(navigator.serviceWorker)for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister();
+      if(window.caches)for(const k of await caches.keys())await caches.delete(k);
+    }catch(e){/* sem cache para limpar: o reload abaixo ainda resolve */}
+    location.reload(true);
+    return false;
+  }
+  async function trocar(codigo){
+    if(!await regrasAtuais())return;
     const v=V.efetivas(base.estado).find(x=>x.codigo===codigo);
     const disponiveis=V.livres(base.estado).filter(x=>x.codigo!==codigo);
     const porPiso=V.PISOS.map(p=>({p,vs:disponiveis.filter(x=>x.piso===p.id)})).filter(g=>g.vs.length);
