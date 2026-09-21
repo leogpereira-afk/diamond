@@ -68,7 +68,7 @@
       r.pendenteContrato=['vendida','reservada'].includes(r.situacao)&&norm(r.contrato)!=='finalizado';return r;
     });
   }
-  function validarAjuste(cod,a,state) {
+  function validarAjuste(cod,a,state,ignorar) {
     const v=state.vagas.find(v=>v.codigo===cod);if(!v)throw Error('Vaga não encontrada.');
     if(!['disponivel','reservada','vendida'].includes(a.situacao))throw Error('Escolha uma situação válida.');
     const out={};for(const k of ['apartamento','cliente','contrato','observacoes','motivo']){out[k]=clean(a[k]);if(out[k].length>(k==='observacoes'?2000:300))throw Error('Texto muito longo: '+k);}
@@ -76,17 +76,39 @@
     if(a.situacao!=='disponivel'&&!out.cliente)throw Error('Informe o cliente da reserva ou venda.');
     if(a.situacao==='disponivel'&&(out.apartamento||out.cliente))throw Error('Uma vaga disponível não pode manter cliente ou apartamento vinculado.');
     if(out.apartamento&&!state.unidades.some(u=>norm(u.apartamento)===norm(out.apartamento)))throw Error('Selecione um apartamento existente.');
-    if(out.apartamento&&efetivas(state).some(x=>x.codigo!==cod&&norm(x.apartamento)===norm(out.apartamento)))throw Error('Este apartamento já está vinculado a outra vaga. Confira antes de transferir.');
+    // `ignorar` é a vaga que está sendo esvaziada na mesma gravação: sem isso, mudar
+    // de vaga acusaria o apartamento como duplicado contra a própria vaga de origem.
+    const pular=new Set([cod,...(ignorar||[])]);
+    if(out.apartamento&&efetivas(state).some(x=>!pular.has(x.codigo)&&norm(x.apartamento)===norm(out.apartamento)))throw Error('Este apartamento já está vinculado a outra vaga. Confira antes de transferir.');
     out.reserva=data(a.reserva);out.expiracao=data(a.expiracao);
     if(a.situacao==='reservada'&&(!out.reserva||!out.expiracao))throw Error('Informe início e prazo da reserva.');
     if(out.reserva&&out.expiracao&&out.expiracao<out.reserva)throw Error('O prazo não pode ser anterior à reserva.');
     out.situacao=a.situacao;out.assinatura=v.assinatura;return out;
+  }
+  // Vagas que podem RECEBER uma troca: livres de verdade, sem vínculo e sem pendência.
+  // É a mesma régua que a proposta usa para oferecer vaga ao cliente.
+  function livres(state) {
+    return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length);
+  }
+  // Mudar de vaga é o MESMO salvar, só que gravando na vaga escolhida e esvaziando
+  // a de origem na mesma operação. Em duas gravações separadas, uma falha no meio
+  // deixaria o apartamento sem vaga — ou em duas, que a régua abaixo proíbe.
+  function validarMudancaVaga(cod,destino,a,state) {
+    const o=state.vagas.find(v=>v.codigo===cod); if(!o)throw Error('Vaga de origem não encontrada.');
+    if(!destino||destino===cod)throw Error('Escolha a vaga de destino.');
+    if(!state.vagas.some(v=>v.codigo===destino))throw Error('Vaga de destino não encontrada.');
+    if(!livres(state).some(v=>v.codigo===destino))throw Error('A vaga '+destino+' não está disponível.');
+    if(a.situacao==='disponivel')throw Error('Para liberar a vaga, mantenha a vaga atual e salve como Disponível.');
+    const ajuste=validarAjuste(destino,a,state,[cod]);
+    const origem={situacao:'disponivel',apartamento:'',cliente:'',contrato:'',observacoes:'',reserva:'',expiracao:'',
+      motivo:ajuste.motivo,assinatura:o.assinatura};
+    return {origem,destino:ajuste,de:cod,para:destino};
   }
   function paraProposta(state) {
     if(state.sync?.pendente)throw Error('Aguarde a atualização das vagas e tente novamente.');
     return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length)
       .map(v=>({codigo:v.codigo,pavimento:PISOS[v.piso].nome}));
   }
-  const api={paraProposta,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
+  const api={paraProposta,livres,validarMudancaVaga,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
   root.DomoVagas=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);
