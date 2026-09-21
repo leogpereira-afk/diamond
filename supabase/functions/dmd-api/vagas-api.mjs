@@ -8,23 +8,21 @@ try{
     if(!row)return reply({error:'O espelho ainda não foi importado.'},404);
     if(acao==='paraProposta')return reply({ok:true,vagas:V.paraProposta(row.estado)});
     if(acao==='carregar')return reply({ok:true,...row});
-    if(!['salvar','trocar','preverImportacao','importar'].includes(acao))return reply({error:'Ação inválida'},400);
+    if(!['salvar','preverImportacao','importar'].includes(acao))return reply({error:'Ação inválida'},400);
     if(row.estado.sync?.pendente)return reply({error:'A planilha está confirmando uma atualização. Aguarde a sincronização antes de alterar os dados.'},409);
     const estado=structuredClone(row.estado);
     const por=usr.nome||usr.usuario;
     let novo=estado,detalhe;
-    if(acao==='salvar'){
+    if(acao==='salvar'&&b.destino&&b.destino!==b.codigo){
+      // mudança de vaga: as DUAS mudam na mesma gravação, com uma revisão só
+      const t=V.validarMudancaVaga(b.codigo,b.destino,b.ajuste||{},estado);
+      detalhe={vaga:t.de+' → '+t.para,antes:V.efetivas(estado).find((v)=>v.codigo===t.de),depois:t.destino,motivo:t.destino.motivo};
+      novo.ajustes={...(estado.ajustes||{}),[t.de]:t.origem,[t.para]:t.destino};
+    }else if(acao==='salvar'){
       const ajuste=V.validarAjuste(b.codigo,b.ajuste||{},estado);
       detalhe={vaga:b.codigo,antes:V.efetivas(estado).find((v)=>v.codigo===b.codigo),depois:ajuste,motivo:ajuste.motivo};
       novo.ajustes={...(estado.ajustes||{}),[b.codigo]:ajuste};
-    }else if(acao==='trocar'){
-      // as DUAS vagas mudam na mesma gravação, com uma revisão só: se o apartamento
-      // saísse da vaga antiga em um pedido e entrasse na nova em outro, uma falha no
-      // meio deixaria o vínculo perdido entre as duas.
-      const t=V.validarTroca(b.codigo,b.destino,b.dados||{},estado);
-      detalhe={vaga:t.de+' → '+t.para,antes:t.antes,depois:t.destino,motivo:t.destino.motivo};
-      novo.ajustes={...(estado.ajustes||{}),[t.de]:t.origem,[t.para]:t.destino};
-    }else{
+        }else{
       if(usr.papel!=='admin')return reply({error:'Somente a direção pode importar uma planilha.'},403);
       const imp=V.importar({...b.fonte,lidoEm:new Date().toISOString()});
       novo={...imp,ajustes:estado.ajustes||{},historico:estado.historico||[],fonte:{...imp.fonte,tipo:'Planilha importada'}};

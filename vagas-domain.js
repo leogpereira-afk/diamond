@@ -68,7 +68,7 @@
       r.pendenteContrato=['vendida','reservada'].includes(r.situacao)&&norm(r.contrato)!=='finalizado';return r;
     });
   }
-  function validarAjuste(cod,a,state) {
+  function validarAjuste(cod,a,state,ignorar) {
     const v=state.vagas.find(v=>v.codigo===cod);if(!v)throw Error('Vaga não encontrada.');
     if(!['disponivel','reservada','vendida'].includes(a.situacao))throw Error('Escolha uma situação válida.');
     const out={};for(const k of ['apartamento','cliente','contrato','observacoes','motivo']){out[k]=clean(a[k]);if(out[k].length>(k==='observacoes'?2000:300))throw Error('Texto muito longo: '+k);}
@@ -76,7 +76,10 @@
     if(a.situacao!=='disponivel'&&!out.cliente)throw Error('Informe o cliente da reserva ou venda.');
     if(a.situacao==='disponivel'&&(out.apartamento||out.cliente))throw Error('Uma vaga disponível não pode manter cliente ou apartamento vinculado.');
     if(out.apartamento&&!state.unidades.some(u=>norm(u.apartamento)===norm(out.apartamento)))throw Error('Selecione um apartamento existente.');
-    if(out.apartamento&&efetivas(state).some(x=>x.codigo!==cod&&norm(x.apartamento)===norm(out.apartamento)))throw Error('Este apartamento já está vinculado a outra vaga. Confira antes de transferir.');
+    // `ignorar` é a vaga que está sendo esvaziada na mesma gravação: sem isso, mudar
+    // de vaga acusaria o apartamento como duplicado contra a própria vaga de origem.
+    const pular=new Set([cod,...(ignorar||[])]);
+    if(out.apartamento&&efetivas(state).some(x=>!pular.has(x.codigo)&&norm(x.apartamento)===norm(out.apartamento)))throw Error('Este apartamento já está vinculado a outra vaga. Confira antes de transferir.');
     out.reserva=data(a.reserva);out.expiracao=data(a.expiracao);
     if(a.situacao==='reservada'&&(!out.reserva||!out.expiracao))throw Error('Informe início e prazo da reserva.');
     if(out.reserva&&out.expiracao&&out.expiracao<out.reserva)throw Error('O prazo não pode ser anterior à reserva.');
@@ -87,33 +90,25 @@
   function livres(state) {
     return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length);
   }
-  // Troca de vaga: o vínculo inteiro (apartamento, cliente, contrato, datas e
-  // observações) muda de lugar e a vaga antiga fica livre. É uma operação só —
-  // gravar em duas etapas deixaria o apartamento em duas vagas no meio do caminho,
-  // que é justamente o que validarAjuste proíbe.
-  function validarTroca(de, para, dados, state) {
-    const vs=efetivas(state);
-    const o=vs.find(v=>v.codigo===de); if(!o)throw Error('Vaga de origem não encontrada.');
-    const d=vs.find(v=>v.codigo===para); if(!d)throw Error('Escolha a vaga de destino.');
-    if(de===para)throw Error('Escolha uma vaga diferente da atual.');
-    const motivo=clean(dados.motivo);
-    if(!motivo)throw Error('Informe o motivo da troca para o histórico.');
-    if(motivo.length>300)throw Error('Texto muito longo: motivo.');
-    if(o.situacao==='disponivel'&&!o.apartamento&&!o.cliente)throw Error('Esta vaga está disponível: não há vínculo para transferir.');
-    if(o.alertas.length)throw Error('Esta vaga tem pendências de conferência. Confira e salve antes de trocar.');
-    if(!['reservada','vendida'].includes(o.situacao))throw Error('Só é possível trocar uma vaga reservada ou vendida.');
-    if(!livres(state).some(v=>v.codigo===para))throw Error('A vaga '+para+' não está disponível para receber a troca.');
-    const assinatura=c=>state.vagas.find(v=>v.codigo===c).assinatura;
-    const destino={situacao:o.situacao,apartamento:clean(o.apartamento),cliente:clean(o.cliente),contrato:clean(o.contrato),
-      observacoes:clean(o.observacoes),reserva:o.reserva||'',expiracao:o.expiracao||'',motivo,assinatura:assinatura(para)};
-    const origem={situacao:'disponivel',apartamento:'',cliente:'',contrato:'',observacoes:'',reserva:'',expiracao:'',motivo,assinatura:assinatura(de)};
-    return {origem,destino,de,para,antes:o};
+  // Mudar de vaga é o MESMO salvar, só que gravando na vaga escolhida e esvaziando
+  // a de origem na mesma operação. Em duas gravações separadas, uma falha no meio
+  // deixaria o apartamento sem vaga — ou em duas, que a régua abaixo proíbe.
+  function validarMudancaVaga(cod,destino,a,state) {
+    const o=state.vagas.find(v=>v.codigo===cod); if(!o)throw Error('Vaga de origem não encontrada.');
+    if(!destino||destino===cod)throw Error('Escolha a vaga de destino.');
+    if(!state.vagas.some(v=>v.codigo===destino))throw Error('Vaga de destino não encontrada.');
+    if(!livres(state).some(v=>v.codigo===destino))throw Error('A vaga '+destino+' não está disponível.');
+    if(a.situacao==='disponivel')throw Error('Para liberar a vaga, mantenha a vaga atual e salve como Disponível.');
+    const ajuste=validarAjuste(destino,a,state,[cod]);
+    const origem={situacao:'disponivel',apartamento:'',cliente:'',contrato:'',observacoes:'',reserva:'',expiracao:'',
+      motivo:ajuste.motivo,assinatura:o.assinatura};
+    return {origem,destino:ajuste,de:cod,para:destino};
   }
   function paraProposta(state) {
     if(state.sync?.pendente)throw Error('Aguarde a atualização das vagas e tente novamente.');
     return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length)
       .map(v=>({codigo:v.codigo,pavimento:PISOS[v.piso].nome}));
   }
-  const api={paraProposta,livres,validarTroca,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
+  const api={paraProposta,livres,validarMudancaVaga,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
   root.DomoVagas=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

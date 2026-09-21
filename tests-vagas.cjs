@@ -13,26 +13,33 @@ test('gravação valida cliente, motivo, vínculo e reserva',()=>{const s=st();a
 test('não permite duplicar o apartamento nem trocar o número da vaga',()=>{const s=st();s.ajustes={V02:{assinatura:s.vagas[1].assinatura,situacao:'vendida',cliente:'Teste',apartamento:'Apto 402'}};assert.throws(()=>V.validarAjuste('V01',{situacao:'vendida',cliente:'Teste',apartamento:'Apto 402',motivo:'Teste'},s),/outra vaga/);const a=V.validarAjuste('V01',{situacao:'vendida',cliente:'Teste',apartamento:'Apto 401',motivo:'Teste',piso:2,codigo:'V05'},s);assert.equal(a.piso,undefined);assert.equal(a.codigo,undefined);});
 test('CSV preserva vírgulas, aspas, quebras de linha e acentos',()=>{assert.deepEqual(V.parseCSV('a,b\r\n"João, Silva","linha 1\nlinha ""2"""'),[['a','b'],['João, Silva','linha 1\nlinha "2"']]);assert.deepEqual(V.parseCSV('a;b\n1;2'),[['a','b'],['1','2']]);});
 test('datas impossíveis são recusadas',()=>{assert.throws(()=>V.data('2026-02-30'),/inválida/);assert.equal(V.data('03/01/2027'),'2027-01-03');});
-test('troca move o vínculo inteiro e libera a vaga antiga',()=>{const s=st();s.ajustes={V01:{assinatura:s.vagas[0].assinatura,situacao:'vendida',cliente:'Jean Malta',apartamento:'Apto 401',contrato:'Assinaturas',observacoes:'Pago à vista',reserva:'',expiracao:''}};
- const t=V.validarTroca('V01','V07',{motivo:'Cliente pediu térreo'},s);
+test('mudar de vaga move o vínculo inteiro e libera a antiga',()=>{const s=st();s.ajustes={V01:{assinatura:s.vagas[0].assinatura,situacao:'vendida',cliente:'Jean Malta',apartamento:'Apto 401',contrato:'Assinaturas',observacoes:'Pago à vista',reserva:'',expiracao:''}};
+ const form={situacao:'vendida',cliente:'Jean Malta',apartamento:'Apto 401',contrato:'Assinaturas',observacoes:'Pago à vista',reserva:'',expiracao:'',motivo:'Cliente gostou mais da outra'};
+ const t=V.validarMudancaVaga('V01','V07',form,s);
  assert.equal(t.destino.apartamento,'Apto 401');assert.equal(t.destino.cliente,'Jean Malta');assert.equal(t.destino.contrato,'Assinaturas');assert.equal(t.destino.observacoes,'Pago à vista');assert.equal(t.destino.situacao,'vendida');
  assert.equal(t.origem.situacao,'disponivel');assert.equal(t.origem.apartamento,'');assert.equal(t.origem.cliente,'');
  assert.equal(t.destino.assinatura,s.vagas[6].assinatura);assert.equal(t.origem.assinatura,s.vagas[0].assinatura);
  const depois=V.efetivas({...s,ajustes:{...s.ajustes,V01:t.origem,V07:t.destino}});
  assert.equal(depois[0].situacao,'disponivel');assert.equal(depois[6].apartamento,'Apto 401');
- assert.equal(depois.filter(v=>v.apartamento==='Apto 401').length,1); // o apartamento não fica em duas vagas
- V.validarAjuste('V07',{...t.destino},{...s,ajustes:{...s.ajustes,V01:t.origem}}); // o resultado passa na régua normal
+ assert.equal(depois.filter(v=>v.apartamento==='Apto 401').length,1);
 });
-test('troca recusa destino ocupado, mesma vaga, sem motivo e origem sem vínculo',()=>{const s=st();
+test('mudar de vaga edita os campos junto: o que vale é o formulário, não o antigo',()=>{const s=st();s.ajustes={V01:{assinatura:s.vagas[0].assinatura,situacao:'reservada',cliente:'Antigo',apartamento:'Apto 401',reserva:'2026-09-01',expiracao:'2026-12-01'}};
+ const t=V.validarMudancaVaga('V01','V07',{situacao:'vendida',cliente:'Novo Nome',apartamento:'Apto 402',contrato:'Finalizado',observacoes:'',reserva:'',expiracao:'',motivo:'Conferido com o contrato'},s);
+ assert.equal(t.destino.cliente,'Novo Nome');assert.equal(t.destino.apartamento,'Apto 402');assert.equal(t.destino.situacao,'vendida');
+});
+test('mudar de vaga recusa destino ocupado, mesma vaga, sem motivo e liberar por engano',()=>{const s=st();
  s.ajustes={V01:{assinatura:s.vagas[0].assinatura,situacao:'vendida',cliente:'A',apartamento:'Apto 401'},
             V07:{assinatura:s.vagas[6].assinatura,situacao:'reservada',cliente:'B',apartamento:'Apto 407',reserva:'2026-09-01',expiracao:'2026-12-01'}};
- assert.throws(()=>V.validarTroca('V01','V07',{motivo:'x'},s),/não está disponível/);
- assert.throws(()=>V.validarTroca('V01','V01',{motivo:'x'},s),/diferente/);
- assert.throws(()=>V.validarTroca('V01','V08',{},s),/motivo/);
- assert.throws(()=>V.validarTroca('V02','V08',{motivo:'x'},s),/disponível: não há vínculo/);
- assert.throws(()=>V.validarTroca('V01','V99',{motivo:'x'},s),/destino/);
+ const ok={situacao:'vendida',cliente:'A',apartamento:'Apto 401',motivo:'x'};
+ assert.throws(()=>V.validarMudancaVaga('V01','V07',ok,s),/não está disponível/);
+ assert.throws(()=>V.validarMudancaVaga('V01','V01',ok,s),/destino/);
+ assert.throws(()=>V.validarMudancaVaga('V01','V99',ok,s),/destino não encontrada/);
+ assert.throws(()=>V.validarMudancaVaga('V01','V08',{...ok,motivo:''},s),/motivo/);
+ assert.throws(()=>V.validarMudancaVaga('V01','V08',{...ok,situacao:'disponivel'},s),/mantenha a vaga atual/);
 });
-test('troca exige conferência antes: vaga com alerta ou situação pendente não troca',()=>{const f=fonte();f.gestao[1][4]='Vendida';const s=V.importar(f); // venda sem vínculo = alerta
- assert.throws(()=>V.validarTroca('V01','V08',{motivo:'x'},s),/pendências|reservada ou vendida/);
- assert.ok(!V.livres(s).some(v=>v.codigo==='V01'));
+test('o apartamento que muda de vaga não é acusado de duplicado contra a própria origem',()=>{const s=st();
+ s.ajustes={V01:{assinatura:s.vagas[0].assinatura,situacao:'vendida',cliente:'A',apartamento:'Apto 401'}};
+ assert.throws(()=>V.validarAjuste('V08',{situacao:'vendida',cliente:'A',apartamento:'Apto 401',motivo:'x'},s),/outra vaga/);
+ const t=V.validarMudancaVaga('V01','V08',{situacao:'vendida',cliente:'A',apartamento:'Apto 401',motivo:'x'},s);
+ assert.equal(t.destino.apartamento,'Apto 401');
 });
