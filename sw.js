@@ -1,13 +1,16 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
 const CACHE = 'diamond-pages-v25';
-const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js','reservas.js?v=24','reservas.css?v=24',
-  'vagas-domain.js?v=24','vagas-pdf.js?v=24','vagas.js?v=24','vagas.css?v=24','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js','reservas.js?v=25','reservas.css?v=25',
+  'vagas-domain.js?v=25','vagas-pdf.js?v=25','vagas.js?v=25','vagas.css?v=25','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    await c.addAll(SHELL); // falha ⇒ aborta ⇒ cache antigo íntegro permanece
+    // `cache: 'reload'` também AQUI: sem isto, addAll aceitava o arquivo velho que o
+    // cache HTTP do navegador ainda guardava para a MESMA URL e o assava dentro do
+    // cache novo — foi assim que a tela nova rodou com as regras antigas (21/09).
+    await c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))); // falha ⇒ aborta ⇒ cache antigo íntegro permanece
     await Promise.allSettled(CDN.map((u) => c.add(u))); // CDN não bloqueia
     self.skipWaiting();
   })());
