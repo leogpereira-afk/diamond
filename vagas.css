@@ -33,3 +33,10 @@
 .vg-modal .modal{background:#fff;border-radius:14px;box-shadow:0 18px 70px #0005}.vg-modal .modal header{display:flex}.vg-modal .fechar{border:0;background:none;font-size:25px;cursor:pointer}.vg-modal footer{display:flex;justify-content:flex-end;gap:10px}
 .vg-modal .aviso{padding:12px;background:#fff3da;color:#694600;border-radius:8px}.vg-modal .vg-fontes summary{cursor:pointer}.vg-modal label{color:#222}
 @media(max-width:600px){#vgHeader{align-items:flex-start;flex-direction:column}.vg-modal.fundo-modal{padding:8px}}
+
+/* Troca de vaga: campos empilhados (lado a lado o seletor e o motivo ficam apertados) */
+#vgTrocaForm label { display: block; margin-bottom: 14px; font-weight: 600; }
+#vgTrocaForm label small { font-weight: 400; color: var(--grey, #6b6b6b); }
+#vgTrocaForm select, #vgTrocaForm input { display: block; width: 100%; margin-top: 6px; padding: 10px; font-size: 16px; border: 1px solid var(--edge, #e0e0e0); border-radius: 8px; font-family: inherit; }
+.vg-troca-resumo { background: #f6f6f7; border-left: 4px solid var(--lime-b, #e4f72b); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+.vg-troca-resumo small { color: #5a5a5a; }

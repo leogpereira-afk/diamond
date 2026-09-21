@@ -1,5 +1,5 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v24';
+const CACHE = 'diamond-pages-v25';
 const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js','reservas.js?v=24','reservas.css?v=24',
   'vagas-domain.js?v=24','vagas-pdf.js?v=24','vagas.js?v=24','vagas.css?v=24','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];

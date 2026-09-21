@@ -82,11 +82,38 @@
     if(out.reserva&&out.expiracao&&out.expiracao<out.reserva)throw Error('O prazo não pode ser anterior à reserva.');
     out.situacao=a.situacao;out.assinatura=v.assinatura;return out;
   }
+  // Vagas que podem RECEBER uma troca: livres de verdade, sem vínculo e sem pendência.
+  // É a mesma régua que a proposta usa para oferecer vaga ao cliente.
+  function livres(state) {
+    return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length);
+  }
+  // Troca de vaga: o vínculo inteiro (apartamento, cliente, contrato, datas e
+  // observações) muda de lugar e a vaga antiga fica livre. É uma operação só —
+  // gravar em duas etapas deixaria o apartamento em duas vagas no meio do caminho,
+  // que é justamente o que validarAjuste proíbe.
+  function validarTroca(de, para, dados, state) {
+    const vs=efetivas(state);
+    const o=vs.find(v=>v.codigo===de); if(!o)throw Error('Vaga de origem não encontrada.');
+    const d=vs.find(v=>v.codigo===para); if(!d)throw Error('Escolha a vaga de destino.');
+    if(de===para)throw Error('Escolha uma vaga diferente da atual.');
+    const motivo=clean(dados.motivo);
+    if(!motivo)throw Error('Informe o motivo da troca para o histórico.');
+    if(motivo.length>300)throw Error('Texto muito longo: motivo.');
+    if(o.situacao==='disponivel'&&!o.apartamento&&!o.cliente)throw Error('Esta vaga está disponível: não há vínculo para transferir.');
+    if(o.alertas.length)throw Error('Esta vaga tem pendências de conferência. Confira e salve antes de trocar.');
+    if(!['reservada','vendida'].includes(o.situacao))throw Error('Só é possível trocar uma vaga reservada ou vendida.');
+    if(!livres(state).some(v=>v.codigo===para))throw Error('A vaga '+para+' não está disponível para receber a troca.');
+    const assinatura=c=>state.vagas.find(v=>v.codigo===c).assinatura;
+    const destino={situacao:o.situacao,apartamento:clean(o.apartamento),cliente:clean(o.cliente),contrato:clean(o.contrato),
+      observacoes:clean(o.observacoes),reserva:o.reserva||'',expiracao:o.expiracao||'',motivo,assinatura:assinatura(para)};
+    const origem={situacao:'disponivel',apartamento:'',cliente:'',contrato:'',observacoes:'',reserva:'',expiracao:'',motivo,assinatura:assinatura(de)};
+    return {origem,destino,de,para,antes:o};
+  }
   function paraProposta(state) {
     if(state.sync?.pendente)throw Error('Aguarde a atualização das vagas e tente novamente.');
     return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length)
       .map(v=>({codigo:v.codigo,pavimento:PISOS[v.piso].nome}));
   }
-  const api={paraProposta,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
+  const api={paraProposta,livres,validarTroca,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
   root.DomoVagas=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);
