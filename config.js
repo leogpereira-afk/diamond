@@ -1,4 +1,5 @@
-// config.js — segredo leve do app (mesmo valor da env TOKEN no Netlify)
+// config.js — segredo leve do app: o mesmo valor do segredo DMD_TOKEN do
+// Supabase (Edge Functions → Secrets), que a dmd-api confere no x-token.
 window.APP_TOKEN = 'dmd-b76c186ad7d614a529ac66eb944d42bd';
 
 // backend Supabase (Edge Functions) — a cópia do GitHub Pages fala com estas URLs

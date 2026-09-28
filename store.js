@@ -1,7 +1,7 @@
 // store.js — camada de dados/sync offline-first (padrão Impresilk, blueprint-sync-nuvem.md)
 // Expõe window.STORE. Dados em localStorage, fotos em IndexedDB, fila assinada com versão.
 const STORE = (() => {
-  const API_URL = window.API_BASE + '/dmd-api'; // Supabase Edge Function (antes: /.netlify/functions/api)
+  const API_URL = window.API_BASE + '/dmd-api'; // Supabase Edge Function
   const K = { un: 'dv_unidades', cfg: 'dv_cfg', user: 'dv_user', fila: 'dv_fila', last: 'dv_lastsync', prop: 'dv_propostas', usuarios: 'dv_usuarios', leads: 'dv_leads', reservas: 'dv_reservas' };
   let _syncing = false;
   let _erroLeitura = null;

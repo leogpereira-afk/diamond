@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v27';
-const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js','reservas.js?v=27','reservas.css?v=27',
-  'vagas-domain.js?v=27','vagas-pdf.js?v=27','vagas.js?v=27','vagas.css?v=27','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v28';
+const SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'plano.js', 'store.js', 'app.js','reservas.js?v=28','reservas.css?v=28',
+  'vagas-domain.js?v=28','vagas-pdf.js?v=28','vagas.js?v=28','vagas.css?v=28','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
 
 self.addEventListener('install', (e) => {
@@ -25,7 +25,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/.netlify/functions/') || url.hostname.endsWith('supabase.co')) return; // NUNCA cachear API/Supabase
+  if (url.hostname.endsWith('supabase.co')) return; // NUNCA cachear API/Supabase
   if (e.request.method !== 'GET') return;
   e.respondWith((async () => {
     try {
