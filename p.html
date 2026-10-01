@@ -35,7 +35,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="logo">DIAMOND</div>
+  <div class="logo"><img src="logo-diamond.png" alt="Diamond" style="width:250px;max-width:80%;height:auto"></div>
   <div class="sub">Edifício Diamond · Domo Construtora</div>
   <div id="conteudo"><div class="aviso">Carregando sua proposta…</div></div>
 </div>
@@ -43,7 +43,7 @@
 (function () {
   var API = 'https://reoghclxripktzpdwhiy.supabase.co/functions/v1/dmd-p/';
   var esc = function (s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
-  var fmtBRL = function (v) { var n = Number(v) || 0; return n ? 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : ''; };
+  var fmtBRL = function (v) { var n = Number(v) || 0; return n ? 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; };
   var fmtArea = function (v) { var n = Number(v) || 0; return n ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m²' : ''; };
   var alvo = document.getElementById('conteudo');
   var aviso = function (msg) { alvo.innerHTML = '<div class="aviso">' + esc(msg) + '</div>'; };
@@ -70,9 +70,18 @@
     var andarTxt = (d.andar || d.andar === 0) ? (Number(d.andar) === 0 ? 'Térreo' : esc(d.andar) + 'º andar') : '';
     // validade: 7 dias a partir da geração — não bloqueia, mas avisa se passou
     var emDate = d.em ? new Date(d.em) : null;
-    var dias = (emDate && !isNaN(emDate)) ? Math.floor((Date.now() - emDate.getTime()) / 86400000) : null;
     var geradaEm = (emDate && !isNaN(emDate)) ? emDate.toLocaleDateString('pt-BR') : '';
-    var vencida = dias != null && dias > 7;
+    var validadeISO=d.resumo&&d.resumo.validade;
+    var limite=validadeISO?new Date(validadeISO+'T23:59:59.999-03:00'):null;
+    var vencida=limite&&!isNaN(limite)&&Date.now()>limite.getTime();
+    var condicoes='';
+    if(d.resumo){
+      condicoes='<div style="text-align:left;margin:20px 0"><h2 style="font-size:18px">'+esc(d.resumo.modalidade||'Condições')+'</h2>'
+        +'<p>Vaga: '+esc(d.resumo.vaga||'a escolher')+'</p>'
+        +(d.resumo.itens||[]).map(function(r){return '<div style="padding:10px 0;border-bottom:1px solid #ffffff26"><span style="color:#bbb;font-size:13px">'+esc(r.rotulo)+'</span><div style="margin-top:4px">'+esc(r.valor)+'</div></div>';}).join('')
+        +'<p style="font-size:12px;color:#bbb">Resumo das condições na geração deste documento. Confira o cronograma e as regras no PDF.</p></div>';
+    }else{condicoes='<p style="font-size:13px;color:#bbb">As condições e a validade deste link antigo estão no PDF original.</p>';}
+
 
     var teaser = '';
     if (valorTxt || areaTxt || andarTxt) {
@@ -83,15 +92,12 @@
         + '</div>';
     }
     var validade = '';
-    if (geradaEm) {
-      validade = '<div class="validade' + (vencida ? ' venc' : '') + '">' + (vencida
-        ? '⚠ Proposta gerada em ' + geradaEm + ' (há ' + dias + ' dias). Os valores podem ter mudado — confirme com ' + cor + ' antes de decidir.'
-        : 'Gerada em ' + geradaEm + ' · válida por 7 dias.') + '</div>';
-    }
+    if(validadeISO){var dataLimite=validadeISO.split('-').reverse().join('/');validade='<div class="validade'+(vencida?' venc':'')+'">'+(vencida?'Validade encerrada em '+dataLimite+'. Confirme as condições com '+cor+'.':'Proposta válida até '+dataLimite+'.')+'</div>';}
+    else if(geradaEm){validade='<div class="validade">Link criado em '+geradaEm+'. Consulte a validade no PDF.</div>';}
     alvo.innerHTML = '<div class="card">'
       + '<div class="oi">Olá, <span>' + cli + '</span>! 👋</div>'
       + '<div class="un">Sua proposta da <b>unidade ' + esc(d.unidade || '') + '</b> está pronta:</div>'
-      + teaser
+      + teaser + condicoes
       + '<a class="btn btn-pdf" href="' + esc(SELF + '?pdf=1' + (preview ? '&preview=1' : '')) + '" target="_blank" rel="noopener">📄 Ver proposta completa (PDF)</a>'
       + validade
       + '<div class="q">O que você achou? Responda ao corretor:</div>'

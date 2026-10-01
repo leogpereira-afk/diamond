@@ -389,12 +389,23 @@ export const handler = async (event) => {
       if (_buf.slice(0, 5).toString('latin1') !== '%PDF-') return json(400, { erro: 'arquivo não é um PDF' }); // só aceita PDF de verdade
       const id = 'pp-' + crypto.randomBytes(12).toString('hex'); // 24 hex — inadivinhável (é a credencial do link)
       const unidade = String(body.unidade || '').slice(0, 20);
-      // número sequencial da proposta (pra saber quantas saíram e localizar). Contador em Blobs: propostas saem
-      // espaçadas, então o get() já vê o valor propagado; colisão só se 2 saírem no mesmo instante (raro, tolerável).
-      let numero = 0; try { const seq = (await stores.cfg.get('seqEnvio', { type: 'json' })) || 0; numero = (Number(seq) || 0) + 1; await stores.cfg.setJSON('seqEnvio', numero); } catch (e) { numero = 0; }
+      const proposta = body.propostaId ? await stores.propostas.get(String(body.propostaId),{type:'json'}) : null;
+      if(!proposta) return json(409,{erro:'Confirme a gravação da proposta antes de gerar o link.'});
+      if(!ehSuper(usr)) {
+        const meus = new Set([usr.usuario,...(usr.loginsAntigos||[])]);
+        if(!meus.has(proposta.corretorUsuario)||(!ehMasterDe(usr)&&!nomesDoCorretor(usr,String(body.comoCorretor||'')).has(proposta.corretor||''))) return json(403,{erro:'Proposta de outro corretor.'});
+      }
+      if(String(proposta.unidade)!==unidade || String(proposta.cliente)!==String(body.cliente||'') || Math.abs(Number(proposta.neg)-Number(body.valor))>.01) return json(409,{erro:'Os dados da proposta mudaram. Atualize antes de gerar o link.'});
+      if(body.leadId) {
+        const lead=await stores.leads.get(String(body.leadId),{type:'json'});
+        if(!lead || proposta.leadId!==body.leadId) return json(409,{erro:'Confirme o vínculo do cliente antes de gerar o link.'});
+      }
+      const r=proposta.resumoEnvio;
+      const resumo=r&&Array.isArray(r.itens)?{modalidade:String(r.modalidade||proposta.formaLabel||'').slice(0,80),vaga:proposta.vaga?String(proposta.vaga.codigo||'')+' · '+String(proposta.vaga.pavimento||''):'',validade:/^\d{4}-\d{2}-\d{2}$/.test(r.validade)?r.validade:null,itens:r.itens.slice(0,15).map(x=>({rotulo:String(x.rotulo||'').slice(0,80),valor:String(x.valor||'').slice(0,240)}))}:null;
+      const numero = await stores.envios.nextEnvioNumber();
       await stores.propostasPdf.setJSON(id, { base64: body.base64, unidade, em: now() }); // PDF (pesado)
       await stores.envios.setJSON(id, { // analytics (leve) — sem base64
-        numero, // nº sequencial da proposta
+        numero, resumo, // condições imutáveis do documento gerado
         unidade, valor: Number(body.valor) || 0, area: Number(body.area) || 0, andar: Number.isFinite(+body.andar) ? +body.andar : null, // teaser da landing (sem abrir o PDF)
         logoId: String(body.logoId || '').slice(0, 80), // logo da imobiliária → aparece na landing
         cliente: String(body.cliente || '').slice(0, 80),
@@ -415,8 +426,7 @@ export const handler = async (event) => {
       const envios = (await Promise.all(le.blobs.map((b) => stores.envios.get(b.key, { type: 'json' }).then((e) => e && { key: b.key, ...e }).catch(() => null)))).filter(Boolean);
       let max = envios.reduce((m, e) => Math.max(m, Number(e.numero) || 0), 0);
       const semNum = envios.filter((e) => !Number(e.numero)).sort((a, b) => String(a.em || '') < String(b.em || '') ? -1 : 1);
-      for (const e of semNum) { max++; const { key, ...rest } = e; await stores.envios.setJSON(key, { ...rest, numero: max }); }
-      if (semNum.length) { try { const seq = (await stores.cfg.get('seqEnvio', { type: 'json' })) || 0; if (max > (Number(seq) || 0)) await stores.cfg.setJSON('seqEnvio', max); } catch (e) {} }
+      for (const e of semNum) { max=await stores.envios.nextEnvioNumber(); const { key, ...rest } = e; await stores.envios.setJSON(key, { ...rest, numero: max }); }
       return json(200, { ok: true, numerados: semNum.length, total: envios.length, ultimo: max });
     }
     // aberturas + interações dos links. Admin vê tudo; a EMPRESA vê os seus (master: todos da equipe; corretor: só os dele)
@@ -435,8 +445,26 @@ export const handler = async (event) => {
       const porId = Object.fromEntries(envios.map((e) => [e.id, e]));
       const evs = lev.map(r => r.valor).filter(Boolean);
       for (const ev of evs) { const dest = porId[ev.envioId]; if (dest) dest.eventos.push({ tipo: ev.tipo, em: ev.em }); }
+      const [ps,ls]=await Promise.all([stores.propostas.list(),stores.leads.list()]);
+      const pids=new Set(ps.blobs.map(b=>b.key)),lids=new Set(ls.blobs.map(b=>b.key));
+      for(const e of envios)e.vinculos={proposta:!!e.propostaId&&pids.has(e.propostaId),cliente:!!e.leadId&&lids.has(e.leadId)};
       envios.sort((a, b) => String(b.em).localeCompare(String(a.em)));
       return json(200, { envios });
+    }
+    if (action === 'anotarEnvio') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      if(!usr||usr.papel==='cliente')return json(403,{erro:'Acesso restrito à equipe.'});
+      const e=await stores.envios.get(String(body.id||''),{type:'json'});
+      if(!e)return json(404,{erro:'Envio não localizado.'});
+      if(!ehSuper(usr)){
+        const meus=new Set([usr.usuario,...(usr.loginsAntigos||[])]);
+        if(!meus.has(e.por)||(!ehMasterDe(usr)&&!nomesDoCorretor(usr,String(body.comoCorretor||'')).has(e.corretor||'')))return json(403,{erro:'Envio de outro corretor.'});
+      }
+      if(!['pendente','contato','concluido'].includes(body.etapa))return json(400,{erro:'Etapa inválida.'});
+      const data=String(body.data||'');if(data&&!/^\d{4}-\d{2}-\d{2}$/.test(data))return json(400,{erro:'Data inválida.'});
+      const acompanhamento={etapa:body.etapa,data,nota:String(body.nota||'').trim().slice(0,2000),por:usr.nome||usr.usuario,em:now()};
+      await stores.envios.followupEnvio(body.id,acompanhamento);
+      return json(200,{ok:true,acompanhamento});
     }
     if (action === 'delEnvio') { // admin remove um envio: PDF + analytics + eventos
       const adm = await validarUsuario(stores.cfg, body.auth, true);

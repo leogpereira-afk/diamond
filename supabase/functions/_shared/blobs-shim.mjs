@@ -36,6 +36,21 @@ function storeKv(store) {
       const { error } = await sb.from('dmd_kv').upsert({ store, key, valor: val, atualizado_em: new Date().toISOString() });
       if (error) throw new Error('kv set ' + store + '/' + key + ': ' + error.message);
     },
+    async followupEnvio(id,dados) {
+      const {data,error}=await sb.rpc('dmd_envio_acompanhar',{p_id:id,p_dados:dados});
+      if(error||!data)throw Error('Não foi possível salvar o acompanhamento.');
+      return data;
+    },
+    async nextEnvioNumber() {
+      const {data,error}=await sb.rpc('dmd_envio_numero');
+      if(error)throw new Error('Não foi possível numerar o envio. Tente novamente.');
+      return data;
+    },
+    async recordEnvioEvent(id,tipo) {
+      const {data,error}=await sb.rpc('dmd_envio_evento',{p_id:id,p_tipo:tipo,p_chave:id+'-'+crypto.randomUUID()});
+      if(error)throw new Error('Não foi possível registrar a interação.');
+      return data;
+    },
     async insertReserva(key,val) {
       const {data,error}=await sb.rpc('dmd_reserva_pedir',{p_id:key,p_valor:val});
       if(error)throw new Error('A unidade mudou. Atualize o espelho antes de pedir a reserva.');

@@ -547,6 +547,7 @@
         ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/clientes">📊 Gestão comercial</a>' : ''}
         ${(STORE.isAdmin() || (STORE.getUser() || {}).usuario === 'domo') ? '<a class="btn-crm" href="#/retorno">📈 Retorno</a>' : ''}
         ${STORE.isAdmin() ? '' : '<a class="btn-crm" href="#/clientes">👥 Clientes</a>'}`}
+        ${!cli ? '<button class="btn-baixar" id="baixar-vagas">⬇ Vagas disponíveis (PDF)</button>' : ''}
         ${!cli || cc.baixarPdf ? '<button class="btn-baixar" id="baixar-tabela">⬇ Baixar tabela (PDF)</button>' : ''}
       </div>
       <div class="chips">
@@ -613,6 +614,7 @@
       try { const { doc, nome } = await gerarTabelaPDF(cfg, uns); doc.save(nome); } catch (err) { toast('Erro ao gerar: ' + err.message, true); }
       b.disabled = false; b.textContent = '⬇ Baixar tabela (PDF)';
     }; }
+    const bv=$('#baixar-vagas'); if(bv)bv.onclick=()=>window.DiamondVagasDisponiveis.baixar(bv);
     ativarFotos();
     montarFabDomo();
     // reservas pendentes vêm do servidor: se mudou, repinta o espelho (sem isso o 2º corretor não vê o pedido do 1º)
@@ -934,9 +936,18 @@
       if (comPlano && !pln.fecha) { toast('Plano indisponível para esta unidade — fale com a administração.', true); return null; }
       if (!await conferirVaga(d)) return null;
       const p = montaP(comPlano);
+      p.inp.dataProposta=STORE.ymdLocal(pln?pln.cronograma[0].data:new Date());
+      const validade=new Date((p.inp.dataProposta||STORE.diaLocalISO(p.criadoEm))+'T12:00:00');validade.setDate(validade.getDate()+7);
+      p.resumoEnvio={modalidade:comPlano?pln.formaLabel:'À vista',validade:STORE.ymdLocal(validade),itens:comPlano?[
+        {rotulo:'Entrada',valor:fmt(pln.ent,2)},
+        {rotulo:'Parcelas mensais',valor:pln.nParc+' × '+fmt(pln.vParc,2)+' (valores nominais)'},
+        {rotulo:'Balões',valor:pln.balQtde?pln.balQtde+' × '+fmt(pln.balValor,2)+' · primeiro no mês '+pln.balPrimeiro+', a cada '+pln.balIntervalo+' meses':'Sem balões'},
+        {rotulo:'Parcela final',valor:fmt(pln.fin,2)+' · mês '+pln.chavesMes},
+        {rotulo:'Correção',valor:p.inp.indice||'INCC'}
+      ]:[{rotulo:'Pagamento à vista',valor:fmt(p.neg,2)}]};
       STORE.salvarProposta(p); // rastreio: fica no Histórico com corretor + empresa
       if (comPlano) { const g = await gerarPDF(p, pln, cfg); return { ...g, proposta: p, msg: msgComPlano(p, pln) }; }
-      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga); return { ...g, proposta: p, msg: msgSimples() };
+      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga); return { ...g, proposta: p, msg: msgSimples()+'\nVálida até '+fmtData(p.resumoEnvio.validade) };
     };
 
     $('#u-pdf').onclick = async () => { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } };
@@ -1324,6 +1335,13 @@
     doc.text(`PROPOSTA VÁLIDA POR 7 DIAS — até ${fmtData(validade)}`, M + 12, y + 12);
     y += 28;
 
+    doc.setFillColor(245,245,238);doc.rect(M,y,W-2*M,54,'F');
+    doc.setTextColor(26,26,26);doc.setFont('helvetica','bold');doc.setFontSize(9);
+    doc.text('RESUMO DO PAGAMENTO (VALORES NOMINAIS)',M+10,y+13);
+    doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+    doc.text('Entrada: '+fmt(plano.ent,2)+' | Mensais: '+plano.nParc+' x '+fmt(plano.vParc,2),M+10,y+29);
+    doc.text((plano.balQtde?'Balões: '+plano.balQtde+' x '+fmt(plano.balValor,2):'Sem balões')+' | Final: '+fmt(plano.fin,2)+(plano.fin?' no mês '+plano.chavesMes:''),M+10,y+44);
+    y+=66;
     const linhas = plano.cronograma.filter((l) => l.total > 0);
     const col = [M, M + 40, M + 120, W - M];
     const cabecalhoTab = () => {
@@ -1563,6 +1581,8 @@
     y += 52 + 18;
     // condições SCP
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(26, 26, 26);
+    const scpValidade=new Date();scpValidade.setDate(scpValidade.getDate()+7);
+    doc.setFontSize(9);doc.text('Válida até '+fmtData(scpValidade),M,y);y+=18;doc.setFontSize(11);
     doc.text('Condições SCP', M, y); y += 7;
     doc.setDrawColor(LIME[0], LIME[1], LIME[2]); doc.setLineWidth(1.5); doc.line(M, y, W - M, y); y += 18;
     const linhaC = (lab, val, forte) => {
@@ -3592,54 +3612,7 @@
   }
 
   // painel de ENVIOS: links de proposta enviados por WhatsApp — aberturas + respostas do cliente
-  async function aEnvios() {
-    const rotaEnvios = location.hash;
-    $('#aba-corpo').innerHTML = '<div class="nota">carregando envios…</div>';
-    let envios = [];
-    try { const r = await STORE.api('listEnvios'); envios = r.envios || []; }
-    catch (e) { $('#aba-corpo').innerHTML = '<div class="aviso">Erro ao carregar: ' + esc(e.message) + '</div>'; return; }
-    if (location.hash !== rotaEnvios || !$('#aba-corpo')) return;
-    envios.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0) || (String(b.em || '') < String(a.em || '') ? -1 : 1)); // nº mais alto (mais recente) no topo
-    const cont = (e, t) => (e.eventos || []).filter((x) => x.tipo === t).length;
-    const dt = (x) => x ? new Date(x).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-    const totViews = envios.reduce((s, e) => s + (e.views || 0), 0);
-    const totInt = envios.reduce((s, e) => s + cont(e, 'interesse'), 0);
-    const totDuv = envios.reduce((s, e) => s + cont(e, 'duvida'), 0);
-    $('#aba-corpo').innerHTML = `
-      <div class="hist-resumo">
-        <span class="chip">Envios: <b>${envios.length}</b></span>
-        <span class="chip">Aberturas: <b>${totViews}</b></span>
-        <span class="chip">✅ Respostas de interesse: <b>${totInt}</b></span>
-        <span class="chip">💬 Dúvidas: <b>${totDuv}</b></span>
-        <button class="btn-mini" id="env-refresh">atualizar</button>
-      </div>
-      <p class="nota">Aberturas e respostas são interações, não pessoas únicas. Use a referência junto ao número para distinguir envios antigos.</p>
-      ${envios.length ? `<div class="filtros"><input id="env-busca" placeholder="buscar por nº, cliente, apto ou corretor…"></div>
-      <div class="tabela-wrap"><table class="tabela">
-        <thead><tr><th>Nº</th><th>Enviado</th><th>Cliente</th><th>Apto</th><th>Corretor</th><th>Aberturas</th><th>Última</th><th>Cliente respondeu</th><th></th></tr></thead>
-        <tbody>${envios.map((e) => {
-          const inter = cont(e, 'interesse'), duv = cont(e, 'duvida'), pdf = cont(e, 'abriu_pdf');
-          const resp = [inter ? '<span class="perfil perfil-adm">✅ interesse</span>' : '', duv ? '<span class="perfil perfil-cor">💬 dúvida</span>' : ''].filter(Boolean).join(' ') || '<span class="hist-tel">—</span>';
-          const nn = e.numero ? '#' + String(e.numero).padStart(3, '0') : '—';
-          return `<tr data-busca="${esc((nn + ' ' + String(e.numero || '') + ' ' + (e.cliente || '') + ' ' + (e.unidade || '') + ' ' + (e.corretor || '')).toLowerCase())}">
-            <td><b>${nn}</b><small class="hist-tel">Ref. ${esc(String(e.id).slice(-8))}</small></td>
-            <td>${dt(e.em)}</td>
-            <td>${e.leadId && STORE.getLeads().some((l) => l.id === e.leadId) ? `<a href="${esc(rotaRegistro('cliente', e.leadId))}">${esc(e.cliente || 'Ver cliente')}</a>` : `${esc(e.cliente || '—')}<small class="vinculo-pendente">Cliente sem vínculo</small>`}</td>
-            <td>${esc(e.unidade || '—')}</td>
-            <td>${esc(e.corretor || '—')}${e.empresa ? '<br><span class="hist-tel">' + esc(e.empresa) + '</span>' : ''}</td>
-            <td><b>${e.views || 0}</b>${pdf ? ' <span class="hist-tel">· ' + pdf + '× PDF</span>' : ''}</td>
-            <td>${dt(e.lastView)}</td>
-            <td>${resp}</td>
-            <td class="env-acoes">${STORE.getPropostas().some((p) => p.id === e.propostaId) ? `<a class="btn-mini" href="${esc(rotaRegistro('proposta', e.propostaId))}">Proposta original</a>` : '<small class="vinculo-pendente">Proposta sem vínculo</small>'}<button class="btn-mini env-ver" data-id="${esc(e.id)}">Prévia</button> <button class="btn-mini env-copy" data-id="${esc(e.id)}">📋 copiar</button>${STORE.isAdmin() ? ' <button class="btn-mini env-del" data-id="' + esc(e.id) + '">✕</button>' : ''}</td>
-          </tr>`;
-        }).join('')}</tbody></table></div>`
-      : '<div class="vazio">Nenhum link enviado ainda. Os links criados no botão <b>“Enviar link no WhatsApp”</b> aparecem aqui com quantas vezes o cliente abriu e se respondeu (interesse/dúvida).</div>'}`;
-    $('#env-refresh').onclick = () => aEnvios();
-    const eb = $('#env-busca'); if (eb) eb.oninput = () => { const q = eb.value.trim().toLowerCase(); $$('#aba-corpo tbody tr').forEach((tr) => { tr.style.display = (!q || (tr.dataset.busca || '').includes(q)) ? '' : 'none'; }); };
-    $$('.env-ver').forEach((b) => { b.onclick = () => window.open(window.P_URL + '/' + b.dataset.id + '?preview=1', '_blank'); }); // ?preview não conta como abertura do cliente
-    $$('.env-copy').forEach((b) => { b.onclick = async () => { const url = window.P_URL + '/' + b.dataset.id; try { await navigator.clipboard.writeText(url); toast('Link copiado ✓'); } catch (err) { window.prompt('Copie o link:', url); } }; });
-    $$('.env-del').forEach((b) => { b.onclick = async () => { if (!confirm('Excluir este envio (o link deixa de funcionar)?')) return; try { await STORE.api('delEnvio', { id: b.dataset.id }); toast('Envio removido ✓'); aEnvios(); } catch (e) { toast(e.message, true); } }; });
-  }
+  async function aEnvios() { return window.DiamondEnvios.render(); }
 
   async function aSaude() {
     $('#aba-corpo').innerHTML = '<div class="painel" id="saude-card">consultando a nuvem…</div>';
@@ -3692,7 +3665,13 @@
     const nome = String(opcoes.cliente || '').trim();
     const normalizado = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
     const s = scpCalcular(base, opcoes, cfg);
+    const validade=new Date();validade.setDate(validade.getDate()+7);
+    const itens=[];
+    if(s.nParc)itens.push({rotulo:'Opção sem juros',valor:s.nParc+' × '+fmt(s.pParc,2)});
+    if(s.nTot)itens.push({rotulo:'Opção com correção',valor:s.nFix+' parcelas fixas de '+fmt(s.pNom,2)+' + '+s.nCor+' parcelas corrigidas por '+(cfg.indice||'INCC')});
+    if(!s.nParc&&!s.nTot)itens.push({rotulo:'À vista',valor:fmt(s.valor,2)});
     return {
+      resumoEnvio:{modalidade:'SCP',validade:STORE.ymdLocal(validade),itens},
       id: 'p-scp-' + u.unidade + '-' + normalizado,
       unidadeId: u.id, unidade: u.unidade, area: u.area, vaga: opcoes.vaga || null,
       cliente: nome, clienteTel: String(opcoes.tel || '').trim(),
@@ -3810,7 +3789,7 @@
         const base64 = doc.output('datauristring').split(',')[1];
         const link = await STORE.enviarPropostaPdf(base64, { unidade: u.unidade, valor: proposta.neg, area: u.area || 0, andar: u.andar, cliente: proposta.cliente, corretor: usr.nome, corretorTel: usr.telefone, empresa: usr.empresa, propostaId: proposta.id, leadId: (cr && cr.id) || '' });
         const saud = _scp.cliente.trim() ? `Olá ${_scp.cliente.trim()}! 😊 ` : '';
-        const msg = saud + scpMsgTexto(u.unidade, base, _scp, cfg) + `\n\n📄 Abra a proposta completa aqui: ${link}` + (usr.nome ? `\n\nQualquer dúvida, estou à disposição!\n${usr.nome}${usr.telefone ? ' — ' + usr.telefone : ''}` : '');
+        const msg = saud + scpMsgTexto(u.unidade, base, _scp, cfg) + '\nVálida até '+fmtData(proposta.resumoEnvio.validade)+ `\n\n📄 Abra a proposta completa aqui: ${link}` + (usr.nome ? `\n\nQualquer dúvida, estou à disposição!\n${usr.nome}${usr.telefone ? ' — ' + usr.telefone : ''}` : '');
         const url = 'https://wa.me/' + telWa(_scp.tel) + '?text=' + encodeURIComponent(msg);
         if (win) win.location.href = url; else window.open(url, '_blank');
         toast('WhatsApp aberto' + (cr && cr.acao === 'novo' ? ' · cliente salvo no CRM 👥' : '') + ' ✓');

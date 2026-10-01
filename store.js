@@ -155,7 +155,17 @@ const STORE = (() => {
   async function enviarPropostaPdf(base64, meta) {
     const s = getUser(); if (!s) throw new Error('sessão inválida');
     const m = meta || {};
-    const r = await api('putPropostaPdf', { base64, unidade: m.unidade || '', valor: m.valor || 0, area: m.area || 0, andar: m.andar, cliente: m.cliente || '', corretor: m.corretor || '', corretorTel: m.corretorTel || '', empresa: m.empresa || '', logoId: s.logoId || '', propostaId: m.propostaId || '', leadId: m.leadId || '', auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
+    const proposta = getPropostas().find(p=>p.id===m.propostaId);
+    if(!proposta)throw Error('Proposta não localizada. Gere novamente.');
+    if(m.leadId){
+      const lead=getLeads().find(l=>l.id===m.leadId);
+      if(!lead)throw Error('Cliente não localizado. Atualize o CRM.');
+      const lr=await api('upsertLead',{lead,comoCorretor:_como()});
+      if(lr.conflito||lr.ok!==true)throw Error('O cadastro do cliente mudou. Atualize antes de enviar.');
+    }
+    const pr=await api('upsertProposta',{proposta:{...proposta,leadId:m.leadId||proposta.leadId||''},comoCorretor:_como()});
+    if(pr.conflito||pr.ok!==true)throw Error('A proposta mudou. Atualize antes de enviar.');
+    const r = await api('putPropostaPdf', { base64, comoCorretor:_como(), unidade: m.unidade || '', valor: m.valor || 0, area: m.area || 0, andar: m.andar, cliente: m.cliente || '', corretor: m.corretor || '', corretorTel: m.corretorTel || '', empresa: m.empresa || '', logoId: s.logoId || '', propostaId: m.propostaId || '', leadId: m.leadId || '', auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
     return window.P_URL + '/' + r.id; // a landing vive na Edge Function dmd-p
   }
   // aberturas/interesse dos links (escopado pelo servidor: admin=tudo, master=empresa, corretor=os seus)

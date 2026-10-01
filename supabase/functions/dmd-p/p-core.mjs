@@ -39,13 +39,9 @@ export const handler = async (event) => {
     try { acao = (JSON.parse(event.body || '{}').acao || '').slice(0, 20); } catch (e) {}
     if (!['interesse', 'duvida'].includes(acao)) return json(400, { erro: 'ação inválida' });
     try {
-      const ev = await envios.get(id, { type: 'json' });
-      if (!ev) return json(404, { erro: 'não encontrado' });
-      if ((ev.nEv || 0) >= MAX_EVENTOS) return json(429, { erro: 'Limite de respostas atingido. Fale diretamente com o corretor.' });
-      if ((ev.nEv || 0) < MAX_EVENTOS) {
-        await getStore('enviosEv').setJSON(id + '-' + crypto.randomBytes(6).toString('hex'), { envioId: id, tipo: acao, em: now() });
-        try { ev.nEv = (ev.nEv || 0) + 1; await envios.setJSON(id, ev); } catch (e) {} // contador do limite (aprox., best-effort)
-      }
+      const result = await envios.recordEnvioEvent(id,acao);
+      if(result.status===404)return json(404,{erro:'não encontrado'});
+      if(result.status===429)return json(429,{erro:'Limite de respostas atingido. Fale diretamente com o corretor.'});
     } catch (e) { return json(503, { erro: 'Não conseguimos registrar sua resposta. Tente novamente.' }); }
     return json(200, { ok: true });
   }
@@ -55,7 +51,7 @@ export const handler = async (event) => {
     try {
       const rec = await getStore('propostasPdf').get(id, { type: 'json' });
       if (!rec || !rec.base64) return paraSite('Proposta não encontrada.');
-      if (!ehBot(ua) && !q.preview) { try { const ev = await envios.get(id, { type: 'json' }); if (ev && (ev.nEv || 0) < MAX_EVENTOS) { await getStore('enviosEv').setJSON(id + '-' + crypto.randomBytes(6).toString('hex'), { envioId: id, tipo: 'abriu_pdf', em: now() }); try { ev.nEv = (ev.nEv || 0) + 1; await envios.setJSON(id, ev); } catch (e) {} } } catch (e) {} }
+      if (!ehBot(ua) && !q.preview) { try { await envios.recordEnvioEvent(id,'abriu_pdf'); } catch(e) {} }
       const nome = 'Proposta-Diamond' + (rec.unidade ? '-' + String(rec.unidade).replace(/[^\w]/g, '') : '') + '.pdf';
       return { statusCode: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="' + nome + '"', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }, body: rec.base64, isBase64Encoded: true };
     } catch (e) { return paraSite('Não consegui abrir a proposta agora. Tente de novo em instantes.'); }
@@ -90,6 +86,7 @@ export const handler = async (event) => {
       em: e1.em || '',
       whats: telWa(e1.corretorTel) || telWa(domoNum2),
       logoUri,
+      resumo: e1.resumo || null,
     });
   }
 
@@ -100,7 +97,7 @@ export const handler = async (event) => {
   let ev;
   try { ev = await envios.get(id, { type: 'json' }); } catch (e) { ev = null; }
   if (!ev) return paraSite('Proposta não encontrada — o link pode ter sido removido.');
-  if (!ehBot(ua) && !q.preview) { try { ev.views = (ev.views || 0) + 1; ev.lastView = now(); if (!ev.firstView) ev.firstView = ev.lastView; await envios.setJSON(id, ev); } catch (e) {} }
+  if (!ehBot(ua) && !q.preview) { try { await envios.recordEnvioEvent(id,'abertura'); } catch(e) {} }
   return {
     statusCode: 302,
     headers: {
