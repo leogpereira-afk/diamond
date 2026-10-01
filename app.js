@@ -1682,7 +1682,8 @@
 
     const top = 104, bottom = H - 22;
     const nRows = andares.length + (loja ? 1 : 0);
-    const rh = Math.min(64, (bottom - top) / nRows);
+    const vistasH = andares.length ? 14 : 0;
+    const rh = Math.min(64, (bottom - top - vistasH) / nRows);
     const labW = 34, gap = 3;
     const cellW = (W - 2 * M - labW - gap) / 8;
     const cor = {
@@ -1720,6 +1721,15 @@
       }
       y += rh;
     });
+    // Identificação por final, abaixo das colunas dos apartamentos.
+    if (andares.length) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.3); doc.setTextColor(70, 70, 75);
+      for (let c = 0; c < 8; c++) {
+        const x = M + labW + gap + c * cellW;
+        doc.text((c + 1) % 2 ? 'Vista Cidade' : 'Vista Parque', x + (cellW - gap) / 2, y + 8, { align: 'center' });
+      }
+      y += vistasH;
+    }
     // Loja (linha inteira)
     if (loja) {
       doc.setFillColor(17, 17, 17); doc.roundedRect(M, y, labW, rh - gap, 4, 4, 'F');
@@ -3152,9 +3162,20 @@
         <td><button class="btn-mini a-salvar">salvar</button> <button class="btn-mini btn-danger a-del" data-user="${esc(u.usuario)}">✕</button></td>
       </tr>`;
 
+    const totalCorretores = empresas.reduce((n, e) => n + (e.corretores || []).filter(c => (c.nome || '').trim()).length, 0);
+    const filtroCor = aCorretores.filtro || {busca: '', estado: 'todas'};
+    aCorretores.filtro = filtroCor;
     $('#aba-corpo').innerHTML = `
+      <section class="gestao-corretores" aria-label="Gestão de imobiliárias e corretores">
+      <div class="cor-gestao-top"><div><span class="cor-eyebrow">REDE DE VENDAS</span><h2>Equipes conectadas. Gestão em dia.</h2><p>Encontre sua imobiliária, organize os corretores e acompanhe os acessos.</p></div><button type="button" class="btn-lime" id="cor-nova">＋ Nova empresa</button></div>
+      <div class="cor-resumo" aria-label="Resumo da rede">
+        <button type="button" data-cor-filtro="todas"><span>Empresas</span><strong>${empresas.length}</strong><small>Ver toda a rede</small></button>
+        <button type="button" data-cor-filtro="ativas"><span>Com acesso ativo</span><strong>${empresas.filter(e => e.ativo !== false).length}</strong><small>Empresas liberadas</small></button>
+        <div><span>Corretores cadastrados</span><strong>${totalCorretores}</strong><small>Inclui os responsáveis</small></div>
+        <button type="button" data-cor-filtro="pendentes"><span>Senha de equipe pendente</span><strong>${empresas.filter(e => e.ativo !== false && !e.temSenhaEquipe).length}</strong><small>Conferir acesso por empresa</small></button>
+      </div>
       ${soDomo ? '<div class="nota">Aqui você cria e gerencia os <b>corretores</b> e as imobiliárias que enviam propostas. Os preços e a configuração do prédio ficam com o administrador.</div>' : `
-      <h3>Administradores (equipe Domo)</h3>
+      <details class="cor-config"><summary>Administradores da Domo</summary><h3>Administradores (equipe Domo)</h3>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Login</th><th>Nome</th><th>Telefone</th><th>Ativo</th><th>Nova senha</th><th></th></tr></thead>
         <tbody>${admins.map(linhaAdmin).join('')}
@@ -3166,34 +3187,24 @@
             <td><input id="na-senha" type="password" placeholder="senha"></td>
             <td><button class="btn-mini" id="na-criar">criar</button></td>
           </tr>
-        </tbody></table></div>`}
+        </tbody></table></div></details>`}
 
-      <h3>Login único dos corretores</h3>
-      <div class="nota">Um acesso só para <b>todos</b> os corretores: usuário <b>corretor</b> + esta senha. Ao entrar, cada um clica no próprio nome. ${STORE.temSenhaCorretorGeral() ? '<b class="tag-ok">✓ senha definida</b>' : '<b class="tag-falta">⚠ ainda sem senha — o login único não funciona até você definir uma aqui</b>'}</div>
-      <div class="cfg-rapida">
-        <label>Usuário<input value="corretor" readonly></label>
-        <label>Senha única<input id="geral-senha" type="password" placeholder="${STORE.temSenhaCorretorGeral() ? '(trocar a senha)' : 'defina a senha (mín. 4)'}" autocomplete="new-password"></label>
-        <button class="btn-lime" id="geral-save">salvar</button>
-        ${STORE.temSenhaCorretorGeral() ? '<button class="btn-mini" id="geral-remover">remover</button>' : ''}
-      </div>
-
-      <h3>Empresas / imobiliárias (login compartilhado)</h3>
-      <div class="nota">Cada empresa tem UM login e <b>DUAS senhas</b>: 🔑 a do <b>master</b> (o responsável — vê os clientes de toda a equipe e gerencia os corretores) e 🔓 a da <b>equipe</b> (compartilhada; cada corretor vê só os próprios clientes). A senha usada no login é o que define o papel.</div>
+      <div class="cor-toolbar"><label>Buscar na rede<input id="cor-busca" type="search" value="${esc(filtroCor.busca)}" placeholder="Empresa, login ou corretor" autocomplete="off"></label><label>Situação do acesso<select id="cor-filtro"><option value="todas">Todas as empresas</option><option value="ativas">Com acesso ativo</option><option value="bloqueadas">Com acesso bloqueado</option><option value="pendentes">Senha de equipe pendente</option></select></label><button type="button" class="btn-mini" id="cor-limpar">Limpar filtros</button></div>
+      <div class="cor-lista-titulo"><h3>Imobiliárias e equipes</h3><p id="cor-resultado" role="status" aria-live="polite"></p></div>
+      <p class="cor-empty" id="cor-vazio" hidden>Nenhuma empresa encontrada. Tente outro nome ou limpe os filtros.</p>
       ${empresas.map((e) => `
         <div class="empresa-card${e.ativo === false ? ' empresa-travada' : ''}" data-user="${esc(e.usuario)}">
+          <div class="empresa-identidade"><div class="empresa-monograma" aria-hidden="true">${esc((e.nome || e.usuario).slice(0, 2).toUpperCase())}</div><div class="empresa-titulo"><h4>${esc(e.nome || e.usuario)}</h4><p>Login: ${esc(e.usuario)} · ${(e.corretores || []).length} ${(e.corretores || []).length === 1 ? 'corretor' : 'corretores'}</p></div><span class="cor-status ${e.ativo === false ? 'cor-status-bloqueado' : ''}">${e.ativo === false ? 'Acesso bloqueado' : 'Acesso ativo'}</span></div>
+          <details class="empresa-config"><summary>Dados e acessos <span class="cor-summary-note">Editar empresa, senhas e logomarca</span></summary>
           <div class="empresa-cab">
-            <input class="e-nome" value="${esc(e.nome || '')}" placeholder="nome da empresa">
-            <label class="e-login-wrap">login <input class="e-login" value="${esc(e.usuario)}" placeholder="login"></label>
-            <input class="e-tel" type="tel" inputmode="tel" value="${esc(e.telefone || '')}" placeholder="telefone">
-            ${e.ativo === false ? '<span class="tag-travada">🔒 TRAVADA</span>' : ''}
-            <button class="btn-mini e-lock" data-ativo="${e.ativo !== false}">${e.ativo !== false ? '🔒 travar' : '🔓 destravar'}</button>
-            <button class="btn-mini e-salvar">salvar</button>
-            <button class="btn-mini btn-danger e-del" data-user="${esc(e.usuario)}" data-nome="${esc(e.nome || e.usuario)}">excluir</button>
+            <label>Nome da empresa<input class="e-nome" value="${esc(e.nome || '')}" placeholder="Nome da empresa"></label>
+            <label>Login<input class="e-login" value="${esc(e.usuario)}" placeholder="Login" autocomplete="off"></label>
+            <label>Telefone<input class="e-tel" type="tel" inputmode="tel" value="${esc(e.telefone || '')}" placeholder="Telefone"></label>
           </div>
+          <p class="cor-help">O responsável (master) acompanha toda a equipe. A senha de equipe permite a cada corretor ver seus próprios clientes.</p>
           <div class="senhas-lin">
-            <span class="senha-tag master">🔑 master</span><input class="e-senha" type="password" placeholder="(trocar senha do master)" autocomplete="new-password"><button type="button" class="btn-mini e-senha-save">salvar</button>
-            <span class="senha-tag">🔓 equipe</span><input class="e-senha-eq" type="password" placeholder="(trocar senha da equipe)" autocomplete="new-password"><button type="button" class="btn-mini e-senha-eq-save">salvar</button>
-            ${e.temSenhaEquipe ? '<span class="tag-ok">✓ equipe tem senha</span>' : '<span class="tag-falta" title="Enquanto não houver senha de equipe, os corretores não conseguem entrar — só o master.">⚠ sem senha de equipe</span>'}
+            <div class="cor-senha-grupo"><label>Nova senha do responsável<input class="e-senha" type="password" placeholder="Manter a senha atual" autocomplete="new-password"></label><button type="button" class="btn-mini e-senha-save">Salvar senha do responsável</button></div>
+            <div class="cor-senha-grupo"><label>Nova senha da equipe<input class="e-senha-eq" type="password" placeholder="Manter a senha atual" autocomplete="new-password"></label><button type="button" class="btn-mini e-senha-eq-save">Salvar senha da equipe</button></div>
           </div>
           <div class="e-logo-lin">
             <span class="senha-tag">🖼️ logo</span>
@@ -3203,30 +3214,34 @@
             ${e.logoId ? '<button type="button" class="btn-mini e-logo-del">remover</button>' : ''}
             <span class="nota">sai centralizada na proposta, abaixo da barra do plano</span>
           </div>
+          <div class="cor-acesso-acoes"><button type="button" class="btn-mini e-lock" data-ativo="${e.ativo !== false}">${e.ativo !== false ? 'Bloquear acesso da empresa' : 'Liberar acesso da empresa'}</button><button type="button" class="btn-mini btn-danger e-del" data-user="${esc(e.usuario)}" data-nome="${esc(e.nome || e.usuario)}">Excluir empresa</button></div>
+          </details>
           <div class="corretores-box">
-            <label class="cor-lbl">Corretores <span class="nota" style="font-weight:400">— clique no chip para editar; o 1º (🔑) é o master. Clique em salvar ao terminar.</span></label>
+            <div class="cor-equipe-titulo"><h5>Equipe de corretores</h5>${e.temSenhaEquipe ? '<span class="tag-ok">Senha de equipe definida</span>' : '<span class="tag-falta">Senha de equipe não definida</span>'}</div>
+            <p class="cor-help">Clique em um nome para editar. A chave identifica o responsável.</p>
             <div class="cor-chips">
-              ${(e.corretores || []).map((c, i) => `<button type="button" class="cor-chip${i === 0 ? ' chip-master' : ''}" data-i="${i}">${i === 0 ? '🔑 ' : ''}${esc(c.nome)}</button>`).join('')}
-              <button type="button" class="cor-chip chip-add" data-i="novo">＋ corretor</button>
+              ${(e.corretores || []).map((c, i) => `<button type="button" class="cor-chip${i === 0 ? ' chip-master' : ''}" data-i="${i}" aria-expanded="false" aria-label="Editar ${esc(c.nome)}${i === 0 ? ', responsável' : ''}">${i === 0 ? '🔑 ' : ''}${esc(c.nome)}</button>`).join('')}
+              <button type="button" class="cor-chip chip-add" data-i="novo" aria-expanded="false">＋ Adicionar corretor</button>
             </div>
             <div class="cor-rows">
               ${(e.corretores || []).map((c, i) => `<div class="cor-row oculto" data-i="${i}" data-nome0="${esc(c.nome)}">
                 ${i === 0 ? '<span class="master-tag">master</span>' : '<span class="cor-num">' + (i + 1) + '</span>'}
-                <input class="ce-nome" value="${esc(c.nome)}" placeholder="nome">
-                <input class="ce-tel" type="tel" inputmode="tel" value="${esc(c.telefone || '')}" placeholder="telefone">
-                ${i === 0 ? '' : '<button class="btn-mini cor-master" title="tornar este o master (responsável)">🔑 tornar master</button>'}
+                <input aria-label="Nome do corretor" class="ce-nome" value="${esc(c.nome)}" placeholder="nome">
+                <input aria-label="Telefone do corretor" class="ce-tel" type="tel" inputmode="tel" value="${esc(c.telefone || '')}" placeholder="telefone">
+                ${i === 0 ? '' : '<button class="btn-mini cor-master" title="Tornar este corretor o responsável">Definir responsável</button>'}
                 <button class="btn-mini cor-del" title="remover corretor">✕ remover</button>
               </div>`).join('')}
               <div class="cor-row cor-novo oculto" data-i="novo">
                 <span class="cor-num">+</span>
-                <input class="ce-nome" placeholder="novo corretor: nome">
-                <input class="ce-tel" type="tel" inputmode="tel" placeholder="telefone">
+                <input aria-label="Nome do novo corretor" class="ce-nome" placeholder="Nome do novo corretor">
+                <input aria-label="Telefone do corretor" class="ce-tel" type="tel" inputmode="tel" placeholder="telefone">
               </div>
             </div>
           </div>
+          <div class="cor-card-rodape"><span class="cor-save-hint" role="status">Edite os dados e salve ao terminar.</span><button type="button" class="btn-lime e-salvar">Salvar alterações</button></div>
         </div>`).join('')}
 
-      <h3>Nova empresa</h3>
+      <details class="cor-config" id="cor-nova-form"><summary>Cadastrar nova empresa</summary>
       <div class="cfg-rapida">
         <label>Login<input id="ne-user" placeholder="ex.: orbi"></label>
         <label>Nome da empresa<input id="ne-nome" placeholder="ex.: Orbi Imóveis"></label>
@@ -3236,6 +3251,17 @@
         <button class="btn-lime" id="ne-criar">+ criar empresa</button>
       </div>
 
+      </details>
+      <details class="cor-config"><summary>Login único dos corretores <span class="cor-summary-note">${STORE.temSenhaCorretorGeral() ? 'Configurado' : 'Não configurado'}</span></summary><p class="cor-help">Configure o acesso compartilhado somente quando precisar alterar a entrada da rede.</p>
+      <div class="nota">Um acesso só para <b>todos</b> os corretores: usuário <b>corretor</b> + esta senha. Ao entrar, cada um clica no próprio nome. ${STORE.temSenhaCorretorGeral() ? '<b class="tag-ok">✓ senha definida</b>' : '<b class="tag-falta">⚠ ainda sem senha — o login único não funciona até você definir uma aqui</b>'}</div>
+      <div class="cfg-rapida">
+        <label>Usuário<input value="corretor" readonly></label>
+        <label>Senha única<input id="geral-senha" type="password" placeholder="${STORE.temSenhaCorretorGeral() ? '(trocar a senha)' : 'defina a senha (mín. 4)'}" autocomplete="new-password"></label>
+        <button class="btn-lime" id="geral-save">Salvar senha única</button>
+        ${STORE.temSenhaCorretorGeral() ? '<button class="btn-mini" id="geral-remover">Desativar login único</button>' : ''}
+      </div>
+
+</details>
       ${soDomo ? '' : `<h3>Modo apresentação <span class="nota" style="font-weight:400">— login que mostra só a tabela e a apresentação do prédio ao cliente; não acessa CRM, propostas, simulador nem reservas</span></h3>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Login</th><th>Nome</th><th>Ativo</th><th>Nova senha</th><th></th></tr></thead>
@@ -3254,7 +3280,31 @@
             <td><button class="btn-mini" id="ncl-criar">criar</button></td>
           </tr>
         </tbody></table></div>
-      <div class="nota">Desmarcar <b>Ativo</b> revoga o acesso na hora. O que esse login enxerga se ajusta em <b>ADM → Config → Modo apresentação</b>.</div>`}`;
+      <div class="nota">Desmarcar <b>Ativo</b> revoga o acesso na hora. O que esse login enxerga se ajusta em <b>ADM → Config → Modo apresentação</b>.</div>`}</section>`;
+
+    const normalizarBusca = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const filtrarRede = () => {
+      const busca = normalizarBusca(filtroCor.busca);
+      let visiveis = 0;
+      $$('.gestao-corretores .empresa-card').forEach(card => {
+        const e = empresas.find(e => e.usuario === card.dataset.user);
+        const texto = [$('.e-nome', card).value, $('.e-login', card).value, ...$$('.ce-nome', card).map(n => n.value)].join(' ');
+        const estado = filtroCor.estado;
+        const combina = estado === 'todas' || (estado === 'ativas' && e.ativo !== false) || (estado === 'bloqueadas' && e.ativo === false) || (estado === 'pendentes' && e.ativo !== false && !e.temSenhaEquipe);
+        card.hidden = !(combina && normalizarBusca(texto).includes(busca));
+        if (!card.hidden) visiveis++;
+      });
+      $('#cor-resultado').textContent = `${visiveis} de ${empresas.length} empresas`;
+      $('#cor-vazio').hidden = visiveis > 0;
+      $$('[data-cor-filtro]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.corFiltro === filtroCor.estado)));
+    };
+    $('#cor-busca').oninput = e => { filtroCor.busca = e.target.value; filtrarRede(); };
+    $('#cor-filtro').value = filtroCor.estado;
+    $('#cor-filtro').onchange = e => { filtroCor.estado = e.target.value; filtrarRede(); };
+    $('#cor-limpar').onclick = () => { filtroCor.busca = ''; filtroCor.estado = 'todas'; $('#cor-busca').value = ''; $('#cor-filtro').value = 'todas'; filtrarRede(); };
+    $$('[data-cor-filtro]').forEach(b => { b.onclick = () => { filtroCor.estado = b.dataset.corFiltro; $('#cor-filtro').value = filtroCor.estado; filtrarRede(); }; });
+    $('#cor-nova').onclick = () => { const form = $('#cor-nova-form'); form.open = true; form.scrollIntoView({behavior:'smooth',block:'center'}); $('#ne-nome').focus({preventScroll:true}); };
+    filtrarRede();
 
     const salvarUser = async (dados, renomeados) => {
       try { await STORE.api('upsertUsuario', { usuarioDados: dados, renomeados: renomeados || [] }); toast('Salvo ✓'); await STORE.pull(); vAdmin('corretores'); }
@@ -3359,12 +3409,12 @@
       // CHIPS: cada corretor é um chip; clicar abre só o editor dele (e clicar de novo fecha)
       const chips = $$('.cor-chip', card);
       const linhas = $$('.cor-row', card);
-      const fecharTudo = () => { linhas.forEach((r) => r.classList.add('oculto')); chips.forEach((c) => c.classList.remove('on')); };
+      const fecharTudo = () => { linhas.forEach((r) => r.classList.add('oculto')); chips.forEach((c) => { c.classList.remove('on'); c.setAttribute('aria-expanded', 'false'); }); };
       chips.forEach((ch) => {
         ch.onclick = () => {
           if (ch.classList.contains('on')) { fecharTudo(); return; }
           fecharTudo();
-          ch.classList.add('on');
+          ch.classList.add('on'); ch.setAttribute('aria-expanded', 'true');
           const r = linhas.find((x) => x.dataset.i === ch.dataset.i);
           if (r) { r.classList.remove('oculto'); const n = $('.ce-nome', r); if (n) n.focus(); }
         };
@@ -3376,7 +3426,7 @@
           const chip = chips.find((c) => c.dataset.i === row.dataset.i);
           if (chip) chip.remove();
           row.remove();
-          _sujo = true;
+          _sujo = true; $('.cor-save-hint', card).textContent = 'Alterações pendentes. Salve esta empresa.';
         };
       });
       // 🔑 tornar master: promove este corretor à 1ª posição (o master é sempre o
@@ -3440,7 +3490,8 @@
       try { await STORE.setSenhaCorretorGeral(''); localStorage.setItem('dv_temGeral', 'false'); toast('Senha única removida'); await STORE.pull(); vAdmin('corretores'); }
       catch (e) { toast(e.message, true); }
     }; }
-    marcarSujo('#aba-corpo'); // editar empresa/corretor sem salvar bloqueia o re-render do pull
+    $('.gestao-corretores').addEventListener('input', e => { if (!e.target.matches('#cor-busca, #cor-filtro')) _sujo = true; });
+    $$('.empresa-card').forEach(card => card.addEventListener('input', () => { $('.cor-save-hint', card).textContent = 'Alterações pendentes. Salve esta empresa.'; })); // editar empresa/corretor sem salvar bloqueia o re-render do pull
   }
 
   function papelDe(p) {
