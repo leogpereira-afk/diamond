@@ -1,6 +1,7 @@
 // api-core.mjs — PORTE FIEL do netlify/functions/api.js para Deno/Supabase.
 // Mesmo contrato (36 actions, x-token), mesmo código; só o armazenamento mudou (blobs-shim → Postgres/Storage).
 import { getStore, connectLambda, sb } from '../_shared/blobs-shim.mjs';
+import { executarClienteCadastro } from './clientes-api.mjs';
 import { executarReservas } from './reservas-api.mjs';
 import { executarVagas } from './vagas-api.mjs';
 import crypto from 'node:crypto';
@@ -311,6 +312,12 @@ export const handler = async (event) => {
       return json(200, { registros, nextAfter });
     }
 
+    if (action === 'clienteCadastro') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      if(!usr||!ehSuper(usr))return json(403,{erro:'Somente a gestão Domo pode editar o cadastro por unidade.'});
+      return executarClienteCadastro(body,usr,json);
+    }
+
     if (action === 'reservasPainel') {
       const usr=await validarUsuario(stores.cfg,body.auth,false);
       if(!usr||!ehSuper(usr))return json(403,{erro:'Somente a Domo pode gerir reservas.'});
@@ -323,7 +330,7 @@ export const handler = async (event) => {
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = (await Promise.all(fatia.map((k) => stores.unidades.get(k, { type: 'json' })))).filter(Boolean);
-      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,reserva,...publica})=>publica), total, nextAfter });
+      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,...publica})=>publica), total, nextAfter });
     }
 
     if (action === 'upsert') {
@@ -1020,6 +1027,8 @@ export const handler = async (event) => {
         const como = String(body.comoCorretor || '').trim();
         if (!ehMasterDe(usr) && !nomesDoCorretor(usr, como).has(existente.corretorNome || '')) return json(403, { erro: 'lead de outro corretor' });
       }
+      const unidadesVinculadas=(await stores.unidades.listJSON()).some(x=>x.valor?.clienteId===body.id);
+      if(unidadesVinculadas)return json(409,{erro:'Este cliente está vinculado a uma unidade. Edite ou substitua o vínculo antes de excluir o cadastro.'});
       await stores.leads.delete(body.id);
       return json(200, { ok: true });
     }

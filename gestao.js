@@ -17,6 +17,7 @@
     return {propostas:out,total,completa:!more&&(total==null||total<=out.length)};
   }
   function buyer(u,leads,fn){
+    const linked=u.clienteId&&(leads||[]).find(l=>l.id===u.clienteId);if(linked?.cliente)return {label:linked.cliente,source:'cadastro'};
     const direct=String(u.compradorNome||'').trim();if(direct)return {label:direct,source:'unidade'};
     if(typeof fn==='function'){
       const result=String(fn(u,leads)||'').trim();

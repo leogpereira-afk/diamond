@@ -246,6 +246,13 @@ const STORE = (() => {
   const ehDomo = () => { const u = getUser(); return !!u && u.usuario === 'domo'; };       // login da construtora
   const podeVerPainel = () => isAdmin() || ehDomo();                                          // vê tudo (admin OU domo)
   // muda SÓ o status + vendedor de uma unidade (admin/domo). Direto no servidor + atualiza local.
+  async function salvarCadastroCliente(dados) {
+    if(filaGet().some(x=>x.action==='upsertLead'&&x.lead?.id===dados.id))throw Error('Este cliente tem alterações pendentes no CRM. Aguarde a sincronização antes de editar os dados.');
+    const r=await api('clienteCadastro',{...dados,operacao:'salvar',comoCorretor:_como()});
+    if(!r.ok||!r.lead)throw Error(r.erro||'Não foi possível confirmar o cadastro.');
+    aplicaLead(r.lead);if(r.unidade)aplicaUnidade(r.unidade);for(const u of r.unidades||[])aplicaUnidade(u);
+    emit('dados',{tipo:'leads'});return r;
+  }
   async function setVendedor(unidade, status, vendedorNome, vendedorEmpresa) {
     const s = getUser(); if (!s) throw new Error('sessão inválida');
     const r = await api('setVendedor', { unidade, status, vendedorNome, vendedorEmpresa, auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
@@ -723,7 +730,7 @@ const STORE = (() => {
   return {
     api, sha256, login, logout, getUser, setUser, setCorretorAtivo, setMeusCorretores, trocarMinhaSenha, setSenhaEquipe, enviarPropostaPdf, isAdmin,
     entrarComoUniversal, setSenhaCorretorGeral, temSenhaCorretorGeral: () => lsGet('dv_temGeral', false),
-    getLeads, pullLeads, salvarLead, excluirLead, listEnvios,
+    getLeads, pullLeads, salvarLead, excluirLead, listEnvios, salvarCadastroCliente,
     getReservas, pullReservas, pedirReserva, excluirReserva,
     getUnidades, getCfg, getPropostas, getUsuarios, unidadePorId,
     salvarUnidade, salvarCfg, salvarProposta, excluirProposta, reatribuirCorretor,

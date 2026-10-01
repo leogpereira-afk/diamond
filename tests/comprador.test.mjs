@@ -24,3 +24,14 @@ test('cliente e corretor comum não abrem vagas internas',async()=>{
  b.table('cfg').get('usuarios').push({usuario:'corretor',hash:'fake',papel:'corretor',ativo:true});
  assert.equal((await b.request('vagas',{operacao:'carregar'},'corretor')).status,403);
 });
+test('cliente vinculado aparece por id e atualiza o nome sem inferir compra',()=>{
+ assert.equal(ctx.comprador({...u,status:'Disponível',clienteId:'lead-1',clienteVinculadoNome:'Anterior'},[{id:'lead-1',cliente:'Atualizado'}]),'Atualizado');
+ assert.equal(ctx.comprador({...u,clienteId:'lead-1',clienteVinculadoNome:'Confirmado'},[]),'Confirmado');
+});
+const vctx=vm.createContext({window:{},STORE:{},Date,Math});
+vm.runInContext(code.slice(0,code.lastIndexOf("  window.addEventListener('hashchange'"))+';globalThis.vagas=vagasDaUnidade;})();',vctx);
+test('vaga vinculada usa apartamento exato, decisão efetiva e alerta de múltiplos vínculos',()=>{
+ const vagas=[{codigo:'V01',apartamento:'Apto 401'},{codigo:'V02',apartamento:'Apto 1401'},{codigo:'V03',apartamento:'Apto 402',alertas:['Conferir'],origem:{vinculos:[{apartamento:'Apto 401'}]}},{codigo:'V04',apartamento:'Apto 402',alertas:[],origem:{vinculos:[{apartamento:'Apto 401'}]}}];
+ assert.deepEqual(Array.from(vctx.vagas(u,vagas),v=>v.codigo),['V01','V03']);
+ assert.equal(vctx.vagas({unidade:'999'},vagas).length,0);
+});

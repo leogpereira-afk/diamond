@@ -131,9 +131,10 @@
     if (!l) { app().innerHTML = `<div class="vazio">Cliente não localizado neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
     const unidade = STORE.getUnidades().find((u) => String(u.unidade) === String(l.unidade));
     const crm = STORE.podeVerPainel() ? '#/admin/clientes' : '#/clientes';
-    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(volta)}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Cliente · ${esc(estLab(l.estagio))}</span><h1>${esc(l.cliente)}</h1><p>${esc(l.corretorNome || 'Responsável não informado')}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</p></div><a class="btn-lime" href="${crm}?cliente=${encodeURIComponent(l.id)}">Editar no CRM</a></header>
-      <div class="registro-grade"><section class="painel"><h2>Próximo passo</h2><p class="registro-proximo">${l.proximoContato ? 'Retorno em ' + fmtData(l.proximoContato) : 'Definir o próximo contato no CRM'}</p><p>${esc(l.obs || 'Sem observações registradas.')}</p></section><section class="painel"><h2>Informações do cliente</h2><dl class="registro-dados"><div><dt>Primeiro contato</dt><dd>${fmtData(l.primeiroContato)}</dd></div><div><dt>Telefone</dt><dd>${esc(l.clienteTel || 'Não informado')}</dd></div><div><dt>Unidade de interesse</dt><dd>${esc(l.unidade || 'Não informada')}</dd></div></dl>${unidade ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', unidade.id))}">⌂ Histórico da unidade</a>` : ''}</section></div>
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(volta)}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Cliente · ${esc(estLab(l.estagio))}</span><h1>${esc(l.cliente)}</h1><p>${esc(l.corretorNome || 'Responsável não informado')}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</p></div><div class="registro-acoes">${STORE.podeVerPainel()?'<button type="button" class="btn-lime" id="cliente-editar-dados">Editar dados</button>':''}<a class="btn-mini" href="${crm}?cliente=${encodeURIComponent(l.id)}">Ver atendimento</a></div></header>
+      <div class="registro-grade"><section class="painel"><h2>Próximo passo</h2><p class="registro-proximo">${l.proximoContato ? 'Retorno em ' + fmtData(l.proximoContato) : 'Definir o próximo contato no CRM'}</p><p>${esc(l.obs || 'Sem observações registradas.')}</p></section><section class="painel"><h2>Informações do cliente</h2><dl class="registro-dados"><div><dt>Primeiro contato</dt><dd>${fmtData(l.primeiroContato)}</dd></div><div><dt>Telefone</dt><dd>${esc(l.clienteTel || 'Não informado')}</dd></div><div><dt>Unidade de interesse</dt><dd>${esc(l.unidade || 'Não informada')}</dd></div>${Object.entries({'E-mail':l.cadastro?.email,'CPF / CNPJ':l.cadastro?.documento,'Endereço':l.cadastro?.endereco,'Cidade / UF':[l.cadastro?.cidade,l.cadastro?.uf].filter(Boolean).join(' / '),'CEP':l.cadastro?.cep,'Observações do cadastro':l.cadastro?.observacoes}).map(([label,value])=>`<div class="cliente-cadastro-dados"><dt>${esc(label)}</dt><dd>${esc(value||'Não informado')}</dd></div>`).join('')}</dl>${unidade ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', unidade.id))}">⌂ Histórico da unidade</a>` : ''}</section></div>
       <section class="painel"><h2>Propostas e envios</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section></section>`;
+    if($('#cliente-editar-dados'))$('#cliente-editar-dados').onclick=()=>window.DiamondClienteEditor.abrir({clienteId:l.id,onSaved:()=>{toast('Dados do cliente salvos ✓');vCliente(id);}});
     await carregarConexoes((envios) => { const refs = clienteReferencias(l, STORE.getPropostas(), envios); $('#registro-conexoes').innerHTML = listaPropostasHTML(refs.propostas) + '<h3>Envios deste cliente</h3>' + listaEnviosHTML(refs.envios); });
   }
   async function vConexoesUnidade(id) {
@@ -2671,6 +2672,9 @@
   }
 
   function compradorVenda(u, leads) {
+    const vinculado=u.clienteId&&(leads||[]).find(l=>l.id===u.clienteId);
+    if(vinculado?.cliente)return vinculado.cliente;
+    if(u.clienteId&&u.clienteVinculadoNome)return u.clienteVinculadoNome;
     if(u.status==='Reservado'&&u.reserva?.cliente)return u.reserva.cliente;
     if (u.status === 'Disponível') return '—';
     const direto = String(u.compradorNome || u.comprador || u.clienteNome || u.cliente || '').trim();
@@ -2681,6 +2685,27 @@
       (l.unidadeId ? String(l.unidadeId) === String(u.id) : String(l.unidade || '').trim() === String(u.unidade).trim()))
       .forEach(l => { const nome = String(l.cliente || '').trim(); if (nome) nomes.set(nome.toLocaleLowerCase('pt-BR'), nome); });
     return nomes.size === 1 ? [...nomes.values()][0] : nomes.size > 1 ? 'Conferir compradores no CRM' : 'Não informado';
+  }
+
+  function vagasDaUnidade(u,vagas) {
+    const key=v=>{const s=String(v||'').trim().replace(/^(?:apto\.?|apartamento)\s*/i,'').trim().toUpperCase();return /^\d+$/.test(s)?String(Number(s)):s;};
+    const unidade=key(u.unidade);return !unidade?[]:vagas.filter(v=>key(v.apartamento)===unidade||(v.alertas?.length&&(v.origem?.vinculos||[]).some(x=>key(x.apartamento)===unidade)));
+  }
+  let vagasVendasPromise=null;
+  async function consultarVagasVendas(linhas) {
+    try{
+      const promise=vagasVendasPromise||(vagasVendasPromise=STORE.api('vagas',{operacao:'carregar'}).finally(()=>{vagasVendasPromise=null;}));
+      const r=await promise;if(!r.ok||!r.estado)throw Error('Consulta indisponível');
+      const vagas=globalThis.DomoVagas.efetivas(r.estado);
+      for(const tr of linhas){if(!tr.isConnected)continue;const vs=vagasDaUnidade({unidade:tr.dataset.un},vagas),cell=$('.td-vaga',tr);if(!cell)continue;
+        cell.innerHTML=vs.length?vs.map(v=>`<a class="v-vaga vg-${esc(v.situacao)}" href="#/admin/vagas?vaga=${encodeURIComponent(v.codigo)}" aria-label="Abrir vaga ${esc(v.codigo)} da unidade ${esc(tr.dataset.un)}"><b>${esc(v.codigo)}</b><small>${esc(globalThis.DomoVagas.PISOS[v.piso]?.nome||'Piso não informado')}</small>${v.alertas?.length||v.avisos?.length?'<small>Conferir vínculo</small>':''}</a>`).join(''):'<span class="nota">Sem vínculo</span>';
+      }
+    }catch(e){for(const tr of linhas){const cell=$('.td-vaga',tr);if(tr.isConnected&&cell)cell.innerHTML='<span class="nota">Consulta indisponível</span><a class="btn-mini" href="#/admin/vagas">Conferir garagem</a>';}}
+  }
+
+  function clienteVendaHTML(u) {
+    const nome=compradorVenda(u,STORE.getLeads()),temNome=!['—','Não informado','Conferir compradores no CRM'].includes(nome);
+    return `<div class="v-cliente"><strong>${esc(nome)}</strong>${u.clienteId?`<small>${u.status==='Vendido'?'Comprador vinculado':'Cliente vinculado'}</small>`:''}<div class="v-cliente-actions"><button type="button" class="btn-mini v-cliente-editar" aria-label="${temNome?'Editar':'Incluir'} cliente da unidade ${esc(u.unidade)}">${temNome?'Editar dados':'+ Incluir cliente'}</button>${u.clienteId?`<a class="btn-mini" href="${esc(rotaRegistro('cliente',u.clienteId))}">Ver ficha</a>`:''}</div></div>`;
   }
 
   // VENDAS (domo): muda só o STATUS + VENDEDOR das unidades (não mexe em preço). Salva direto via setVendedor.
@@ -2738,20 +2763,24 @@
           </tr>`).join('')}</tbody></table></div>
         <div class="nota">“Reservar” marca a unidade como <b>Reservada</b> e tira o pedido da fila. “Recusar” só tira o pedido — a unidade continua disponível.</div>
       </div>` : ''}
-      <div class="nota">Marque o <b>status</b> e <b>quem vendeu</b> cada unidade. Preços e configuração ficam com o administrador.</div>
+      <div class="nota">Edite o <b>cliente</b>, o <b>status</b> e <b>quem vendeu</b> na própria linha. Incluir um cliente não altera a situação da unidade.</div>
       <div class="filtros"><input id="v-busca" aria-label="Buscar unidade ou comprador" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status" aria-label="Situação da unidade"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
       <div class="tabela-wrap"><table class="tabela adm-un">
-        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Comprador</th><th>Vendedor</th><th></th></tr></thead>
+        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Cliente / comprador</th><th>Vaga vinculada</th><th>Vendedor</th><th></th></tr></thead>
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
           <td data-lab="Unidade"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${esc(u.unidade)}</a></td>
           <td data-lab="Andar">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
           <td data-lab="Valor">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
           <td data-lab="Status"><select class="v-status">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
-          <td data-lab="Comprador" class="td-comprador">${esc(compradorVenda(u, STORE.getLeads()))}</td>
+          <td data-lab="Cliente / comprador" class="td-comprador">${clienteVendaHTML(u)}</td>
+          <td data-lab="Vaga vinculada" class="td-vaga"><span class="nota">Consultando…</span></td>
           <td data-lab="Vendedor" class="td-vendedor">${vendSel(u)}</td>
           <td class="td-salvar"><button class="btn-mini v-salvar">salvar</button></td>
         </tr>`).join('')}</tbody></table></div>`;
+    const wireCliente=tr=>{const btn=$('.v-cliente-editar',tr);if(btn)btn.onclick=()=>{if(_sujo){toast('Salve as alterações de status e vendedor antes de editar o cliente.',true);return;}const busca=$('#v-busca').value,status=$('#v-status').value;window.DiamondClienteEditor.abrir({unidadeId:tr.dataset.id,onSaved:()=>{toast('Cliente salvo e vinculado ✓');aVendas();$('#v-busca').value=busca;$('#v-status').value=status;$('#v-busca').dispatchEvent(new Event('input'));$('#v-status').dispatchEvent(new Event('change'));}});};};
     const linhas = $$('.adm-un tbody tr');
+    linhas.forEach(wireCliente);
+    consultarVagasVendas(linhas);
     const filtrarV = () => {
       const q = ($('#v-busca').value || '').trim().toLowerCase();
       const st = ($('#v-status') || {}).value || '';
@@ -2807,7 +2836,7 @@
           btn.disabled=false;btn.textContent=t;
           window.DiamondReservas.abrir(tr.dataset.id,tr.dataset.status==='Reservado'?(st==='Vendido'?'vender':st==='Disponível'?'cancelar':'prorrogar'):'reservar',STORE.getReservas().find(r=>r.unidadeId===tr.dataset.id));return;
         }
-        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; $('.td-comprador', tr).textContent = compradorVenda(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {status:st}, STORE.getLeads()); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
+        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; $('.td-comprador', tr).innerHTML = clienteVendaHTML(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {id:tr.dataset.id,unidade:tr.dataset.un,status:st}); wireCliente(tr); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
       };

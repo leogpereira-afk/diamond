@@ -108,6 +108,7 @@ function tirarDaPilha(fundo) {
   if (i >= 0) _pilhaModais.splice(i, 1);
 }
   const V=globalThis.DomoVagas;
+  let vagaSolicitada='';
   let base=null,pav=0,visao='espelho',filtro='',busca='',erro='',carregando=false,ultimaLeitura=0,identidade='';
   const chamar=(action,dados={})=>STORE.api('vagas',{operacao:action,...dados});
   const ativa=()=>location.hash.split('?')[0]==='#/admin/vagas'&&STORE.podeVerPainel();
@@ -143,6 +144,7 @@ function tirarDaPilha(fundo) {
     el.querySelectorAll('[data-piso]').forEach(b=>b.onclick=()=>{pav=+b.dataset.piso;desenhar(el);});
     el.querySelector('#vgVerAlertas')?.addEventListener('click',()=>{visao='alertas';filtro='';busca='';desenhar(el);});
     el.querySelector('#vgImportar')?.addEventListener('click',importar);
+    if(vagaSolicitada){const codigo=vagaSolicitada;vagaSolicitada='';if(vs.some(v=>v.codigo===codigo))abrir(codigo);else toast('Vaga não localizada na base atual.','erro');}
     el.querySelector('#vgBusca').oninput=e=>{busca=e.target.value;const pos=e.target.selectionStart;desenhar(el);const input=el.querySelector('#vgBusca');input.focus();try{input.setSelectionRange(pos,pos);}catch{}};
   }
   function abrir(codigo){
@@ -204,6 +206,6 @@ function tirarDaPilha(fundo) {
     try{await carregar(true);if(erro)throw Error('Não foi possível conferir a versão atual. Atualize a conexão antes de emitir o PDF.');if(!base)throw Error('Carregue o espelho primeiro.');DomoVagasPDF(base);toast('PDF emitido com os três pavimentos.');}
     catch(e){toast(e.message,'ruim');}finally{if(btn)btn.disabled=false;}
   }
-  window.DiamondVagas=el=>{if(identidade!==S.senhaHash){base=null;ultimaLeitura=0;erro='';identidade=S.senhaHash;}desenhar(el);carregar();};
+  window.DiamondVagas=el=>{const q=new URLSearchParams(location.hash.split('?')[1]||'');vagaSolicitada=/^V\d{2}$/.test(q.get('vaga')||'')?q.get('vaga'):'';if(vagaSolicitada){base=null;ultimaLeitura=0;}if(identidade!==S.senhaHash){base=null;ultimaLeitura=0;erro='';identidade=S.senhaHash;}desenhar(el);carregar();};
   setInterval(()=>{if(ativa()&&!document.hidden)carregar();else if(!S.senhaHash)base=null;},20000);
 })();
