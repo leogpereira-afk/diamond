@@ -329,7 +329,7 @@ export const handler = async (event) => {
       if (!usr) return json(403, { erro: 'sessão inválida' });
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
-      const unidades = (await Promise.all(fatia.map((k) => stores.unidades.get(k, { type: 'json' })))).filter(Boolean);
+      const unidades = await stores.unidades.getMany(fatia);
       return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,...publica})=>publica), total, nextAfter });
     }
 
@@ -792,7 +792,7 @@ export const handler = async (event) => {
       if (!usr) return json(403, { erro: 'sessão inválida' });
       const { blobs } = await stores.propostas.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
-      let propostas = (await Promise.all(fatia.map((k) => stores.propostas.get(k, { type: 'json' })))).filter(Boolean);
+      let propostas = await stores.propostas.getMany(fatia);
       // admin e domo veem TODAS; a EMPRESA vê as dela; dentro dela o MASTER vê todos os corretores e o corretor comum só as suas
       if (!ehSuper(usr)) {
         const meus = new Set([usr.usuario, ...(usr.loginsAntigos || [])]); // inclui logins antigos (após rename)
@@ -903,8 +903,7 @@ export const handler = async (event) => {
     if (action === 'listReservas') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const { blobs } = await stores.reservas.list();
-      let reservas = (await Promise.all(blobs.map((b) => stores.reservas.get(b.key, { type: 'json' }).catch(() => null)))).filter(Boolean);
+      let reservas = (await stores.reservas.listJSON()).map(r => r.valor).filter(Boolean);
       // O espelho é COMPARTILHADO entre imobiliárias concorrentes: todas precisam saber que a unidade tem pedido,
       // mas NENHUMA pode ver o cliente/corretor da outra. Fora da própria empresa, só o fato + a data.
       // O DOMO é exceção junto com o admin: é a construtora que confirma ou recusa
@@ -973,8 +972,7 @@ export const handler = async (event) => {
     if (action === 'listLeads') {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr) return json(403, { erro: 'sessão inválida' });
-      const { blobs } = await stores.leads.list();
-      let leads = (await Promise.all(blobs.map((b) => stores.leads.get(b.key, { type: 'json' })))).filter(Boolean);
+      let leads = (await stores.leads.listJSON()).map(r => r.valor).filter(Boolean);
       if (!ehSuper(usr)) { // admin e domo veem TODOS os clientes; demais, só a própria empresa
         const meus = new Set([usr.usuario, ...(usr.loginsAntigos || [])]);
         leads = leads.filter((l) => meus.has(l.empresaUsuario));

@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v35';
-const SHELL = ['clientes-editor.js?v=35','clientes-painel.js?v=35','gestao-domain.js?v=35','gestao.js?v=35','gestao.css?v=35','navegacao.js?v=35','navegacao.css?v=35','vendor/jspdf.umd.min.js?v=35','envios-domain.js?v=35','envios.js?v=35','envios.css?v=35','vagas-disponiveis.js?v=35','./', 'index.html', 'styles.css?v=35', 'config.js?v=35', 'plano.js?v=35', 'store.js?v=35', 'app.js?v=35','reservas.js?v=35','reservas.css?v=35',
-  'vagas-domain.js?v=35','vagas-pdf.js?v=35','vagas.js?v=35','vagas.css?v=35','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v36';
+const SHELL = ['clientes-editor.js?v=36','clientes-painel.js?v=36','gestao-domain.js?v=36','gestao.js?v=36','gestao.css?v=36','navegacao.js?v=36','navegacao.css?v=36','vendor/jspdf.umd.min.js?v=36','envios-domain.js?v=36','envios.js?v=36','envios.css?v=36','vagas-disponiveis.js?v=36','./', 'index.html', 'styles.css?v=36', 'config.js?v=36', 'plano.js?v=36', 'store.js?v=36', 'app.js?v=36','reservas.js?v=36','reservas.css?v=36',
+  'vagas-domain.js?v=36','vagas-pdf.js?v=36','vagas.js?v=36','vagas.css?v=36','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = [];
 
 self.addEventListener('install', (e) => {
@@ -28,17 +28,18 @@ self.addEventListener('fetch', (e) => {
   if (url.hostname.endsWith('supabase.co')) return; // NUNCA cachear API/Supabase
   if (e.request.method !== 'GET') return;
   e.respondWith((async () => {
+    const c = await caches.open(CACHE);
+    // O shell foi instalado por inteiro com esta versão. Arquivos da versão
+    // atual não precisam atravessar a rede em toda abertura do sistema.
+    const instalado = url.origin === self.location.origin && SHELL.some(u => u !== './' && u !== 'index.html' && new URL(u, self.location.href).href === url.href);
+    if (instalado) { const hit = await c.match(e.request); if (hit) return hit; }
     try {
-      // `cache: 'reload'` PULA o cache HTTP do navegador: sem isto, network-first
-      // ainda entregava o arquivo velho que o GitHub Pages mandou guardar por ~10
-      // min, e todo deploy demorava a aparecer para quem já tinha o site aberto.
-      // Agora a rede é sempre a de verdade; o cache do SW é só para quando cai.
+      // HTML e URLs de outras versões consultam a rede para receber publicações.
       const net = await fetch(e.request, { cache: 'reload' });
-      const c = await caches.open(CACHE);
-      c.put(e.request, net.clone());
+      if (net.ok) await c.put(e.request, net.clone()).catch(() => {});
       return net;
     } catch (err) {
-      const hit = await caches.match(e.request);
+      const hit = await c.match(e.request);
       return hit || Response.error();
     }
   })());

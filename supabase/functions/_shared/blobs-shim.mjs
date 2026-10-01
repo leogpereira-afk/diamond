@@ -21,6 +21,17 @@ function storeKv(store) {
       if (!data) return null;
       return (opts && opts.type === 'json') ? data.valor : JSON.stringify(data.valor);
     },
+    async getMany(keys) {
+      if (!keys.length) return [];
+      const rows = [];
+      for (let i = 0; i < keys.length; i += 100) {
+        const { data, error } = await sb.from('dmd_kv').select('key,valor').eq('store', store).in('key', keys.slice(i, i + 100));
+        if (error) throw new Error('kv getMany ' + store + ': ' + error.message);
+        rows.push(...(data || []));
+      }
+      const byKey = new Map(rows.map(r => [r.key, r.valor]));
+      return keys.map(k => byKey.get(k)).filter(v => v != null);
+    },
     // Read whole records per page instead of one database request per key.
     async listJSON() {
       const rows = [];

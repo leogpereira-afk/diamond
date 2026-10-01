@@ -26,10 +26,22 @@ const STORE = (() => {
   function ymdLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 
   // ---------- API ----------
+  let versaoLeitura = 0;
+  const leiturasEmCurso = new Map();
+  const acoesDeLeitura = new Set(['list', 'getCfg', 'listPropostas', 'listLeads', 'listReservas', 'listEnvios']);
   async function api(action, body = {}) {
     const sess = getUser();
     const payload = { action, ...body };
     if (sess && !payload.auth) payload.auth = { usuario: sess.usuario, senhaHash: sess.senhaHash };
+    const leitura = acoesDeLeitura.has(action) || (action === 'reservasPainel' && body.operacao === 'listar') || (action === 'vagas' && ['carregar', 'paraProposta'].includes(body.operacao));
+    if (!leitura) { versaoLeitura++; leiturasEmCurso.clear(); return requisicao(payload); }
+    const chave = JSON.stringify(payload);
+    let pendente = leiturasEmCurso.get(chave);
+    if (!pendente) { pendente = requisicao(payload); leiturasEmCurso.set(chave, pendente); }
+    try { return JSON.parse(JSON.stringify(await pendente)); }
+    finally { if (leiturasEmCurso.get(chave) === pendente) leiturasEmCurso.delete(chave); }
+  }
+  async function requisicao(payload) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
     try {
@@ -217,17 +229,8 @@ const STORE = (() => {
     const s = getUser(); if (!s || !navigator.onLine) return getLeads();
     if (s.papel !== 'admin' && !_como()) return getLeads(); // empresa sem corretor escolhido: nada a puxar
     try {
-      const fila = filaGet();
-      const delPend = new Set(fila.filter((x) => x.action === 'delLead').map((x) => x.id));
-      const upPend = new Set(fila.filter((x) => x.action === 'upsertLead').map((x) => x.lead.id));
       const r = await api('listLeads', { comoCorretor: _como() });
-      const vistas = new Set();
-      for (const l of r.leads || []) { vistas.add(l.id); if (!delPend.has(l.id)) aplicaLead(l); }
-      // varredura de exclusão (preserva o que está na fila E o que é RECENTE: o list() do Blobs
-      // demora a enumerar um blob novo — sem isso o lead recém-salvo sumiria da tela ao recarregar)
-      const agora = Date.now();
-      const recente = (l) => (agora - Date.parse(l.atualizadoEm || l.criadoEm || 0)) < 120000;
-      lsSet(K.leads, getLeads().filter((l) => vistas.has(l.id) || upPend.has(l.id) || delPend.has(l.id) || recente(l)));
+      aplicaLote(K.leads, r.leads || [], 'delLead', 'upsertLead', 'lead', true);
       emit('dados', { tipo: 'leads' });
     } catch (e) { _erroLeitura = e; emit('sync', status()); if (propagarErro) throw e; }
     return getLeads();
@@ -650,78 +653,96 @@ const STORE = (() => {
     lsSet(K.leads, lista);
   }
 
+  // Mescla uma coleção em memória e grava uma vez. A fila é lida após a rede,
+  // para preservar também as edições e exclusões feitas durante a consulta.
+  function aplicaLote(chave, remotas, acaoDel, acaoUp, campo, manterRecentes = false, somenteMaisNovas = false) {
+    const fila = filaGet(), locais = lsGet(chave, []), porId = new Map(locais.map(r => [r.id, r]));
+    const excluidas = new Set(fila.filter(r => r.action === acaoDel).map(r => r.id));
+    const pendentes = new Set(fila.filter(r => r.action === acaoUp).map(r => r[campo].id));
+    const vistas = new Set();
+    for (const r of remotas) {
+      vistas.add(r.id);
+      if (excluidas.has(r.id)) continue;
+      const local = porId.get(r.id), nova = r.atualizadoEm || '', anterior = local?.atualizadoEm || '';
+      if (!local || (somenteMaisNovas ? nova > anterior : nova >= anterior)) porId.set(r.id, r);
+    }
+    const agora = Date.now();
+    const lista = [...porId.values()].filter(r => vistas.has(r.id) || pendentes.has(r.id) || excluidas.has(r.id) || (manterRecentes && agora - Date.parse(r.atualizadoEm || r.criadoEm || 0) < 120000));
+    const json = JSON.stringify(lista);
+    if (json === JSON.stringify(locais)) return false;
+    localStorage.setItem(chave, json);
+    return true;
+  }
+
+  let cicloLeitura = null;
+  const escopoLeitura = () => { const s = getUser() || {}; return JSON.stringify([s.usuario, s.senhaHash, s.papel, _como(), versaoLeitura]); };
+  async function lerPaginas(action, campo, extras, escopo) {
+    let after = null; const registros = [];
+    for (let pg = 0; pg < 50; pg++) {
+      if (escopo !== escopoLeitura()) throw Error('A sessão mudou durante a consulta.');
+      const r = await api(action, { after, ...extras });
+      if (!Array.isArray(r[campo])) throw Error('A consulta retornou dados incompletos.');
+      registros.push(...r[campo]);
+      after = r.nextAfter;
+      if (!after) return registros;
+    }
+    throw Error('A consulta ficou incompleta. Atualize novamente.');
+  }
   async function pull(onRefresh) {
-    if (!navigator.onLine || !getUser()) return;
-    try {
-      const filaInicio = filaGet();
-      const deletesPend = new Set(filaInicio.filter((x) => x.action === 'del').map((x) => x.id));
-      const upsertsPend = new Set(filaInicio.filter((x) => x.action === 'upsert').map((x) => x.unidade.id));
-
-      // unidades — keyset
-      let after = null; const vistas = new Set(); let mudou = false;
-      for (let pg = 0; pg < 50; pg++) {
-        const r = await api('list', { after });
-        for (const remota of r.unidades) {
-          vistas.add(remota.id);
-          if (deletesPend.has(remota.id)) continue; // não ressuscitar
-          const local = unidadePorId(remota.id);
-          if (!local || (remota.atualizadoEm || '') > (local.atualizadoEm || '')) { aplicaUnidade(remota); mudou = true; }
-        }
-        if (!r.nextAfter) break;
-        after = r.nextAfter;
-      }
-      // varredura de exclusão (preserva upserts pendentes)
-      const lista = getUnidades().filter((u) => vistas.has(u.id) || upsertsPend.has(u.id) || deletesPend.has(u.id));
-      if (lista.length !== getUnidades().length) { lsSet(K.un, lista); mudou = true; }
-
-      // cfg — não sobrescrever se há setCfg pendente
-      if (!filaInicio.some((x) => x.action === 'setCfg')) {
-        const rc = await api('getCfg');
-        const cfgLocal = getCfg();
-        if (!cfgLocal || (rc.cfg.atualizadoEm || '') > (cfgLocal.atualizadoEm || '')) { lsSet(K.cfg, rc.cfg); mudou = true; }
-        lsSet(K.usuarios, rc.usuarios || []);
-        if (rc.temSenhaCorretorGeral !== undefined) lsSet('dv_temGeral', !!rc.temSenhaCorretorGeral); // login único: senha já definida?
-        // logo subida pelo ADM chega à sessão sem re-login (o PDF lê s.logoId)
-        const sess = getUser();
-        if (sess && sess.papel !== 'admin' && rc.meuLogoId != null && sess.logoId !== rc.meuLogoId) {
-          sess.logoId = rc.meuLogoId; setUser(sess, !!localStorage.getItem(K.user));
-        }
-      }
-
-      // Clientes acessam somente o espelho; suas credenciais não abrem o CRM.
-      if (getUser().papel !== 'cliente') {
-        // propostas
-        const delPropPend = new Set(filaInicio.filter((x) => x.action === 'delProposta').map((x) => x.id));
-        let afterP = null; const vistasP = new Set();
-        for (let pg = 0; pg < 50; pg++) {
-          const r = await api('listPropostas', { after: afterP, comoCorretor: _como() }); // servidor escopa: master vê a equipe, corretor só as suas
-          for (const p of r.propostas) {
-            vistasP.add(p.id);
-            if (delPropPend.has(p.id)) continue;
-            aplicaProposta(p);
+    const sess = getUser();
+    if (!navigator.onLine || !sess) return;
+    const escopo = escopoLeitura();
+    if (cicloLeitura?.escopo === escopo) {
+      if (onRefresh) cicloLeitura.callbacks.add(onRefresh);
+      return cicloLeitura.promise;
+    }
+    const ciclo = { escopo, callbacks: new Set(onRefresh ? [onRefresh] : []) };
+    cicloLeitura = ciclo;
+    ciclo.promise = (async () => {
+      try {
+        const interno = sess.papel !== 'cliente', como = _como();
+        const results = await Promise.allSettled([
+          lerPaginas('list', 'unidades', {}, escopo),
+          filaGet().some(x => x.action === 'setCfg') ? null : api('getCfg'),
+          interno ? lerPaginas('listPropostas', 'propostas', { comoCorretor: como }, escopo) : null,
+          interno && (sess.papel === 'admin' || como) ? api('listLeads', { comoCorretor: como }) : null,
+          interno ? api('listReservas') : null,
+        ]);
+        if (escopo !== escopoLeitura()) return;
+        const [un, config, prop, crm, reservas] = results;
+        let mudou = false;
+        if (un.status === 'fulfilled') mudou = aplicaLote(K.un, un.value, 'del', 'upsert', 'unidade', false, true);
+        if (config.status === 'fulfilled' && config.value && !filaGet().some(x => x.action === 'setCfg')) {
+          const rc = config.value, cfgLocal = getCfg();
+          if (!cfgLocal || (rc.cfg.atualizadoEm || '') > (cfgLocal.atualizadoEm || '')) { lsSet(K.cfg, rc.cfg); mudou = true; }
+          lsSet(K.usuarios, rc.usuarios || []);
+          if (rc.temSenhaCorretorGeral !== undefined) lsSet('dv_temGeral', !!rc.temSenhaCorretorGeral);
+          const atual = getUser();
+          if (atual && atual.papel !== 'admin' && rc.meuLogoId != null && atual.logoId !== rc.meuLogoId) {
+            atual.logoId = rc.meuLogoId; setUser(atual, !!localStorage.getItem(K.user));
           }
-          if (!r.nextAfter) break;
-          afterP = r.nextAfter;
         }
-        const upsertsPropPend = new Set(filaGet().filter((x) => x.action === 'upsertProposta').map((x) => x.proposta.id));
-        const listaP = getPropostas().filter((p) => vistasP.has(p.id) || upsertsPropPend.has(p.id) || delPropPend.has(p.id));
-        lsSet(K.prop, listaP);
-
-        await pullLeads(true); // CRM (escopado pelo corretor ativo)
-        await pullReservas(true); // pedidos de reserva pendentes (aviso do espelho)
-
-      }
-      _erroLeitura = null;
-      lsSet(K.last, now());
-      if (mudou && onRefresh) onRefresh();
-      emit('sync', status());
-    } catch (e) { _erroLeitura = e; emit('sync', status()); }
+        if (prop.status === 'fulfilled' && prop.value) aplicaLote(K.prop, prop.value, 'delProposta', 'upsertProposta', 'proposta');
+        if (crm.status === 'fulfilled' && crm.value && aplicaLote(K.leads, crm.value.leads || [], 'delLead', 'upsertLead', 'lead', true)) emit('dados', { tipo: 'leads' });
+        if (reservas.status === 'fulfilled' && reservas.value) {
+          const lista = reservas.value.reservas || [];
+          if (JSON.stringify(lista) !== JSON.stringify(getReservas())) { lsSet(K.reservas, lista); emit('dados', { tipo: 'reservas' }); }
+        }
+        const falha = results.find(r => r.status === 'rejected');
+        _erroLeitura = falha ? falha.reason : null;
+        if (!falha) lsSet(K.last, now());
+        if (mudou) for (const fn of ciclo.callbacks) fn();
+        emit('sync', status());
+      } catch (e) { if (escopo === escopoLeitura()) { _erroLeitura = e; emit('sync', status()); } }
+    })();
+    try { return await ciclo.promise; }
+    finally { if (cicloLeitura === ciclo) cicloLeitura = null; }
   }
 
   // ---------- ciclo ----------
   function iniciar(onRefresh) {
     setInterval(() => { trySync(); }, 8000);
-    setInterval(() => { pull(onRefresh); }, 30000);
+    setInterval(() => { if (!document.hidden) pull(onRefresh); }, 30000);
     window.addEventListener('online', () => { trySync(); pull(onRefresh); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(onRefresh); });
     trySync(); pull(onRefresh);

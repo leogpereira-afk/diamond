@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {backend,source} from './helpers.mjs';
+test('consulta agrupada mantém ordem, separa stores e pagina lotes de cem',async()=>{
+ const queries=[];let failure=false;const client={from:table=>{const query={table};const q={select:fields=>{query.fields=fields;return q;},eq:(key,value)=>{query[key]=value;return q;},in:async(key,keys)=>{queries.push({...query,keys});return failure?{error:{message:'offline'}}:{data:keys.filter(k=>k!=='ausente').reverse().map(key=>({key,valor:{id:key}}))};}};return q;}};
+ const c=vm.createContext({createClient:()=>client,Deno:{env:{get:()=>''}}});vm.runInContext(source('supabase/functions/_shared/blobs-shim.mjs').replace(/^import .+;\n/gm,'').replaceAll('export function','function').replaceAll('export const','const')+';globalThis.st=getStore;',c);
+ const keys=Array.from({length:203},(_,i)=>'p'+i);const result=await c.st('propostas').getMany([...keys,'ausente']);assert.deepEqual(Array.from(result,r=>r.id),keys);assert.equal(queries.length,3);assert.ok(queries.every(q=>q.store==='propostas'&&q.keys.length<=100));
+ await c.st('propostas').getMany([]);assert.equal(queries.length,3);failure=true;await assert.rejects(c.st('propostas').getMany(['p0']),/offline/);
+});
 test('envios carregam em lote sem consultas por registro e mantêm eventos',async()=>{
  const db=backend();for(let i=0;i<83;i++){db.table('envios').set('e'+i,{por:'domo',em:'2026-09-20',cliente:'Cliente '+i});db.table('enviosEv').set('x'+i,{envioId:'e'+i,tipo:'interesse',em:'2026-09-20'});}
  const r=await db.request('listEnvios');assert.equal(r.envios.length,83);assert.equal(r.envios[0].eventos[0].tipo,'interesse');assert.equal(db.reads.filter(n=>['envios','enviosEv'].includes(n)).length,0);
