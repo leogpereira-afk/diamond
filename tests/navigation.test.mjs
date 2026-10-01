@@ -10,7 +10,7 @@ function appFixture({propostas = [], leads = [], envios = [], unidade = {id:'u-1
   const STORE = {getCfg:()=>({}),getUser:()=>({usuario:'domo',nome:'Domo',papel:'corretor',ehMaster:true,temSenhaEquipe:true,corretorAtivo:{nome:'Teste'}}),isAdmin:()=>false,podeVerPainel:()=>true,getPropostas:()=>propostas,getLeads:()=>leads,getUnidades:()=>[unidade],unidadePorId:id=>id===unidade.id?unidade:null,listEnvios:async()=>envios};
   const context = vm.createContext({window:{P_URL:'https://example.invalid/p'},document:{body:node(),querySelector:get,querySelectorAll:()=>[],createElement:node},location:{hash:'#/proposta/p-antiga'},STORE,URLSearchParams,Date,Math});
   const code = source('app.js');
-  vm.runInContext(code.slice(0,code.lastIndexOf("  window.addEventListener('hashchange'"))+`;globalThis.audit={vProposta:typeof vProposta==='function'?vProposta:null,clienteReferencias:typeof clienteReferencias==='function'?clienteReferencias:null,crmResumo,renderTeste:()=>{renderTopo=()=>{};vProposta=id=>globalThis.escolhida=id;render();}};})();`,context);
+  vm.runInContext(code.slice(0,code.lastIndexOf("  window.addEventListener('hashchange'"))+`;globalThis.audit={vConexoesUnidade,vCliente,vProposta:typeof vProposta==='function'?vProposta:null,clienteReferencias:typeof clienteReferencias==='function'?clienteReferencias:null,crmResumo,renderTeste:()=>{renderTopo=()=>{};vProposta=id=>globalThis.escolhida=id;render();}};})();`,context);
   return {api:context.audit,nodes,STORE,context};
 }
 
@@ -62,4 +62,26 @@ test('falha na consulta de vinculos oferece tentativa em vez de dizer que nao ex
   await f.api.vProposta('p-antiga');
   assert.match(f.nodes.get('#registro-conexoes').innerHTML,/Tentar novamente/);
   assert.doesNotMatch(f.nodes.get('#registro-conexoes').innerHTML,/Nenhum envio/);
+});
+
+
+test('proposta aberta do painel procura nas páginas seguintes do servidor',async()=>{
+  const f=appFixture();const calls=[];
+  f.STORE.api=async(action,args)=>{calls.push(args.after);return args.after?{propostas:[{id:'p-final',cliente:'Página seguinte',unidadeId:'u-1',neg:123,forma:'avista'}],nextAfter:null}:{propostas:[],nextAfter:'pagina-2'};};
+  await f.api.vProposta('p-final');
+  assert.deepEqual(calls,[null,'pagina-2']);assert.match(f.nodes.get('#app').innerHTML,/Página seguinte/);
+});
+
+test('ficha da unidade consulta posição atual ao abrir a partir do painel',async()=>{
+  const f=appFixture();f.context.location.hash='#/conexoes/u-1';
+  f.STORE.api=async()=>({unidades:[{id:'u-1',unidade:'401',status:'Vendido',compradorNome:'Comprador atualizado',vendedorNome:'Corretor atualizado'}]});
+  await f.api.vConexoesUnidade('u-1');
+  assert.match(f.nodes.get('#app').innerHTML,/Comprador atualizado/);assert.match(f.nodes.get('#app').innerHTML,/Corretor atualizado/);
+});
+
+test('erro tardio da ficha do cliente não substitui outra tela',async()=>{
+  const f=appFixture();let reject;
+  f.context.location.hash='#/cliente/lead-a';f.STORE.api=()=>new Promise((_,no)=>{reject=no;});
+  const opening=f.api.vCliente('lead-a');f.context.location.hash='#/admin/painel';f.nodes.get('#app').innerHTML='Painel atual';reject(Error('Conexão falhou'));
+  await opening;assert.equal(f.nodes.get('#app').innerHTML,'Painel atual');
 });

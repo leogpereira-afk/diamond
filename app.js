@@ -33,10 +33,10 @@
   const fotoDe = (u, cfg) => ((cfg && cfg.fotosTipo) || {})[tipoDe(u)] || u.fotoId || '';
 
   // Consulta do registro original: nunca recalcula, salva ou associa por nome.
-  const rotaRegistro = (tipo, id) => '#/' + tipo + '/' + encodeURIComponent(id) + '?voltar=' + encodeURIComponent(location.hash.split('?')[0]);
+  const rotaRegistro = (tipo, id) => '#/' + tipo + '/' + encodeURIComponent(id) + '?voltar=' + encodeURIComponent(location.hash);
   function voltaRegistro(padrao) {
     const volta = new URLSearchParams(location.hash.split('?')[1] || '').get('voltar') || '';
-    return /^#\/[a-z0-9_/%.-]+$/i.test(volta) ? volta : padrao;
+    return volta.length < 1800 && /^#\/[a-z0-9_/%.-]+(?:\?[^#\r\n]*)?$/i.test(volta) ? volta : padrao;
   }
   function clienteReferencias(cliente, propostas, envios) {
     const enviados = envios.filter((e) => e.leadId === cliente.id);
@@ -93,7 +93,19 @@
     catch (e) { if (location.hash === rota && $('#registro-conexoes')) $('#registro-conexoes').innerHTML = '<p class="aviso">Não foi possível consultar os vínculos. ' + esc(e.message) + '</p><button class="btn-mini" id="registro-retentar">Tentar novamente</button>'; const b = $('#registro-retentar'); if (b) b.onclick = () => carregarConexoes(pintar); }
   }
   async function vProposta(id) {
-    const p = STORE.getPropostas().find((x) => x.id === id);
+    let p = STORE.getPropostas().find((x) => x.id === id);
+    const requestedRoute=location.hash;
+    if(!p && STORE.api){try{
+      app().innerHTML='<p role="status">Consultando proposta…</p>';
+      let after=null;const seen=new Set();
+      do {const r=await STORE.api('listPropostas',{after,comoCorretor:STORE.getUser()?.corretorAtivo?.nome||''});
+        if(location.hash!==requestedRoute)return;
+        if(!Array.isArray(r.propostas))throw Error('Resposta da consulta incompleta.');
+        p=r.propostas.find(x=>x.id===id);after=r.nextAfter||null;
+        if(after&&seen.has(after))throw Error('Não foi possível concluir a consulta.');
+        seen.add(after);
+      } while(!p&&after);
+    }catch(e){if(location.hash===requestedRoute)app().innerHTML='<p role="alert">Não foi possível consultar a proposta. '+esc(e.message)+'</p>';return;}}
     const volta = voltaRegistro(STORE.podeVerPainel() ? '#/admin/historico' : '#/historico');
     if (!p) { app().innerHTML = `<div class="vazio">Proposta não localizada neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
     const u = STORE.unidadePorId(p.unidadeId);
@@ -112,7 +124,9 @@
     });
   }
   async function vCliente(id) {
-    const l = STORE.getLeads().find((x) => x.id === id);
+    let l = STORE.getLeads().find((x) => x.id === id);
+    const requestedRoute=location.hash;
+    if(STORE.api){try{app().innerHTML='<p role="status">Consultando cliente…</p>';const r=await STORE.api('listLeads',{comoCorretor:STORE.getUser()?.corretorAtivo?.nome||''});if(location.hash!==requestedRoute)return;if(!Array.isArray(r.leads))throw Error('Resposta da consulta incompleta.');l=r.leads.find(x=>x.id===id);}catch(e){if(location.hash===requestedRoute)app().innerHTML='<p role="alert">Não foi possível consultar o cliente. '+esc(e.message)+'</p>';return;}}
     const volta = voltaRegistro('#/clientes');
     if (!l) { app().innerHTML = `<div class="vazio">Cliente não localizado neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
     const unidade = STORE.getUnidades().find((u) => String(u.unidade) === String(l.unidade));
@@ -122,11 +136,23 @@
       <section class="painel"><h2>Propostas e envios</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section></section>`;
     await carregarConexoes((envios) => { const refs = clienteReferencias(l, STORE.getPropostas(), envios); $('#registro-conexoes').innerHTML = listaPropostasHTML(refs.propostas) + '<h3>Envios deste cliente</h3>' + listaEnviosHTML(refs.envios); });
   }
-  function vConexoesUnidade(id) {
-    const u = STORE.unidadePorId(id);
+  async function vConexoesUnidade(id) {
+    let u = STORE.unidadePorId(id);
+    const gestao=STORE.podeVerPainel(),route=location.hash;
+    let warning='';
+    if(gestao&&STORE.api){
+      app().innerHTML='<p role="status">Consultando unidade…</p>';
+      try{const r=await STORE.api('reservasPainel',{operacao:'listar'});if(location.hash!==route)return;if(!Array.isArray(r.unidades))throw Error('Consulta incompleta.');u=r.unidades.find(x=>String(x.id)===String(id));}
+      catch(e){if(location.hash!==route)return;warning='Não foi possível atualizar a unidade. Exibindo o último registro disponível: '+e.message;}
+    }
     if (!u) { app().innerHTML = '<p class="vazio">Unidade não localizada.</p>'; return; }
     const propostas = STORE.getPropostas().filter((p) => p.unidadeId === id);
-    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(voltaRegistro('#/home'))}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Histórico da unidade</span><h1>Unidade ${esc(u.unidade)}</h1><p>${esc(u.status)} · ${propostas.length} proposta(s) neste acesso</p></div>${u.status === 'Disponível' ? `<a class="btn-lime" href="#/sim/${encodeURIComponent(u.id)}">Nova proposta</a>` : ''}</header><section class="painel"><h2>Propostas registradas</h2>${listaPropostasHTML(propostas)}</section></section>`;
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(voltaRegistro('#/home'))}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Histórico da unidade</span><h1>Unidade ${esc(u.unidade)}</h1><p>${esc(u.status)} · ${propostas.length} proposta(s) neste acesso</p></div>${u.status === 'Disponível' ? `<a class="btn-lime" href="#/sim/${encodeURIComponent(u.id)}">Nova proposta</a>` : ''}</header>
+      ${warning?`<p class="aviso" role="alert">${esc(warning)}</p>`:''}
+      ${gestao?`<dl class="unit-facts"><div><dt>${u.status==='Reservado'?'Cliente da reserva':'Comprador registrado'}</dt><dd>${esc(compradorVenda(u,STORE.getLeads()))}<small>Cadastro da unidade ou cliente fechado vinculado à unidade.</small></dd></div><div><dt>Corretor responsável</dt><dd>${esc(u.reserva?.corretor||u.vendedorNome||'Não informado')}<small>${esc(u.reserva?.empresa||u.vendedorEmpresa||'Empresa não informada')}</small></dd></div><div><dt>${u.status==='Reservado'?'Prazo da reserva':'Situação atual'}</dt><dd>${u.status==='Reservado'?(u.reserva?.prazo?esc(new Date(u.reserva.prazo).toLocaleString('pt-BR')):'Prazo não informado'):esc(u.status)}</dd></div></dl><nav class="registro-acoes" aria-label="Gerenciar unidade"><a class="btn-mini" href="#/admin/vendas?busca=${encodeURIComponent(u.unidade)}">Gerenciar unidade</a>${u.status==='Reservado'?`<a class="btn-mini" href="#/admin/reservas?unidade=${encodeURIComponent(u.id)}&filtro=${!Number.isFinite(Date.parse(u.reserva?.prazo))?'incompletas':Date.parse(u.reserva.prazo)<=Date.now()?'vencidas':'ativas'}">Controlar esta reserva</a>`:''}<a class="btn-mini" href="#/admin/historico?unidade=${encodeURIComponent(u.unidade)}">Consultar todas as propostas</a></nav>`:''}
+      <section class="painel"><h2>Propostas registradas</h2><p class="nota">Uma proposta é uma negociação e não comprova a compra da unidade.</p>${listaPropostasHTML(propostas)}</section>
+      <section class="painel"><h2>Envios desta unidade</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section></section>`;
+    await carregarConexoes((envios)=>{const ids=new Set(propostas.map(p=>p.id));const rows=envios.filter(e=>ids.has(e.propostaId)||String(e.unidade)===String(u.unidade));$('#registro-conexoes').innerHTML=listaEnviosHTML(rows);});
   }
 
   function toast(msg, erro) {
@@ -179,7 +205,8 @@
                     : '') + (u.ehMaster ? ' <a href="#" id="topo-equipe" class="topo-acao">equipe</a>' : '')}</span>
                  <button class="btn-mini" id="btn-sair">sair</button>` : ''}
         </div>
-      </div>`;
+      </div>${window.DiamondNavegacao?.html({allowed:!!u && STORE.podeVerPainel(),isAdmin:STORE.isAdmin(),hash:location.hash||'#/home'})||''}`;
+    const nav = $('#topo .gestao-nav'); if(nav && window.matchMedia('(max-width:760px)').matches) nav.removeAttribute('open');
     const tl = $('#topo-logo'); if (tl && u && u.logoId) { STORE.obterFoto(u.logoId).then((f) => { const el = $('#topo-logo'); if (f && el) el.src = `data:${f.mime};base64,${f.base64}`; }); }
     const b = $('#btn-sair'); if (b) b.onclick = () => { STORE.logout(); location.hash = '#/login'; location.reload(); }; // reload zera PII em memória
     const tr = $('#topo-trocar'); if (tr) tr.onclick = (e) => { e.preventDefault(); _trocaPedida = true; STORE.setCorretorAtivo('', ''); _uniDraft = {}; sim = null; location.hash = '#/home'; render(); }; // zera rascunho/PII (o espelho de leads é limpo pelo setCorretorAtivo)
@@ -219,7 +246,9 @@
           : st.motivo === 'leitura' ? 'Não foi possível buscar atualizações. Os dados exibidos podem estar desatualizados. Toque para tentar novamente.'
           : 'Uma alteração não subiu para a nuvem. Toque para tentar de novo.')
       : (st.ultimaAtualizacao ? 'Última atualização completa: ' + new Date(st.ultimaAtualizacao).toLocaleString('pt-BR') : 'Aguardando a primeira atualização completa.');
-    el.setAttribute('role', 'status');
+    el.setAttribute('role', st.estado === 'erro' ? 'button' : 'status');
+    if(st.estado === 'erro')el.setAttribute('tabindex','0');else el.removeAttribute('tabindex');
+    el.onkeydown = st.estado === 'erro' ? (e) => { if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();} } : null;
     el.setAttribute('aria-label', txt + '. ' + el.title);
     el.style.cursor = st.estado === 'erro' ? 'pointer' : '';
     el.onclick = st.estado === 'erro'
@@ -544,9 +573,9 @@
     app().innerHTML = `
       <div class="espelho-top">
         ${STORE.podeVerPainel()?'<a class="btn-crm" href="#/admin/reservas">🔖 Reservar apartamento</a>':''}
-        ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/clientes">📊 Gestão comercial</a>' : ''}
-        ${(STORE.isAdmin() || (STORE.getUser() || {}).usuario === 'domo') ? '<a class="btn-crm" href="#/retorno">📈 Retorno</a>' : ''}
-        ${STORE.isAdmin() ? '' : '<a class="btn-crm" href="#/clientes">👥 Clientes</a>'}`}
+        ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/painel">◫ Painel de gestão</a>' : ''}
+        ${(STORE.isAdmin() || (STORE.getUser() || {}).usuario === 'domo') ? '<a class="btn-crm" href="#/retorno">📈 Retorno financeiro</a>' : ''}
+        ${STORE.podeVerPainel() ? '' : '<a class="btn-crm" href="#/clientes">👥 Clientes</a>'}`}
         ${!cli ? '<button class="btn-baixar" id="baixar-vagas">⬇ Vagas disponíveis (PDF)</button>' : ''}
         ${!cli || cc.baixarPdf ? '<button class="btn-baixar" id="baixar-tabela">⬇ Baixar tabela (PDF)</button>' : ''}
       </div>
@@ -2065,10 +2094,10 @@
           </div>
           <label class="lead-obs">Observações / o que o cliente perguntou<textarea class="l-obs" rows="3" placeholder="dúvidas, preferências, o que falta para fechar…">${esc(l.obs || '')}</textarea></label>
           <div class="lead-acoes">
-            ${l.id ? `<a class="btn-mini" href="${esc(rotaRegistro('cliente', l.id))}">👤 Histórico do cliente</a>` : ''}
+            ${l.id && !l.novoCadastro ? `<a class="btn-mini" href="${esc(rotaRegistro('cliente', l.id))}">👤 Histórico do cliente</a>` : ''}
             ${l.clienteTel ? `<a class="btn-mini lead-wa" href="https://wa.me/${telWa(l.clienteTel)}" target="_blank" rel="noopener">📱 WhatsApp</a>` : ''}
             <button type="button" class="btn-lime lead-salvar">salvar</button>
-            <button type="button" class="btn-mini lead-del">excluir</button>
+            <button type="button" class="btn-mini lead-del">${l.novoCadastro?'Cancelar cadastro':'excluir'}</button>
           </div>
         </div>
       </div>`;
@@ -2125,6 +2154,7 @@
     const del = $('.lead-del', card);
     if (del) del.onclick = (e) => {
       e.stopPropagation();
+      if(card.dataset.novo==='1'){card.remove();_sujo=false;crmPinta();return;}
       if (!confirm('Excluir este cliente do CRM?')) return;
       const id = card.dataset.id;
       try {
@@ -2266,11 +2296,12 @@
     let card = box.querySelector('.novo-lead');
     if (card) { $('.l-cliente', card).focus(); return; }
     const id = 'lead-' + Date.now() + '-' + Math.random().toString(16).slice(2, 8);
-    const wrap = document.createElement('div'); wrap.innerHTML = leadCard({ id, temp: 'morno', estagio: 'novo', primeiroContato: hoje() }, _crm.admin);
+    const wrap = document.createElement('div'); wrap.innerHTML = leadCard({ id, novoCadastro:true, temp: 'morno', estagio: 'novo', primeiroContato: hoje() }, _crm.admin);
     card = wrap.firstElementChild; card.classList.remove('recolhido'); card.classList.add('novo-lead'); card.dataset.novo = '1';
     const vaz = box.querySelector('.vazio'); if (vaz) vaz.remove();
     box.insertBefore(card, box.firstChild);
     wireLeadCard(card);
+    $('.lead-cab',card).setAttribute('aria-expanded','true');
     $('.l-cliente', card).focus();
   }
   // integra ações do corretor ao CRM: cria/atualiza o cliente automaticamente (sem digitar de novo).
@@ -2313,11 +2344,11 @@
     const cfgU = STORE.getCfg() || {};
     const vmap = {};
     STORE.getUnidades().filter((u) => u.status === 'Vendido').forEach((u) => {
-      const nome = (u.vendedorNome || '').trim(); if (!nome) return;
+      const nome = (u.vendedorNome || '').trim() || 'Corretor não informado';
       const emp = (u.vendedorEmpresa || '').trim();
       const o = vmap[emp + '|' + nome] = vmap[emp + '|' + nome] || { nome, empresa: emp, n: 0, valor: 0, uns: [] };
       const vu = valorNegociadoTabela(u, cfgU);
-      o.n++; o.valor += vu; o.uns.push({ unidade: u.unidade, valor: vu });
+      o.n++; o.valor += vu; o.uns.push({ id:u.id, unidade: u.unidade, valor: vu });
     });
     const rankUn = Object.values(vmap).sort((a, b) => b.n - a.n || b.valor - a.valor);
     const maxUn = Math.max(1, ...rankUn.map((v) => v.n));
@@ -2336,16 +2367,16 @@
           <div class="bars">${rank.length ? rank.map((r) => { const tx = r.total ? Math.round(r.fechados / r.total * 100) : 0; return `<div class="bar-row"><div class="bar-lbl" title="${esc(r.corretor + (r.empresa ? ' · ' + r.empresa : ''))}">${esc(r.corretor)}<span class="bar-emp">${r.empresa ? esc(r.empresa) : 'Domo'}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, tx)}%"></div></div><div class="bar-val">${r.fechados}/${r.total} <span class="bar-sub">${tx}%</span></div></div>`; }).join('') : '<div class="nota">sem dados ainda</div>'}</div>
         </div>
         <div class="dash-card">
-          <div class="dash-tit">Unidades vendidas por corretor <span class="dash-sub">${totUn === 1 ? '1 unidade' : totUn + ' unidades'}${totValorUn ? ' · ' + fmt(totValorUn) : ''}</span></div>
+          <div class="dash-tit">Unidades vendidas por corretor <span class="dash-sub">${totUn === 1 ? '1 unidade' : totUn + ' unidades'}${totValorUn ? ' · tabela atual: ' + fmt(totValorUn) : ''}</span></div>
           <div class="bars">${rankUn.length ? rankUn.slice(0, 8).map((v, i) => `
-            <div class="bar-row bar-clic" data-cvi="${i}" title="clique para ver os apartamentos de ${esc(v.nome)}">
+            <div class="bar-row bar-clic" role="button" tabindex="0" aria-expanded="false" data-cvi="${i}" title="clique para ver os apartamentos de ${esc(v.nome)}">
               <div class="bar-lbl">${esc(v.nome)}<span class="bar-emp">${v.empresa ? esc(v.empresa) : 'Domo'}</span></div>
               <div class="bar-track bar-track-v"><div class="bar-fill bar-fill-v" style="width:${Math.max(4, Math.round(v.n / maxUn * 100))}%"></div></div>
               <div class="bar-val">${v.n}<span class="bar-chev">▾</span></div></div>
             <div class="vend-det oculto" data-cvi="${i}">
               <div class="vend-det-cab">${v.n === 1 ? '1 unidade' : v.n + ' unidades'} · ${fmt(v.valor)}</div>
               ${v.uns.slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1)
-                .map((x) => `<span class="vend-un"><b>${esc(String(x.unidade))}</b><i>${fmt(x.valor)}</i></span>`).join('')}
+                .map((x) => `<a class="vend-un" href="${esc(rotaRegistro('conexoes',x.id))}"><b>${esc(String(x.unidade))}</b><i>${fmt(x.valor)}</i></a>`).join('')}
             </div>`).join('')
             : '<div class="nota">Nenhuma unidade com <b>quem vendeu</b> marcado ainda.</div>'}</div>
         </div>
@@ -2427,33 +2458,38 @@
     montarFabDomo();
   }
   async function aClientes() {
+    const clientQuery=new URLSearchParams(location.hash.split('?')[1]||'');
+    if(!clientQuery.has('cliente') && clientQuery.get('visao')!=='atendimentos')return window.DiamondClientesPainel.render();
     $('#aba-corpo').innerHTML = `
-      <div class="crm-topbar"><span class="nota" style="margin:0">Todos os clientes de todos os corretores. Os vencidos aparecem no topo, em vermelho.</span></div>
+      <div class="crm-topbar"><a class="btn-mini" href="#/admin/clientes">Cadastros de clientes</a><a class="btn-mini" href="#/admin/painel?visao=retornos">Ver retornos</a><button id="crm-novo" class="btn-lime">+ Cadastrar cliente</button></div><p class="nota">Carteira de todos os corretores. Contatos com retorno vencido aparecem primeiro.</p>
       ${crmContextoHTML()}<div class="filtros" id="crm-filtros"></div>
       <div id="crm-resumo"></div>
       <div id="crm-lista"><div class="nota">carregando…</div></div>`;
     _crm = { resumo: '#crm-resumo', lista: '#crm-lista', selCorretor: '#cf-cor', admin: true, rota: location.hash, filtro: clienteFiltroAtual() ? {clienteId: clienteFiltroAtual()} : {..._crmFiltros.geral} };
     await STORE.pullLeads();
     if (location.hash !== _crm.rota || !$('#crm-filtros')) return;
+    $('#crm-novo').onclick=crmNovo;
     const todosLeads = STORE.getLeads();
-    $('#crm-resumo').innerHTML = crmDashAdmin(todosLeads); // dashboard de conversão (global, não filtrado)
+    $('#crm-resumo').innerHTML = '<details class="historico-metricas"><summary>Indicadores da carteira e dos corretores</summary>'+crmDashAdmin(todosLeads)+'</details>'; // dashboard de conversão (global, não filtrado)
     // "unidades vendidas por corretor": clicar abre os apartamentos daquele vendedor
     $$('#crm-resumo .bar-clic').forEach((r) => {
+      r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();r.click();}};
       r.onclick = () => {
         const d = $$('#crm-resumo .vend-det').find((x) => x.dataset.cvi === r.dataset.cvi);
         if (!d) return;
         const abrindo = d.classList.contains('oculto');
         $$('#crm-resumo .vend-det').forEach((x) => x.classList.add('oculto'));
         $$('#crm-resumo .bar-clic').forEach((x) => x.classList.remove('aberto'));
-        if (abrindo) { d.classList.remove('oculto'); r.classList.add('aberto'); }
+        r.parentElement.querySelectorAll('.bar-clic').forEach(x=>x.setAttribute('aria-expanded','false'));
+        if (abrindo) { d.classList.remove('oculto'); r.classList.add('aberto');r.setAttribute('aria-expanded','true'); }
       };
     });
     const empresas = [...new Set(todosLeads.map((l) => l.empresaNome).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     $('#crm-filtros').innerHTML = `
-      <input id="cf-busca" class="cf-busca" placeholder="🔎 buscar cliente, telefone ou apto…" autocomplete="off">
-      <select id="cf-emp"><option value="">Todas as empresas</option>${empresas.map((e) => `<option>${esc(e)}</option>`).join('')}</select>
-      <select id="cf-cor"></select>
-      <select id="cf-est"><option value="">Todos os estágios</option>${CRM_ESTAGIOS.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select>`;
+      <input id="cf-busca" aria-label="Buscar clientes" class="cf-busca" placeholder="🔎 buscar cliente, telefone ou apto…" autocomplete="off">
+      <select id="cf-emp" aria-label="Empresa dos clientes"><option value="">Todas as empresas</option>${empresas.map((e) => `<option>${esc(e)}</option>`).join('')}</select>
+      <select id="cf-cor" aria-label="Corretor dos clientes"></select>
+      <select id="cf-est" aria-label="Etapa do atendimento"><option value="">Todos os estágios</option>${CRM_ESTAGIOS.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select>`;
     $('#cf-busca').value = _crm.filtro.busca || '';
     $('#cf-emp').value = _crm.filtro.empresa || '';
     $('#cf-est').value = _crm.filtro.estagio || '';
@@ -2462,6 +2498,7 @@
     $('#cf-cor').onchange = (e) => { _crm.filtro.corretor = e.target.value; crmPinta(); };
     $('#cf-est').onchange = (e) => { _crm.filtro.estagio = e.target.value; crmPinta(); };
     crmPinta();
+    if(clientQuery.get('novo')==='1'){history.replaceState(null,'','#/admin/clientes?visao=atendimentos');_crm.rota=location.hash;crmNovo();_sujo=true;}
   }
 
   // ---------- ADMIN ----------
@@ -2469,16 +2506,15 @@
     if (!STORE.podeVerPainel()) { location.hash = '#/home'; return; }
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
-      ? [['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios']]
-      : [['unidades', 'Unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'CRM'], ['historico', 'Histórico'], ['envios', 'Envios'], ['saude', 'Saúde']];
+      ? [['painel', 'Painel de gestão'], ['vendas', 'Unidades e vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'Envios']]
+      : [['painel', 'Painel de gestão'], ['unidades', 'Preços e unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'Envios'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
       <div class="admin">
-        <a class="volta" href="#/home">← espelho</a>
-        <div class="abas">${tabs.map(([id, l]) => `<a class="aba ${tab === id ? 'on' : ''}" href="#/admin/${id}">${l}</a>`).join('')}</div>
+        ${tab==='painel'?'':`<header class="page-heading"><div><h1>${esc(tabs.find(([id])=>id===tab)[1])}</h1><p>${esc(({vendas:'Consulte compradores e a situação de cada unidade.',historico:'Encontre e consulte as condições originais de cada proposta.',clientes:'Carteira de atendimento, negociações e próximos contatos.',envios:'Documentos compartilhados e acompanhamento dos retornos.',reservas:'Pedidos, prazos e decisões de reserva.',vagas:'Disponibilidade e vínculos das vagas de garagem.'})[tab]||'Gestão Diamond')}</p></div><a class="btn-mini" href="#/admin/painel">Voltar ao painel</a></header>`}
         <div id="aba-corpo"></div>
       </div>`;
-    ({ unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas, reservas: () => window.DiamondReservas.render(), vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
+    ({ painel: () => window.DiamondGestao.render({compradorVenda}), unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, saude: aSaude, vendas: aVendas, reservas: () => window.DiamondReservas.render(), vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
     // sair da aba (outra aba ou "← espelho") com edição pendente → confirma antes de perder
     $$('.admin .aba, .admin .volta').forEach((a) => a.addEventListener('click', (e) => {
       if (_sujo && !confirm('Você tem alterações não salvas nesta aba. Sair sem salvar?')) e.preventDefault();
@@ -2653,7 +2689,7 @@
     // do último carregamento e um pedido recém-feito não apareceria.
     if (Date.now() - (aVendas._lastPull || 0) > 8000 && !_sujo) {
       aVendas._lastPull = Date.now();
-      STORE.pullReservas().finally(() => { if (location.hash === '#/admin/vendas' && !_sujo) aVendas(); });
+      STORE.pullReservas().finally(() => { if (location.hash.split('?')[0] === '#/admin/vendas' && !_sujo) aVendas(); });
     }
     const cfg = STORE.getCfg() || {};
     const uns = STORE.getUnidades().slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1);
@@ -2703,11 +2739,11 @@
         <div class="nota">“Reservar” marca a unidade como <b>Reservada</b> e tira o pedido da fila. “Recusar” só tira o pedido — a unidade continua disponível.</div>
       </div>` : ''}
       <div class="nota">Marque o <b>status</b> e <b>quem vendeu</b> cada unidade. Preços e configuração ficam com o administrador.</div>
-      <div class="filtros"><input id="v-busca" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
+      <div class="filtros"><input id="v-busca" aria-label="Buscar unidade ou comprador" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status" aria-label="Situação da unidade"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
       <div class="tabela-wrap"><table class="tabela adm-un">
-        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor</th><th>Status</th><th>Comprador</th><th>Vendedor</th><th></th></tr></thead>
+        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Comprador</th><th>Vendedor</th><th></th></tr></thead>
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
-          <td data-lab="Unidade"><b>${esc(u.unidade)}</b></td>
+          <td data-lab="Unidade"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${esc(u.unidade)}</a></td>
           <td data-lab="Andar">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
           <td data-lab="Valor">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
           <td data-lab="Status"><select class="v-status">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
@@ -2736,6 +2772,9 @@
         filtrarV(); pintaChips();
       };
     });
+    const queryVendas=new URLSearchParams(location.hash.split('?')[1]||'');
+    if(['Disponível','Reservado','Vendido'].includes(queryVendas.get('status')))$('#v-status').value=queryVendas.get('status');
+    $('#v-busca').value=queryVendas.get('busca')||'';filtrarV();
     pintaChips();
     // uma linha "difere" quando os selects não batem com o que está salvo
     const vLinhaDifere = (tr, salvo) => {
@@ -3388,7 +3427,9 @@
   };
   const corKey = (p) => (p.corretorUsuario || 'x') + '|' + (p.corretor || '—'); // por PESSOA (empresa tem login compartilhado)
   const histFiltro = { un: '', corretor: '', empresa: '' }; // filtros da aba Histórico (apto/corretor/empresa)
-  let _histView = 'propostas'; // sub-aba do Histórico: 'propostas' | 'clientes'
+  let _histView = 'propostas';
+  let _histRoute = '';
+  histFiltro.busca = ''; // sub-aba do Histórico: 'propostas' | 'clientes'
   // cadastro de clientes (derivado das propostas): corretor + cliente + número
   function aHistoricoClientes(todas, toggleHTML) {
     const mapa = {};
@@ -3404,7 +3445,8 @@
     const dtc = (x) => x ? new Date(x).toLocaleDateString('pt-BR') : '—';
     $('#aba-corpo').innerHTML = `
       ${toggleHTML}
-      <div class="hist-resumo"><span class="chip">Clientes: <b>${clientes.length}</b></span></div>
+      <p class="nota">Contatos agrupados por nome e telefone das propostas. Para gerir atendimentos, use <a href="#/admin/clientes">Clientes</a>.</p>
+      <div class="hist-resumo"><span class="chip">Contatos: <b>${clientes.length}</b></span></div>
       ${clientes.length ? `<div class="filtros"><input id="hc-busca" placeholder="🔎 buscar cliente, telefone ou corretor…" autocomplete="off"></div>
       <div class="tabela-wrap"><table class="tabela">
         <thead><tr><th>Cliente</th><th>Telefone</th><th>Corretor</th><th>Propostas</th><th>Última</th><th></th></tr></thead>
@@ -3416,7 +3458,7 @@
             <td>${esc(cor)}</td>
             <td>${c.n}</td>
             <td>${dtc(c.ultimo)}</td>
-            <td>${wa ? '<a class="btn-mini lead-wa" href="https://wa.me/' + wa + '" target="_blank" rel="noopener">📱</a>' : ''}</td>
+            <td><a class="btn-mini" href="#/admin/historico?busca=${encodeURIComponent(c.nome)}">Ver propostas</a> ${wa ? '<a class="btn-mini lead-wa" href="https://wa.me/' + wa + '" target="_blank" rel="noopener" aria-label="Abrir WhatsApp">📱</a>' : ''}</td>
           </tr>`;
         }).join('')}</tbody></table></div>`
         : '<div class="vazio">Nenhum cliente ainda. Os clientes aparecem aqui conforme as propostas são geradas.</div>'}`;
@@ -3426,7 +3468,9 @@
   function aHistorico() {
     const cfg = STORE.getCfg() || {};
     const todas = STORE.getPropostas().slice();
-    const toggleHTML = `<div class="hist-toggle"><button class="ht-btn ${_histView === 'propostas' ? 'on' : ''}" data-hv="propostas">📄 Propostas</button><button class="ht-btn ${_histView === 'clientes' ? 'on' : ''}" data-hv="clientes">👥 Clientes</button></div>`;
+    if(_histRoute!==location.hash){const qp=new URLSearchParams(location.hash.split('?')[1]||'');if(qp.size){histFiltro.un=qp.get('unidade')||'';histFiltro.busca=qp.get('busca')||'';histFiltro.empresa=qp.get('empresa')||'';histFiltro.corretor=qp.get('corretor')||'';_histView='propostas';}_histRoute=location.hash;}
+    const saveHistRoute=()=>{const qp=new URLSearchParams();for(const [key,value] of [['unidade',histFiltro.un],['busca',histFiltro.busca],['empresa',histFiltro.empresa],['corretor',histFiltro.corretor]])if(value)qp.set(key,value);const next='#/admin/historico'+(qp.size?'?'+qp.toString():'');history.replaceState(null,'',next);_histRoute=next;};
+    const toggleHTML = `<div class="hist-toggle"><button class="ht-btn ${_histView === 'propostas' ? 'on' : ''}" data-hv="propostas">📄 Propostas</button><button class="ht-btn ${_histView === 'clientes' ? 'on' : ''}" data-hv="clientes">👥 Contatos das propostas</button></div>`;
     const ligarHistToggle = () => $$('.ht-btn').forEach((b) => { b.onclick = () => { _histView = b.dataset.hv; aHistorico(); }; });
     if (_histView === 'clientes') { aHistoricoClientes(todas, toggleHTML); ligarHistToggle(); return; }
     const unidades = [...new Set(todas.map((p) => String(p.unidade)))].sort((a, b) => a.padStart(5, '0') < b.padStart(5, '0') ? -1 : 1);
@@ -3437,7 +3481,7 @@
     const empresas = [...new Set(todas.map((p) => empresaDe(p)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
     // sanitiza filtros presos em valores que já não existem (após excluir/sync)
-    if (histFiltro.un && !unidades.includes(histFiltro.un)) histFiltro.un = '';
+    if (histFiltro.un && !unidades.includes(histFiltro.un)) unidades.push(histFiltro.un);
     if (histFiltro.corretor && !corMap[histFiltro.corretor]) histFiltro.corretor = '';
     if (histFiltro.empresa && !empresas.includes(histFiltro.empresa)) histFiltro.empresa = '';
 
@@ -3485,13 +3529,13 @@
     const vendidas = STORE.getUnidades().filter((u) => u.status === 'Vendido');
     const vendMap = {};
     vendidas.forEach((u) => {
-      const nome = (u.vendedorNome || '').trim(); if (!nome) return;
+      const nome = (u.vendedorNome || '').trim() || 'Corretor não informado';
       const emp = (u.vendedorEmpresa || '').trim();
       const k = emp + '|' + nome;
       (vendMap[k] = vendMap[k] || { nome, empresa: emp, n: 0, valor: 0, uns: [] }).n++;
       const vu = valorNegociadoTabela(u, cfg);
       vendMap[k].valor += vu;
-      vendMap[k].uns.push({ unidade: u.unidade, valor: vu, andar: u.andar });
+      vendMap[k].uns.push({ id:u.id, unidade: u.unidade, valor: vu, andar: u.andar });
     });
     const rankingVendas = Object.values(vendMap).sort((a, b) => b.n - a.n || b.valor - a.valor);
     const vendasComDono = rankingVendas.reduce((s, v) => s + v.n, 0);
@@ -3509,20 +3553,20 @@
           <div class="kpi"><div class="kpi-v">${fmtC(valorTotal)}</div><div class="kpi-l">Volume proposto</div></div>
           <div class="kpi"><div class="kpi-v">${fmtC(ticket)}</div><div class="kpi-l">Ticket médio</div></div>
           <div class="kpi kpi-lime"><div class="kpi-v">${ult7}</div><div class="kpi-l">Últimos 7 dias</div></div>
-          <div class="kpi kpi-venda"><div class="kpi-v">${vendidas.length}</div><div class="kpi-l">Vendidas${valorVendas ? '<span class="kpi-de"> · ' + fmtC(valorVendas) + '</span>' : ''}</div></div>
+          <div class="kpi kpi-venda"><div class="kpi-v">${vendidas.length}</div><div class="kpi-l">Vendidas${valorVendas ? '<span class="kpi-de"> · tabela: ' + fmtC(valorVendas) + '</span>' : ''}</div></div>
         </div>
         <div class="dash-grid">
           <div class="dash-card">
-            <div class="dash-tit">Ranking de vendas <span class="dash-sub">${vendasComDono} unidade(s) fechada(s)${valorVendas ? ' · ' + fmtC(valorVendas) : ''}</span></div>
+            <div class="dash-tit">Ranking de vendas <span class="dash-sub">${vendasComDono} unidade(s) fechada(s)${valorVendas ? ' · tabela atual: ' + fmtC(valorVendas) : ''}</span></div>
             <div class="bars">${rankingVendas.length ? rankingVendas.slice(0, 8).map((v, vi) => `
-              <div class="bar-row bar-clic" data-vi="${vi}" title="clique para ver as unidades de ${esc(v.nome)}">
+              <div class="bar-row bar-clic" role="button" tabindex="0" aria-expanded="false" data-vi="${vi}" title="clique para ver as unidades de ${esc(v.nome)}">
                 <div class="bar-lbl">${esc(v.nome)}<span class="bar-emp">${v.empresa ? esc(v.empresa) : 'Domo'}</span></div>
                 <div class="bar-track bar-track-v"><div class="bar-fill bar-fill-v" style="width:${Math.max(4, Math.round(v.n / maxVenda * 100))}%"></div></div>
                 <div class="bar-val">${v.n}<span class="bar-chev">▾</span></div></div>
               <div class="vend-det oculto" data-vi="${vi}">
                 <div class="vend-det-cab">${v.n} unidade(s) · ${fmtC(v.valor)}</div>
                 ${v.uns.slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1)
-                  .map((x) => `<span class="vend-un"><b>${esc(String(x.unidade))}</b><i>${fmtC(x.valor)}</i></span>`).join('')}
+                  .map((x) => `<a class="vend-un" href="${esc(rotaRegistro('conexoes',x.id))}"><b>${esc(String(x.unidade))}</b><i>${fmtC(x.valor)}</i></a>`).join('')}
               </div>`).join('')
               : '<div class="nota">Nenhuma venda registrada. Na aba <b>Unidades</b>, marque o status <b>Vendido</b> e escolha quem vendeu — o ranking aparece aqui.</div>'}</div>
           </div>
@@ -3548,17 +3592,18 @@
 
     $('#aba-corpo').innerHTML = `
       ${toggleHTML}
-      ${dash}
+      ${dash ? `<details class="historico-metricas"><summary>Indicadores de propostas e corretores</summary>${dash}</details>` : ''}
       <div class="filtros">
-        <input id="h-busca" placeholder="🔎 buscar cliente, telefone ou corretor…" autocomplete="off">
-        <select id="h-un"><option value="">Todos os apartamentos</option>
+        <input id="h-busca" aria-label="Buscar propostas" placeholder="Cliente, telefone ou corretor" autocomplete="off" value="${esc(histFiltro.busca||'')}">
+        <select id="h-un" aria-label="Unidade das propostas"><option value="">Todos os apartamentos</option>
           ${unidades.map((u) => `<option value="${esc(u)}" ${histFiltro.un === u ? 'selected' : ''}>Apto ${esc(u)}</option>`).join('')}</select>
-        <select id="h-emp"><option value="">Todas as empresas</option>
+        <select id="h-emp" aria-label="Empresa das propostas"><option value="">Todas as empresas</option>
           ${empresas.map((e) => `<option value="${esc(e)}" ${histFiltro.empresa === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select>
-        <select id="h-cor"><option value="">Todos os corretores</option>
+        <select id="h-cor" aria-label="Corretor das propostas"><option value="">Todos os corretores</option>
           ${corretores.filter((c) => !histFiltro.empresa || c.empresa === histFiltro.empresa).map((c) => `<option value="${esc(c.key)}" ${histFiltro.corretor === c.key ? 'selected' : ''}>${esc(c.nome)}${c.empresa ? ' — ' + esc(c.empresa) : ''}</option>`).join('')}</select>
-        ${(histFiltro.un || histFiltro.corretor || histFiltro.empresa) ? '<button class="btn-mini" id="h-limpar">limpar filtros</button>' : ''}
+        <button class="btn-mini" id="h-limpar">Limpar filtros</button>
       </div>
+      <p id="h-results" class="hist-filtro-status" role="status"></p>
       ${Object.keys(grupos).length ? Object.keys(grupos).sort((a, b) => String(a).padStart(5, '0') < String(b).padStart(5, '0') ? -1 : 1).map((un) => `
         <div class="hist-grupo">
           <button type="button" class="hist-grupo-cab" aria-expanded="true">Apto ${esc(un)} <span class="hist-grupo-n">${grupos[un].length} proposta(s)</span><span class="grupo-chevron">▾</span></button>
@@ -3581,34 +3626,40 @@
         </div>`).join('')
       : '<div class="vazio">nenhuma proposta ' + (histFiltro.un || histFiltro.corretor || histFiltro.empresa ? 'com esse filtro' : 'gerada ainda') + '</div>'}`;
 
-    $('#h-un').onchange = (e) => { histFiltro.un = e.target.value; vAdmin('historico'); };
-    $('#h-emp').onchange = (e) => { histFiltro.empresa = e.target.value; histFiltro.corretor = ''; vAdmin('historico'); }; // troca empresa zera o corretor (podia ser de outra)
-    $('#h-cor').onchange = (e) => { histFiltro.corretor = e.target.value; vAdmin('historico'); };
-    if ($('#h-limpar')) $('#h-limpar').onclick = () => { histFiltro.un = ''; histFiltro.corretor = ''; histFiltro.empresa = ''; vAdmin('historico'); };
+    $('#h-un').onchange = (e) => { histFiltro.un = e.target.value; saveHistRoute(); vAdmin('historico'); };
+    $('#h-emp').onchange = (e) => { histFiltro.empresa = e.target.value; histFiltro.corretor = ''; saveHistRoute(); vAdmin('historico'); }; // troca empresa zera o corretor (podia ser de outra)
+    $('#h-cor').onchange = (e) => { histFiltro.corretor = e.target.value; saveHistRoute(); vAdmin('historico'); };
+    if ($('#h-limpar')) $('#h-limpar').onclick = () => { histFiltro.un = ''; histFiltro.corretor = ''; histFiltro.empresa = ''; histFiltro.busca=''; saveHistRoute(); vAdmin('historico'); };
     $$('.p-abrir').forEach((b) => { b.onclick = () => { location.hash = rotaRegistro('proposta', b.dataset.pid); }; }); // sem onclick inline (evita XSS via campos da proposta)
     $$('.p-del').forEach((b) => { b.onclick = () => { if (confirm('Excluir esta proposta do histórico?')) { STORE.excluirProposta(b.dataset.id); vAdmin('historico'); } }; });
     $$('.hist-grupo-cab').forEach((cab) => { cab.onclick = () => { const grupo = cab.closest('.hist-grupo'); grupo.classList.toggle('recolhido'); cab.setAttribute('aria-expanded', String(!grupo.classList.contains('recolhido'))); }; }); // clica p/ recolher o apto
     // ranking de vendas: clicar no corretor abre a lista das unidades que ele fechou
     $$('.bar-clic').forEach((r) => {
+      r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();r.click();}};
       r.onclick = () => {
         const d = $$('.vend-det').find((x) => x.dataset.vi === r.dataset.vi);
         if (!d) return;
         const abrindo = d.classList.contains('oculto');
         $$('.vend-det').forEach((x) => x.classList.add('oculto'));           // só um aberto por vez
         $$('.bar-clic').forEach((x) => x.classList.remove('aberto'));
-        if (abrindo) { d.classList.remove('oculto'); r.classList.add('aberto'); }
+        r.parentElement.querySelectorAll('.bar-clic').forEach(x=>x.setAttribute('aria-expanded','false'));
+        if (abrindo) { d.classList.remove('oculto'); r.classList.add('aberto');r.setAttribute('aria-expanded','true'); }
       };
     });
     // busca textual client-side (sem re-render → não perde o foco): esconde linhas e aptos sem resultado
     $('#h-busca').oninput = (e) => {
+      histFiltro.busca=e.target.value;saveHistRoute();
       const q = (e.target.value || '').trim().toLowerCase();
+      let matches=0;
       $$('.hist-grupo').forEach((g) => {
         let visiveis = 0;
         $$('tbody tr', g).forEach((tr) => { const ok = !q || (tr.dataset.busca || '').includes(q); tr.style.display = ok ? '' : 'none'; if (ok) visiveis++; });
-        g.style.display = visiveis ? '' : 'none';
+        g.style.display = visiveis ? '' : 'none';matches+=visiveis;
       });
+      $('#h-results').textContent=matches?matches+' proposta(s) nesta seleção':'Nenhuma proposta corresponde aos filtros. Use Limpar filtros para ver a lista.';
     };
     ligarHistToggle();
+    $('#h-busca').dispatchEvent(new Event('input'));
   }
 
   // painel de ENVIOS: links de proposta enviados por WhatsApp — aberturas + respostas do cliente
@@ -3934,7 +3985,7 @@
   function render() {
     _painelEquipe = false; // qualquer render de rota sai do painel de equipe (fora de rota)
     _sujo = false; // navegação explícita = a pessoa saiu da edição
-    document.body.classList.remove('tema-predio');
+    document.body.classList.remove('tema-predio','gestao-print-mode');
     const _fab = $('#fab-domo'); if (_fab) _fab.remove(); // só reaparece nas telas do "site" (espelho/unidade)
     renderTopo();
     const h = location.hash || '#/home';
@@ -4005,6 +4056,7 @@
   STORE.iniciar(() => {
     const h = location.hash;
     if (_sujo) return; // há edição não salva na tela (ex.: vendedor/preço escolhidos, card do CRM em digitação) — não re-renderiza
+    if (h.startsWith('#/admin/painel') || document.querySelector('dialog[open]')) return;
     if (_painelEquipe || h.startsWith('#/sim/') || document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; // não destruir digitação nem o painel de equipe (fora de rota)
     render();
   });
