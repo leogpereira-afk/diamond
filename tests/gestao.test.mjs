@@ -90,6 +90,19 @@ test('ausência de registros mantém os seis meses sem valores fictícios',()=>{
  assert.equal(c.months.length,6);assert.equal(c.periodTotal,0);assert.equal(c.stockTotal,0);assert.equal(c.leadsTotal,0);
  assert.equal(c.stages.reduce((n,x)=>n+x.value,0),0);
 });
+test('painel e relatório exibem propostas recentes primeiro mesmo com consulta em ordem crescente',()=>{
+ const win={DiamondGestaoDomain:D};const viewCtx=vm.createContext({window:win,Intl,Date,URLSearchParams});
+ vm.runInContext(source('gestao.js').replace('window.DiamondGestao={render};','window.DiamondGestao={overview,report};'),viewCtx);
+ const propostas=Array.from({length:10},(_,i)=>({id:`p${i}`,cliente:`Cliente_${i}`,criadoEm:`2026-09-${String(i+1).padStart(2,'0')}T12:00:00Z`}));
+ const args={model:D.build({propostas}),propostas,leads:[],sources:[],stamp:'01/10/2026',unitsOk:true,leadsOk:true,envOk:true,proposalsOk:true};
+ for(const [view,limit] of [['overview',5],['report',8]]){
+  const html=win.DiamondGestao[view](args);
+  for(let i=9;i>10-limit;i--)assert.ok(html.indexOf(`Cliente_${i}`)<html.indexOf(`Cliente_${i-1}`));
+  assert.ok(html.includes(`Cliente_${10-limit}`));
+  assert.ok(!html.includes(`Cliente_${9-limit}`));
+ }
+ assert.equal(propostas[0].id,'p0');
+});
 test('gráficos ocultam números de fontes com falha e informam consulta parcial',()=>{
  const win={DiamondGestaoDomain:D};const viewCtx=vm.createContext({window:win,Intl,Date,URLSearchParams});
  const code=source('gestao.js').replace('window.DiamondGestao={render};','window.DiamondGestao={render,visualCharts};');

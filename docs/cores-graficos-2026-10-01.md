@@ -23,5 +23,7 @@ Pedido: mais cor nas tabelas e gráficos para leitura gerencial, preservando a i
 - Testes de agregação: meses zerados, virada de ano, São Paulo, datas inválidas/futuras, categorias desconhecidas, falha e leitura parcial.
 - Navegação real na prévia local: clique do gráfico até o cadastro, troca e limpeza de etapa.
 - Inspeção visual no computador e celular de 390 px.
-- Suíte final: 123 testes aprovados; sintaxe e whitespace conferidos.
+- Suíte final: 124 testes aprovados; sintaxe e whitespace conferidos.
 - PDF gerado no navegador com dados fictícios: 2 páginas A4 em paisagem, com os gráficos e tabelas legíveis.
+
+- Verificação pública identificou e corrigiu a lista de propostas recentes, que agora usa a ordem decrescente de emissão também no relatório. Regressão cobre a consulta recebida em ordem crescente.

@@ -102,7 +102,7 @@
     if(unitsOk){if(m.pedidos.length)priorities.push({title:`${m.pedidos.length} pedido(s) aguardam decisão`,detail:'Fila de pedidos de reserva',href:reservationLink('pedidos')});if(reserved.vencidas.length)priorities.push({title:`${reserved.vencidas.length} reserva(s) vencida(s)`,detail:'Revisar prazo e situação',href:reservationLink('vencidas')});if(reserved.semPrazo.length)priorities.push({title:`${reserved.semPrazo.length} reserva(s) sem prazo`,detail:'Completar o cadastro da reserva',href:reservationLink('incompletas')});}
     if(leadsOk&&crm.length)priorities.push({title:`${crm.length} retorno(s) de CRM para hoje ou atrasado(s)`,detail:'Clientes abertos com data vencida ou hoje',href:routeBack('retornos')});
     if(envOk&&mail.length)priorities.push({title:`${mail.length} acompanhamento(s) de envio para revisar`,detail:'Pendente ou em contato, com data vencida ou ausente',href:routeBack('retornos')});
-    const newest=propostas.slice(0,5);
+    const newest=m.propostas.slice(0,5);
     const buyers=unitsOk?m.compradores.slice(0,5):[];
     return `<div class="gt-metrics">${unitsOk?`${metric('Disponíveis',stock.disponiveis,'#/admin/vendas?status=Disponível','available')}${metric('Reservadas',stock.reservadas,reservationLink('todas'),'reserved')}${metric('Vendidas',stock.vendidas,'#/admin/vendas?status=Vendido','sold')}`:'<p class="gt-warning">Estoque não consultado. Os números de estoque não estão disponíveis.</p>'}${unitsOk?metric('Pedidos pendentes',m.pedidos.length,reservationLink('pedidos'),'urgent'):''}${leadsOk?metric('Retornos CRM',crm.length,routeBack('retornos'),crm.length?'urgent':'info'):''}${envOk?metric('Envios a revisar',mail.length,routeBack('retornos'),mail.length?'urgent':'info'):''}</div>
       ${visualCharts({model:m,unitsOk,leadsOk,proposalsOk,proposalsComplete})}
@@ -127,7 +127,7 @@
       ...m.reservas.vencidas.map(u=>({unit:u.unidade,client:u.reserva?.cliente||'Cliente não informado',state:'Prazo vencido',owner:u.reserva?.corretor||'Responsável não informado',date:u.reserva?.prazo})),
       ...m.reservas.semPrazo.map(u=>({unit:u.unidade,client:u.reserva?.cliente||'Cliente não informado',state:'Prazo não informado',owner:u.reserva?.corretor||'Responsável não informado',date:''})),
     ]:[];
-    const proposalRows=propostas.slice(0,8);
+    const proposalRows=m.propostas.slice(0,8);
     return `<article class="gt-report"><div class="gt-report-title"><div><p class="gt-kicker">DIAMOND · RELATÓRIO GERENCIAL</p><h2>Posição comercial</h2></div><span>Emitido em ${esc(stamp)}</span></div><p class="gt-report-note">Retrato das fontes consultadas nesta abertura. Estoque atual, CRM, acompanhamentos e propostas são apresentados separadamente.</p>
       ${visualCharts({model:m,unitsOk,leadsOk,proposalsOk,proposalsComplete,report:true})}<div class="gt-report-grid"><section>${sectionTitle('Estoque atual')}${unitsOk?`<p>Disponíveis <b>${m.estoque.disponiveis}</b> · Reservadas <b>${m.estoque.reservadas}</b> · Vendidas <b>${m.estoque.vendidas}</b> · Total <b>${m.estoque.total}</b></p>`:'<p>Não consultado; totais indisponíveis.</p>'}</section>
       <section>${sectionTitle('Reservas')}${unitsOk?`<p>Pedidos aguardando <b>${m.pedidos.length}</b> · Reservas vencidas <b>${m.reservas.vencidas.length}</b> · Sem prazo <b>${m.reservas.semPrazo.length}</b> · Com prazo vigente <b>${m.reservas.ativas.length}</b></p>`:'<p>Não consultado.</p>'}</section>
