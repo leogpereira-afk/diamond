@@ -2,3 +2,15 @@
 
 .env-followup{display:grid;grid-template-columns:1fr 1fr;gap:12px}.env-followup label{display:grid;gap:6px;font-size:13px}.env-followup-note{grid-column:1/-1}.env-followup input,.env-followup select,.env-followup textarea{font:inherit;padding:10px;border:1px solid #ccc;border-radius:8px;min-width:0}.env-followup p{margin:0}@media(max-width:480px){.env-followup{grid-template-columns:1fr}}
 .env-dialog button{min-height:44px}.env-dialog :focus-visible{outline:3px solid #667d00;outline-offset:3px}.env-followup [role=alert]{color:#9c0006;font-weight:700}.env-followup [type=submit][disabled]{opacity:.65;cursor:wait}
+
+/* Acompanhamento comercial e interação com rótulos e cores legíveis. */
+.env-row { border-left: 4px solid #929b9f; transition: border-color .15s, box-shadow .15s; }
+.env-row:hover { border-color: #c6cf7b; box-shadow: 0 3px 12px #0000000c; }
+.env-row[data-stage="contato"] { border-left-color: #2876b8; }
+.env-row[data-stage="concluido"] { border-left-color: #2e7d32; }
+.env-row[data-stage="pendente"] { border-left-color: #a66b00; }
+.env-row .env-interaction { display: inline-flex; align-self: flex-start; padding: 5px 9px; border: 1px solid #d6d6d2; border-radius: 999px; background: #f3f3f0; color: #4b4b4b; }
+.env-row .env-interaction-interesse { background: #edf8ee; color: #21652b; border-color: #b9dfbd; }
+.env-row .env-interaction-duvida, .env-row .env-interaction-abertura { background: #edf6fc; color: #155c91; border-color: #b8d8ec; }
+.env-row .env-interaction-abriu_pdf { background: #f3effb; color: #4f2a99; border-color: #d2c5ee; }
+.env-row .env-alert { border: 1px solid #ecd28a; font-weight: 700; }

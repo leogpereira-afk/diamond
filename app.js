@@ -2412,7 +2412,7 @@
                 <td><a href="${esc(rotaRegistro('proposta', p.id))}">${esc(p.cliente || 'Sem nome')}</a>${p.clienteTel ? '<br><span class="hist-tel">' + esc(p.clienteTel) + '</span>' : ''}</td>
                 <td>${esc(p.corretor || '—')}</td>
                 <td>${fmt(p.neg)}</td>
-                <td>${esc(p.formaLabel || p.forma)}</td>
+                <td><span class="hist-forma" data-forma="${esc(p.forma||'')}">${esc(p.formaLabel || p.forma)}</span></td>
               </tr>`).join('')}</tbody>
             </table></div>
           </div>`).join('') : '<div class="vazio">nenhuma proposta ' + (histEq.corretor ? 'desse corretor' : 'ainda') + '.</div>'}`;

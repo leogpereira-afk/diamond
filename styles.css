@@ -832,3 +832,37 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
 .adm-un .td-comprador{min-width:160px;max-width:280px;white-space:normal;overflow-wrap:anywhere;font-weight:600}
 
 .proposta-vaga{border:1px solid #ddd;border-radius:10px;margin:16px 0;padding:12px 16px}.proposta-vaga summary{cursor:pointer;font-weight:600}.proposta-vaga-conteudo{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:12px}.proposta-vaga select{padding:10px;max-width:100%;flex:1;min-width:180px}.proposta-vaga .nota{flex-basis:100%;margin:0}
+
+/* Diamond: cores semânticas das listas de clientes, mantendo os rótulos visíveis. */
+.cadastro-clientes .cad-row { border: 1px solid #e2e2dd; border-left: 4px solid #c7c7c1; border-radius: 12px; background: #fff; transition: border-color .15s, background .15s, box-shadow .15s; }
+.cadastro-clientes .cad-row:nth-child(even) { background: #fafaf7; }
+.cadastro-clientes .cad-row:hover { border-color: #b7c65a; box-shadow: 0 3px 12px #0000000c; }
+.cadastro-clientes .cad-row[data-stage="novo"], .cadastro-clientes .cad-row[data-stage="contato"] { border-left-color: #2876b8; }
+.cadastro-clientes .cad-row[data-stage="proposta"] { border-left-color: #5e35b1; }
+.cadastro-clientes .cad-row[data-stage="negociando"] { border-left-color: #a05a00; }
+.cadastro-clientes .cad-row[data-stage="fechado"] { border-left-color: #2e7d32; }
+.cadastro-clientes .cad-row[data-stage="perdido"] { border-left-color: #737373; }
+.cadastro-clientes .cad-row .cad-stage { display: inline-flex; align-items: center; width: fit-content; max-width: 100%; padding: 4px 9px; border: 1px solid #d5d5d0; border-radius: 999px; background: #f3f3f0; color: #444; font-size: 12px; font-weight: 750; line-height: 1.35; }
+.cadastro-clientes .cad-row .cad-stage-novo, .cadastro-clientes .cad-row .cad-stage-contato { color: #155c91; background: #edf6fc; border-color: #b8d8ec; }
+.cadastro-clientes .cad-row .cad-stage-proposta { color: #4f2a99; background: #f3effb; border-color: #d2c5ee; }
+.cadastro-clientes .cad-row .cad-stage-negociando { color: #805000; background: #fff6df; border-color: #ecd28a; }
+.cadastro-clientes .cad-row .cad-stage-fechado { color: #21652b; background: #edf8ee; border-color: #b9dfbd; }
+.cadastro-clientes .cad-row .cad-stage-perdido { color: #5b5b5b; background: #f1f1f1; border-color: #d5d5d5; }
+
+/* Linhas e filtros da gestão, sem alterar propostas e documentos emitidos. */
+#aba-corpo .adm-un tbody tr[data-status="Disponível"]{background:#eaf6ec}
+#aba-corpo .adm-un tbody tr[data-status="Reservado"]{background:#efe7fb}
+#aba-corpo .adm-un tbody tr[data-status="Vendido"]{background:#fce9ed}
+#aba-corpo .adm-un tbody tr:hover{box-shadow:inset 0 0 0 1px #859391}
+#aba-corpo .chip-f[data-st="Disponível"]{background:#eaf6ec;border-color:#a2cdaa;color:#23642b}
+#aba-corpo .chip-f[data-st="Reservado"]{background:#efe7fb;border-color:#c8b3e9;color:#5e35b1}
+#aba-corpo .chip-f[data-st="Vendido"]{background:#fce9ed;border-color:#e3a7b2;color:#a71d2c}
+.cadastro-clientes .cad-row[data-stage="novo"],.cadastro-clientes .cad-row[data-stage="contato"]{background:#f0f7fd}
+.cadastro-clientes .cad-row[data-stage="proposta"]{background:#f6f2fd}
+.cadastro-clientes .cad-row[data-stage="negociando"]{background:#fff7e6}
+.cadastro-clientes .cad-row[data-stage="fechado"]{background:#eef8f0}
+.cadastro-clientes .cad-row[data-stage="perdido"]{background:#f2f3f4}
+.cadastro-clientes .cad-row>div:nth-child(3){display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.hist-grupo .tabela tbody tr:nth-child(even){background:#f0f5fa}.hist-grupo .tabela tbody tr:hover{background:#e5eef7}
+.hist-forma{display:inline-block;padding:4px 9px;border:1px solid #b9d1e7;border-radius:999px;background:#e9f3fd;color:#245681;font-size:12px;font-weight:700}
+.hist-forma[data-forma="scp"]{background:#eee7fc;border-color:#ceb8e9;color:#5e35a0}

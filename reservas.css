@@ -2,3 +2,16 @@
 .rs-header .btn,.rs-dialog footer .btn{background:#191919;color:#e5ff3d;border-color:#191919;font-weight:700}.rs-row .rs-actions button{width:auto;margin:0;font-size:13px}.rs-actions{max-width:320px}.rs-row{padding:18px}.rs-dialog [readonly]{background:#f4f4f0;color:#555}
 .rs-dialog{margin:auto}.rs-grid>label{margin-bottom:0}.rs-dialog form>label{margin-top:16px}.rs-dialog footer{position:sticky;bottom:-26px;background:white;padding:14px 0;border-top:1px solid #eee}.rs-dialog #rs-close{flex-shrink:0}@media(max-width:760px){.rs-dialog footer{bottom:-20px}.rs-grid{gap:12px}}
 .rs-route-note{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#555;margin:8px 0}.rs-route-note button{border:0;background:transparent;color:#555;text-decoration:underline;cursor:pointer;font:inherit;padding:8px}.rs-shell :focus-visible{outline:3px solid #667d00;outline-offset:3px}.rs-shell #rs-clear-unit{min-height:44px}.rs-dialog button{min-height:44px}.rs-dialog .btn-danger,.rs-actions .btn-danger{background:#fff3f3;color:#9c0006;border-color:#c87373;font-weight:700}.rs-dialog footer .btn-danger{background:#9c0006;color:#fff;border-color:#9c0006}.rs-dialog .btn-danger:hover,.rs-actions .btn-danger:hover{background:#fbe1e1}
+
+/* Estado da reserva: badge com texto mais borda lateral para leitura rápida. */
+.rs-row { transition: border-color .15s, box-shadow .15s, transform .15s; border-left: 4px solid #5e35b1; }
+.rs-row:hover { box-shadow: 0 3px 12px #0000000c; border-color: #cfc4e5; }
+.rs-row[data-state="pedido"], .rs-row[data-state="vencida"], .rs-row[data-state="incompleta"] { border-left-color: #a66b00; }
+.rs-row[data-state="cancelada"], .rs-row[data-state="recusado"] { border-left-color: #777; }
+.rs-row[data-state="vendido"] { border-left-color: #c62828; }
+.rs-deadline strong { display: inline-flex; align-self: flex-start; padding: 5px 9px; border: 1px solid #d2c5ee; border-radius: 999px; color: #4f2a99; background: #f3effb; line-height: 1.3; }
+.rs-row[data-state="pedido"] .rs-deadline strong, .rs-row[data-state="vencida"] .rs-deadline strong, .rs-row[data-state="incompleta"] .rs-deadline strong { color: #805000; background: #fff6df; border-color: #ecd28a; }
+.rs-row[data-state="vendido"] .rs-deadline strong { color: #9b2020; background: #fdf0f1; border-color: #e8b8bd; }
+.rs-row[data-state="cancelada"] .rs-deadline strong, .rs-row[data-state="recusado"] .rs-deadline strong { color: #555; background: #f1f1f1; border-color: #d5d5d5; }
+
+.rs-row[data-state="vencida"]{border-left-color:#c62828}.rs-row[data-state="vencida"] .rs-deadline strong{color:#9b2020;background:#fdf0f1;border-color:#e8b8bd}

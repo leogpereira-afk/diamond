@@ -27,6 +27,29 @@
     reservation:(filtro,id='')=>`#/admin/reservas?filtro=${encodeURIComponent(filtro)}${id?'&unidade='+encodeURIComponent(id):''}`,
     envio:id=>`#/admin/envios?envio=${encodeURIComponent(id)}&fila=pendente`,
   };
+  function charts({unidades=[],leads=[],propostas=[],now=new Date()}={}){
+    const hoje=todaySP(now),[year,month]=hoje.split('-').map(Number);
+    const months=Array.from({length:6},(_,i)=>{
+      const d=new Date(Date.UTC(year,month-1-5+i,1));
+      const key=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+      return {key,label:new Intl.DateTimeFormat('pt-BR',{month:'short',year:'2-digit',timeZone:'UTC'}).format(d).replace('.',''),value:0,current:i===5};
+    });
+    let invalidDates=0,outsidePeriod=0,futureDates=0;
+    for(const p of propostas){
+      const date=dateSP(p.criadoEm);
+      if(!date){invalidDates++;continue;}
+      if(date>hoje){futureDates++;continue;}
+      const bucket=months.find(m=>m.key===date.slice(0,7));
+      if(bucket)bucket.value++;else outsidePeriod++;
+    }
+    const stages=[['novo','Novos','blue'],['contato','Em contato','blue'],['proposta','Com proposta','purple'],['negociando','Negociando','amber'],['fechado','Fechados no CRM','green'],['perdido','Perdidos','neutral']].map(([key,label,tone])=>({key,label,tone,value:leads.filter(l=>l.estagio===key).length}));
+    const unknownLeads=leads.length-stages.reduce((n,s)=>n+s.value,0);
+    if(unknownLeads)stages.push({key:'outros',label:'Etapa não informada',tone:'neutral',value:unknownLeads});
+    const stock=[['Disponível','Disponíveis','green'],['Reservado','Reservadas','purple'],['Vendido','Vendidas','red']].map(([key,label,tone])=>({key,label,tone,value:unidades.filter(u=>u.status===key).length}));
+    const unknownStock=unidades.length-stock.reduce((n,s)=>n+s.value,0);
+    if(unknownStock)stock.push({key:'outros',label:'Outra situação',tone:'neutral',value:unknownStock});
+    return {stock,stages,months,invalidDates,outsidePeriod,futureDates,periodTotal:months.reduce((n,m)=>n+m.value,0),leadsTotal:leads.length,stockTotal:unidades.length};
+  }
   function build({unidades=[],pedidos=[],leads=[],envios=[],propostas=[],now=new Date()}={}){
     const hoje=todaySP(now),resUn=unidades.filter(u=>u.status==='Reservado');
     const vencidas=resUn.filter(u=>u.reserva?.prazo&&Date.parse(u.reserva.prazo)<=now.getTime());
@@ -39,7 +62,8 @@
       hoje, estoque:{disponiveis:unidades.filter(u=>u.status==='Disponível').length,reservadas:resUn.length,vendidas:unidades.filter(u=>u.status==='Vendido').length,total:unidades.length},
       pedidos, reservas:{vencidas,semPrazo,ativas}, retornosCRM, retornosEnvios, compradores, totalEnvios:envios.length,
       propostas:propostas.slice().sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||''))),
+      charts:charts({unidades,leads,propostas,now}),
     };
   }
-  root.DiamondGestaoDomain={todaySP,dateSP,when,build,routes};
+  root.DiamondGestaoDomain={todaySP,dateSP,when,build,charts,routes};
 })(typeof window!=='undefined'?window:globalThis);

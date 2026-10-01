@@ -6,7 +6,7 @@
  let filter={q:'',etapa:'',corretor:''},generation=0;
  async function render(){
   if(!STORE.podeVerPainel())return;
-  const host=document.getElementById('aba-corpo'),route=location.hash,gen=++generation;
+  const host=document.getElementById('aba-corpo');let route=location.hash;const params=new URLSearchParams(route.split('?')[1]||''),queryStage=params.get('etapa');if(Object.hasOwn(stages,queryStage)){filter={q:'',etapa:queryStage,corretor:''};}const gen=++generation;
   host.innerHTML='<p role="status">Consultando cadastros de clientes…</p>';
   let leads;
   try{const r=await STORE.api('listLeads',{comoCorretor:STORE.getUser()?.corretorAtivo?.nome||''});if(!Array.isArray(r.leads))throw Error('Não foi possível consultar os clientes.');leads=r.leads;}
@@ -16,10 +16,11 @@
   const paint=()=>{
    const rows=leads.filter(l=>(!filter.etapa||l.estagio===filter.etapa)&&(!filter.corretor||[l.corretorNome,l.empresaNome].filter(Boolean).join(' · ')===filter.corretor)&&(!filter.q||norm([l.cliente,l.clienteTel,l.unidade].join(' ')).includes(norm(filter.q).trim()))).sort((a,b)=>(a.cliente||'').localeCompare(b.cliente||'','pt-BR'));
    host.querySelector('#cad-count').textContent=rows.length+' de '+leads.length+' cadastro(s) · ordem alfabética';
-   host.querySelector('#cad-list').innerHTML=rows.length?rows.map(l=>`<article class="cad-row"><div><a class="cad-name" href="#/cliente/${encodeURIComponent(l.id)}?voltar=${encodeURIComponent(route)}">${esc(l.cliente||'Nome não informado')}</a><small>${esc(l.clienteTel||'Telefone não informado')}</small></div><div><span>Responsável</span><strong>${esc(l.corretorNome||'Não informado')}</strong><small>${esc(l.empresaNome||'')}</small></div><div><span>${esc(stages[l.estagio]||'Etapa não informada')}</span><strong>${l.unidade?'Unidade '+esc(l.unidade):'Unidade não definida'}</strong><small>${l.proximoContato?'Retorno: '+esc(l.proximoContato.split('-').reverse().join('/')):'Sem retorno agendado'}</small></div><div class="cad-actions"><a class="btn-mini" href="#/cliente/${encodeURIComponent(l.id)}?voltar=${encodeURIComponent(route)}">Abrir ficha</a><a class="btn-mini" href="#/admin/clientes?cliente=${encodeURIComponent(l.id)}">Ver atendimento</a></div></article>`).join(''):'<p class="vazio">Nenhum cadastro corresponde aos filtros.</p>';
+   host.querySelector('#cad-list').innerHTML=rows.length?rows.map(l=>`<article class="cad-row" data-stage="${esc(l.estagio||'sem-etapa')}"><div><a class="cad-name" href="#/cliente/${encodeURIComponent(l.id)}?voltar=${encodeURIComponent(route)}">${esc(l.cliente||'Nome não informado')}</a><small>${esc(l.clienteTel||'Telefone não informado')}</small></div><div><span>Responsável</span><strong>${esc(l.corretorNome||'Não informado')}</strong><small>${esc(l.empresaNome||'')}</small></div><div><span class="cad-stage cad-stage-${esc(l.estagio||'sem-etapa')}">${esc(stages[l.estagio]||'Etapa não informada')}</span><strong>${l.unidade?'Unidade '+esc(l.unidade):'Unidade não definida'}</strong><small>${l.proximoContato?'Retorno: '+esc(l.proximoContato.split('-').reverse().join('/')):'Sem retorno agendado'}</small></div><div class="cad-actions"><a class="btn-mini" href="#/cliente/${encodeURIComponent(l.id)}?voltar=${encodeURIComponent(route)}">Abrir ficha</a><a class="btn-mini" href="#/admin/clientes?cliente=${encodeURIComponent(l.id)}">Ver atendimento</a></div></article>`).join(''):'<p class="vazio">Nenhum cadastro corresponde aos filtros.</p>';
   };
-  for(const key of ['q','etapa','corretor'])host.querySelector('#cad-'+key).addEventListener(key==='q'?'input':'change',e=>{filter[key]=e.target.value;paint();});
-  host.querySelector('#cad-clear').onclick=()=>{filter={q:'',etapa:'',corretor:''};for(const k in filter)host.querySelector('#cad-'+k).value='';paint();};paint();
+  const syncStage=()=>{params.delete('etapa');if(filter.etapa)params.set('etapa',filter.etapa);route='#/admin/clientes'+(params.size?'?'+params.toString():'');history.replaceState(null,'',route);};
+  for(const key of ['q','etapa','corretor'])host.querySelector('#cad-'+key).addEventListener(key==='q'?'input':'change',e=>{filter[key]=e.target.value;if(key==='etapa')syncStage();paint();});
+  host.querySelector('#cad-clear').onclick=()=>{filter={q:'',etapa:'',corretor:''};for(const k in filter)host.querySelector('#cad-'+k).value='';syncStage();paint();};paint();
  }
  window.DiamondClientesPainel={render};
 })();
