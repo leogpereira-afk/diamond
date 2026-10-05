@@ -2594,6 +2594,7 @@
       $('.e-vendedor', tr).onchange = () => { _sujo = true; };
       $('.e-salvar', tr).onclick = () => {
         const status = statusSel.value;
+        if(tr.dataset.status==='Vendido'&&status==='Disponível'){window.DiamondReservas.abrir(id,'reabrir');return;}
         const vv = $('.e-vendedor', tr).value || '|';
         const corte = vv.indexOf('|');
         const vendedorEmpresa = status === 'Disponível' ? '' : vv.slice(0, corte);
@@ -2702,7 +2703,17 @@
       const r=await promise;if(!r.ok||!r.estado)throw Error('Consulta indisponível');
       const vagas=globalThis.DomoVagas.efetivas(r.estado);
       for(const tr of linhas){if(!tr.isConnected)continue;const vs=vagasDaUnidade({unidade:tr.dataset.un},vagas),cell=$('.td-vaga',tr);if(!cell)continue;
-        cell.innerHTML=vs.length?vs.map(v=>`<a class="v-vaga vg-${esc(v.situacao)}" href="#/admin/vagas?vaga=${encodeURIComponent(v.codigo)}" aria-label="Abrir vaga ${esc(v.codigo)} da unidade ${esc(tr.dataset.un)}"><b>${esc(v.codigo)}</b><small>${esc(globalThis.DomoVagas.PISOS[v.piso]?.nome||'Piso não informado')}</small>${v.alertas?.length||v.avisos?.length?'<small>Conferir vínculo</small>':''}</a>`).join(''):'<span class="nota">Sem vínculo</span>';
+        const apartamento=r.estado.unidades?.some(u=>String(u.apartamento).replace(/^(?:apto\.?|apartamento)\s*/i,'').trim()===tr.dataset.un);
+        cell.innerHTML=vs.length?vs.map(v=>`<a class="v-vaga vg-${esc(v.situacao)}" href="#/admin/vagas?vaga=${encodeURIComponent(v.codigo)}" aria-label="Abrir vaga ${esc(v.codigo)} da unidade ${esc(tr.dataset.un)}"><b>${esc(v.codigo)}</b><small>${esc(globalThis.DomoVagas.PISOS[v.piso]?.nome||'Piso não informado')}</small>${v.alertas?.length||v.avisos?.length?'<small>Conferir vínculo</small>':''}</a>`).join(''):`<span class="nota">Sem vínculo</span>${apartamento?`<button type="button" class="btn-mini v-vaga-vincular" aria-label="Vincular vaga à unidade ${esc(tr.dataset.un)}">+ Vincular vaga</button>`:''}`;
+        const btn=cell.querySelector('.v-vaga-vincular');
+        if(btn)btn.onclick=()=>{
+          if(_sujo){toast('Salve as alterações de status e vendedor antes de vincular a vaga.',true);return;}
+          window.DiamondVagaVinculo.abrir({unidadeId:tr.dataset.id,onSaved:async()=>{
+            toast('Vaga vinculada. A planilha será atualizada pela sincronização.');
+            await STORE.pull();
+            const atuais=$$('.adm-un tbody tr');if(atuais.length)consultarVagasVendas(atuais);
+          }});
+        };
       }
     }catch(e){for(const tr of linhas){const cell=$('.td-vaga',tr);if(tr.isConnected&&cell)cell.innerHTML='<span class="nota">Consulta indisponível</span><a class="btn-mini" href="#/admin/vagas">Conferir garagem</a>';}}
   }
@@ -2836,6 +2847,7 @@
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
         const vv = ($('.v-vend', tr).value) || '|'; const corte = vv.indexOf('|'); const st = stSel.value;
         const vEmp = st === 'Disponível' ? '' : vv.slice(0, corte); const vNome = st === 'Disponível' ? '' : vv.slice(corte + 1);
+        if(tr.dataset.status==='Vendido'&&st==='Disponível'){btn.disabled=false;btn.textContent=t;window.DiamondReservas.abrir(tr.dataset.id,'reabrir');return;}
         if(st==='Reservado'||tr.dataset.status==='Reservado') {
           btn.disabled=false;btn.textContent=t;
           window.DiamondReservas.abrir(tr.dataset.id,tr.dataset.status==='Reservado'?(st==='Vendido'?'vender':st==='Disponível'?'cancelar':'prorrogar'):'reservar',STORE.getReservas().find(r=>r.unidadeId===tr.dataset.id));return;

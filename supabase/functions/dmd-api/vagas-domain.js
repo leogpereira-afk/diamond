@@ -11,6 +11,8 @@
   ];
   const clean = v => String(v == null ? '' : v).trim().replace(/^[—–-]$/, '');
   const norm = v => clean(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const chaveApartamento = v => { const s=norm(v).replace(/^(?:apto\.?|apartamento)\s*/,''); return /^\d+$/.test(s)?String(Number(s)):s; };
+  const unidadeAguardandoPlanilha = (state,unidade) => !!chaveApartamento(unidade)&&Object.keys(state.ajustesUnidades||{}).some(apto=>chaveApartamento(apto)===chaveApartamento(unidade));
   const codigo = n => 'V'+String(n).padStart(2,'0');
   function numero(v) { const m=clean(v).match(/^V?\s*(\d{1,2})$/i); return m && +m[1]>=1 && +m[1]<=82 ? +m[1] : null; }
   const piso = n => n<=25?0:n<=51?1:2;
@@ -55,7 +57,7 @@
       let reserva='',expiracao='';try{reserva=data(g['data da reserva']);expiracao=data(g['prazo de expiracao']);}catch(e){alertas.push(e.message);}
       if(reserva&&expiracao&&expiracao<reserva)alertas.push('Prazo da reserva anterior ao início.');
       const origem={gestao:g,vinculos,pisoPDF:PISOS[pisoEsperado].nome};
-      return {numero:n,codigo:codigo(n),piso:pisoEsperado,apartamento:u?.apartamento||g.apartamento||'',cliente:u?.['cliente / proprietario']||g['cliente / proprietario']||'',area:u?.['tipologia / area']||'',situacao:alertas.length?'conferir':sg,contrato:u?.contratos||'',reserva,expiracao,observacoes:g.observacoes||'',alertas,avisos,origem,assinatura:JSON.stringify(origem)};
+      return {numero:n,codigo:codigo(n),piso:pisoEsperado,apartamento:u?.apartamento||g.apartamento||'',cliente:u?.['cliente / proprietario']||g['cliente / proprietario']||'',area:u?.['tipologia / area']||'',situacao:alertas.length?'conferir':sg,vinculoEstrutural:!!u&&sg==='disponivel',contrato:u?.contratos||'',reserva,expiracao,observacoes:g.observacoes||'',alertas,avisos,origem,assinatura:JSON.stringify(origem)};
     }).sort((a,b)=>a.numero-b.numero);
     for(const u of unidades)if(u['vaga vinculada']&&!numero(u['vaga vinculada']))throw Error('Vaga inválida em '+u.apartamento);
     return {vagas,unidades,fonte:{spreadsheetId:source.spreadsheetId||'',lidoEm:source.lidoEm||new Date().toISOString(),tipo:'Google Sheets',abaUnica:unica},historico:[]};
@@ -70,11 +72,12 @@
   }
   function validarAjuste(cod,a,state,ignorar) {
     const v=state.vagas.find(v=>v.codigo===cod);if(!v)throw Error('Vaga não encontrada.');
+    const atuais=efetivas(state),estrutural=atuais.some(x=>(x.codigo===cod||(ignorar||[]).includes(x.codigo))&&x.vinculoEstrutural&&chaveApartamento(x.apartamento)===chaveApartamento(a.apartamento));
     if(!['disponivel','reservada','vendida'].includes(a.situacao))throw Error('Escolha uma situação válida.');
     const out={};for(const k of ['apartamento','cliente','contrato','observacoes','motivo']){out[k]=clean(a[k]);if(out[k].length>(k==='observacoes'?2000:300))throw Error('Texto muito longo: '+k);}
     if(!out.motivo)throw Error('Informe o motivo da alteração para o histórico.');
     if(a.situacao!=='disponivel'&&!out.cliente)throw Error('Informe o cliente da reserva ou venda.');
-    if(a.situacao==='disponivel'&&(out.apartamento||out.cliente))throw Error('Uma vaga disponível não pode manter cliente ou apartamento vinculado.');
+    if(a.situacao==='disponivel'&&(out.apartamento||out.cliente)&&!estrutural)throw Error('Uma vaga disponível não pode manter cliente ou apartamento vinculado.');
     if(out.apartamento&&!state.unidades.some(u=>norm(u.apartamento)===norm(out.apartamento)))throw Error('Selecione um apartamento existente.');
     // `ignorar` é a vaga que está sendo esvaziada na mesma gravação: sem isso, mudar
     // de vaga acusaria o apartamento como duplicado contra a própria vaga de origem.
@@ -83,7 +86,20 @@
     out.reserva=data(a.reserva);out.expiracao=data(a.expiracao);
     if(a.situacao==='reservada'&&(!out.reserva||!out.expiracao))throw Error('Informe início e prazo da reserva.');
     if(out.reserva&&out.expiracao&&out.expiracao<out.reserva)throw Error('O prazo não pode ser anterior à reserva.');
-    out.situacao=a.situacao;out.assinatura=v.assinatura;return out;
+    out.situacao=a.situacao;out.assinatura=v.assinatura;out.vinculoEstrutural=estrutural&&!!out.apartamento;return out;
+  }
+  // Association only: inherit the apartment row exactly. Do not turn the act of
+  // choosing a parking space into a sale/reservation or invent a customer.
+  function validarVinculoUnidade(cod,unidade,state) {
+    const chave=chaveApartamento(unidade),linhas=state.unidades.filter(u=>chaveApartamento(u.apartamento)===chave);
+    if(linhas.length!==1)throw Error('A unidade precisa ter uma linha única na planilha de garagem. Confira a origem antes de vincular.');
+    const linha=linhas[0],atuais=efetivas(state);
+    if(atuais.some(v=>chaveApartamento(v.apartamento)===chave||(v.alertas.length&&(v.origem?.vinculos||[]).some(u=>chaveApartamento(u.apartamento)===chave))))throw Error('Esta unidade já possui uma vaga ou um vínculo para conferir. Atualize a lista.');
+    if(clean(linha['vaga vinculada']))throw Error('A planilha ainda informa uma vaga para esta unidade. Aguarde a confirmação da sincronização e confira o vínculo.');
+    if(!livres(state).some(v=>v.codigo===cod))throw Error('A vaga escolhida já está ocupada, vinculada ou precisa de conferência. Escolha outra vaga livre.');
+    const situacao=status(linha['confirmacao (v/r)']||linha.status);
+    if(situacao==='conferir')throw Error('A situação desta unidade na planilha precisa ser conferida antes de vincular a vaga.');
+    return {apartamento:linha.apartamento,cliente:clean(linha['cliente / proprietario']),situacao,contrato:clean(linha.contratos),reserva:data(linha.inicio),expiracao:data(linha.termino),observacoes:clean(linha.observacoes),motivo:'Vínculo de vaga pela lista de unidades',assinatura:state.vagas.find(v=>v.codigo===cod).assinatura,vinculoEstrutural:true,somenteVinculo:true};
   }
   // Vagas que podem RECEBER uma troca: livres de verdade, sem vínculo e sem pendência.
   // É a mesma régua que a proposta usa para oferecer vaga ao cliente.
@@ -98,10 +114,11 @@
     if(!destino||destino===cod)throw Error('Escolha a vaga de destino.');
     if(!state.vagas.some(v=>v.codigo===destino))throw Error('Vaga de destino não encontrada.');
     if(!livres(state).some(v=>v.codigo===destino))throw Error('A vaga '+destino+' não está disponível.');
-    if(a.situacao==='disponivel')throw Error('Para liberar a vaga, mantenha a vaga atual e salve como Disponível.');
+    const estrutural=efetivas(state).find(v=>v.codigo===cod)?.vinculoEstrutural&&!!a.apartamento;
+    if(a.situacao==='disponivel'&&!estrutural)throw Error('Para liberar a vaga, mantenha a vaga atual e salve como Disponível.');
     const ajuste=validarAjuste(destino,a,state,[cod]);
     const origem={situacao:'disponivel',apartamento:'',cliente:'',contrato:'',observacoes:'',reserva:'',expiracao:'',
-      motivo:ajuste.motivo,assinatura:o.assinatura};
+      motivo:ajuste.motivo,assinatura:o.assinatura,vinculoEstrutural:false};
     return {origem,destino:ajuste,de:cod,para:destino};
   }
   function paraProposta(state) {
@@ -109,6 +126,6 @@
     return efetivas(state).filter(v=>v.situacao==='disponivel'&&!v.apartamento&&!v.cliente&&!v.alertas.length)
       .map(v=>({codigo:v.codigo,pavimento:PISOS[v.piso].nome}));
   }
-  const api={paraProposta,livres,validarMudancaVaga,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
+  const api={paraProposta,livres,validarMudancaVaga,validarVinculoUnidade,unidadeAguardandoPlanilha,chaveApartamento,STATUS,PISOS,LINHAS,codigo,piso,status,numero,data,parseCSV,importar,efetivas,validarAjuste};
   root.DomoVagas=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

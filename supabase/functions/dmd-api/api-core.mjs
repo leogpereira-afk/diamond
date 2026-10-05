@@ -347,6 +347,7 @@ export const handler = async (event) => {
       if (!u.unidade) return json(400, { erro: 'unidade sem número' });
       const id = 'u-' + String(u.unidade);
       const existente = await stores.unidades.get(id, { type: 'json' });
+      if (existente?.status === 'Vendido' && u.status === 'Disponível') return json(409, { erro: 'Use a ação Reabrir unidade para registrar o motivo e preservar o histórico da venda.' });
       if (existente?.precoVersao && u.precoVersao !== existente.precoVersao) {
         const mudouPreco = Object.hasOwn(u, 'precoBase') && Number(u.precoBase || 0) !== Number(existente.precoBase || 0);
         const mudouDesconto = Object.hasOwn(u, 'desconto') && Number(u.desconto || 0) !== Number(existente.desconto || 0);
@@ -391,6 +392,7 @@ export const handler = async (event) => {
       const existente = await stores.unidades.get(id, { type: 'json' });
       if (!existente) return json(404, { erro: 'unidade não encontrada' });
       const st = ['Disponível', 'Reservado', 'Vendido'].includes(body.status) ? body.status : existente.status;
+      if (existente.status === 'Vendido' && st === 'Disponível') return json(409, { erro: 'Use a ação Reabrir unidade para registrar o motivo e preservar o histórico da venda.' });
       if(st==='Reservado'||existente.status==='Reservado')return json(409,{erro:'Use a aba Reservas para confirmar, prorrogar, cancelar ou vender.'});
       const disp = st === 'Disponível';
       const grava = { ...existente, status: st,

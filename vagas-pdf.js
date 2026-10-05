@@ -19,8 +19,8 @@ function DomoVagasPDF(base,opts={}){
     const sx=105,sy=48,stepT=4.45;
     doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(40);
     doc.text('VAGA',sx,42);doc.text('APTO',sx+15,42);doc.text('CLIENTE / PROPRIETÁRIO',sx+34,42);doc.text('SITUAÇÃO',sx+122,42);doc.text('CONTRATO',sx+148,42);
-    vv.forEach((v,i)=>{const y=sy+i*stepT;if(i%2===0){doc.setFillColor(246,248,251);doc.rect(sx-2,y-3.3,183,stepT,'F');}doc.setTextColor(40);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text(v.codigo,sx,y);doc.setFont('helvetica','normal');doc.text((v.apartamento||'—').replace('Apto ',''),sx+15,y);doc.text(fit(v.cliente,84),sx+34,y);doc.setTextColor(...cores[v.situacao]);doc.text(V.STATUS[v.situacao],sx+122,y);doc.setTextColor(65);doc.text(fit(v.contrato,32),sx+148,y);});
-    const counts=Object.entries(V.STATUS).map(([k,t])=>t+': '+vv.filter(v=>v.situacao===k).length).join('     ');doc.setFontSize(8);doc.setTextColor(30);doc.text(counts,105,191);
+    vv.forEach((v,i)=>{const y=sy+i*stepT;if(i%2===0){doc.setFillColor(246,248,251);doc.rect(sx-2,y-3.3,183,stepT,'F');}doc.setTextColor(40);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text(v.codigo,sx,y);doc.setFont('helvetica','normal');doc.text((v.apartamento||'—').replace('Apto ',''),sx+15,y);doc.text(fit(v.cliente,84),sx+34,y);doc.setTextColor(...cores[v.situacao]);doc.text(v.situacao==='disponivel'&&v.apartamento?'Vinculada':V.STATUS[v.situacao],sx+122,y);doc.setTextColor(65);doc.text(fit(v.contrato,32),sx+148,y);});
+    const livres=new Set(V.livres(base.estado).map(v=>v.codigo));const counts=['Livres: '+vv.filter(v=>livres.has(v.codigo)).length,'Vinculadas: '+vv.filter(v=>v.situacao==='disponivel'&&v.apartamento).length,...Object.entries(V.STATUS).filter(([k])=>k!=='disponivel').map(([k,t])=>t+': '+vv.filter(v=>v.situacao===k).length)].join('   ');doc.setFontSize(8);doc.setTextColor(30);doc.text(counts,105,191);
     rodape();
   });
   const avisos=vs.filter(v=>v.alertas.length||v.avisos.length||v.vencida||v.observacoes||v.reserva||v.expiracao);
