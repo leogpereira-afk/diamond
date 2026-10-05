@@ -1,5 +1,24 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {store,source} from './helpers.mjs';
 const ok=x=>({ok:true,json:async()=>x});
+test('consultar histórico em paralelo não descarta a primeira carga de configuração e preços',async()=>{
+ let liberarUnidades;const requests=[];
+ const{s}=store(async(_,opts)=>{const action=JSON.parse(opts.body).action;requests.push(action);
+  if(action==='list')return new Promise(resolve=>{liberarUnidades=()=>resolve(ok({unidades:[{id:'u-1',unidade:'401',precoBase:312000,precoVersao:'tabela-2'}]}));});
+  if(action==='getCfg')return ok({cfg:{versao:'v2',dataTabela:'05/10/2026',tabelaId:'tabela-2',reajuste:0}});
+  if(action==='precosHistorico')return ok({historico:[{id:'tabela-2',versaoNova:'v2'}]});
+  return ok({propostas:[],leads:[],reservas:[]});
+ });
+ const primeiraCarga=s.pull();
+ assert.equal(typeof liberarUnidades,'function','A consulta inicial deve estar em andamento');
+ const historico=await s.api('precosHistorico');
+ assert.equal(historico.historico[0].id,'tabela-2');
+ liberarUnidades();await primeiraCarga;
+ assert.equal(s.getCfg()?.versao,'v2','Consulta de histórico não pode invalidar a configuração recebida');
+ assert.equal(s.getUnidades()[0]?.precoBase,312000);
+ assert.equal(s.getUnidades()[0]?.precoVersao,'tabela-2');
+ assert.equal(s.status().estado,'ok');
+ assert.equal(requests.filter(x=>x==='list').length,1,'Não depender de uma segunda sincronização para abrir a tela');
+});
 test('nova tabela só entra no cache depois da confirmação da nuvem',async()=>{
  let libera; const{s,mem}=store(async()=>new Promise(r=>{libera=r}));mem.set('dv_cfg',JSON.stringify({versao:'v1'}));mem.set('dv_unidades',JSON.stringify([{id:'u-1',precoBase:100}]));
  const pendente=s.aplicarTabelaPrecos({operacaoId:'abc'});assert.equal(s.getCfg().versao,'v1');

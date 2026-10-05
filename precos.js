@@ -68,39 +68,96 @@
     const versaoArquivo=String(p.versaoNova||'sem-versao').replace(/[^a-zA-Z0-9_-]/g,'');
     if(!retornar)doc.save('Diamond-'+numero+'a-atualizacao-'+versaoArquivo+'-'+dataArquivo+'.pdf');return doc;
   }
-  function comparativo(p) {
-    const itens = itensDe(p);
-    return `<div class="precos-comparativo"><table><caption>Comparativo dos preços de tabela, antes dos descontos individuais</caption><thead><tr><th>Unidade</th><th>Situação</th><th>Base anterior</th>${p.modo==='regularizar'?'<th>Exibido com reajuste antigo</th>':''}<th>Nova tabela</th><th>Resultado</th></tr></thead><tbody>${itens.map(i=>`<tr class="${i.corrigida?'precos-corrigida':i.alterada?'precos-alterada':''}"><th scope="row">${esc(i.unidade || i.id)}</th><td>${esc(i.status)}</td><td>${moeda(i.anterior)}</td>${p.modo==='regularizar'?`<td>${moeda(i.exibidoAntes)}</td>`:''}<td><b>${moeda(i.novo)}</b></td><td>${i.corrigida?'Retirado reajuste indevido':i.alterada?`+ ${moeda(i.novo-i.anterior)}`:'Preservado'}</td></tr>`).join('')}</tbody></table></div>`;
+  const regularizada = p => p.modo === 'regularizar' || p.origem === 'regularizacao_legado';
+  function registroAtual(cfg, lista) {
+    // O identificador salvo é a fonte principal. Uma versão igual não substitui um ID ausente do histórico.
+    return cfg.tabelaId ? lista.find(x => x.registro.id === cfg.tabelaId) : lista.find(x => x.registro.versaoNova === cfg.versao);
+  }
+  function dataRegistro(p) {
+    const valor = p?.criadoEm || p?.em;
+    const d = valor ? new Date(valor) : null;
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return {data:d.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}),hora:d.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})};
+  }
+  function itensComparativo(p, filtro = 'todas') {
+    return [...itensDe(p)].filter(i => filtro === 'alteradas' ? i.alterada : filtro === 'preservadas' ? !i.alterada : true)
+      .sort((a,b) => String(a.unidade || a.id).localeCompare(String(b.unidade || b.id),'pt-BR',{numeric:true}));
+  }
+  function comparativo(p, filtro = 'todas') {
+    const itens = itensComparativo(p,filtro), legado = regularizada(p);
+    return `<div class="precos-comparativo" tabindex="0" role="region" aria-label="Valores por unidade"><table><caption>Valores de tabela antes dos descontos individuais · ${itens.length} ${itens.length===1?'unidade':'unidades'}</caption><thead><tr><th>Unidade</th><th>Situação na atualização</th><th>Preço anterior</th>${legado?'<th>Exibido antes da correção</th>':''}<th>Novo preço</th><th>O que mudou</th></tr></thead><tbody>${itens.map(i=>`<tr class="${i.corrigida?'precos-corrigida':i.alterada?'precos-alterada':''}"><th scope="row">${esc(i.unidade || i.id)}</th><td>${esc(i.status)}</td><td>${moeda(i.anterior)}</td>${legado?`<td>${moeda(i.exibidoAntes)}</td>`:''}<td><b>${moeda(i.novo)}</b></td><td>${i.corrigida?'Exibição corrigida':i.alterada?`+ ${moeda(i.novo-i.anterior)}`:'Preço mantido'}</td></tr>`).join('')}</tbody></table></div>`;
   }
   function resumo(p) {
     const itens = itensDe(p), elegiveis = itens.filter(i=>i.alterada), corrigidas = itens.filter(i=>i.corrigida);
-    return `<div class="precos-resumo"><span><b>${elegiveis.length}</b> disponíveis reajustadas</span><span><b>${itens.length-elegiveis.length}</b> preços base preservados</span>${corrigidas.length?`<span><b>${corrigidas.length}</b> exibições corrigidas</span>`:''}</div>`;
+    return `<div class="precos-resumo"><span><b>${elegiveis.length}</b> disponíveis reajustadas</span><span><b>${itens.length-elegiveis.length}</b> preços mantidos</span>${corrigidas.length?`<span class="precos-resumo-aviso"><b>${corrigidas.length}</b> exibições corrigidas</span>`:''}</div>`;
   }
+  function comparacaoComFiltros(p) {
+    const n=itensDe(p).filter(i=>i.alterada).length, total=itensDe(p).length, filtro=regularizada(p)?'todas':n?'alteradas':'todas';
+    return `<div class="precos-filtros" role="group" aria-label="Unidades do comparativo">${[['alteradas','Reajustadas',n],['preservadas','Preços mantidos',total-n],['todas','Todas',total]].map(([id,label,q])=>`<button type="button" class="btn-mini" data-precos-filtro="${id}" aria-pressed="${id===filtro}">${label} <b>${q}</b></button>`).join('')}</div><div data-comparativo-corpo>${comparativo(p,filtro)}</div>`;
+  }
+  function ativarFiltros(el,p) {
+    el.querySelectorAll('[data-precos-filtro]').forEach(button=>button.onclick=()=>{
+      el.querySelectorAll('[data-precos-filtro]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
+      el.querySelector('[data-comparativo-corpo]').innerHTML=comparativo(p,button.dataset.precosFiltro);
+    });
+  }
+  const notaRegistro = p => regularizada(p)
+    ? 'Histórico reconstruído: o registro abaixo corresponde à regularização. A data da aplicação original do reajuste não está disponível.'
+    : 'Reajuste aplicado somente às unidades disponíveis. Preços das vendidas e reservadas mantidos.';
+  let ultimoSalvo = null;
   function mount(el, {temEdicao = () => false, marcarEdicao = () => {}, salvo = () => {}} = {}) {
     const cfg = STORE.getCfg() || {}, legado = Number(cfg.reajuste || 0);
+    let lista = [], carregando = false;
     el.innerHTML = `<div class="precos-painel">
-      <header class="precos-cab"><div><span class="precos-kicker">Tabela de preços</span><h2>${esc(cfg.versao || 'v1')} <small>· ${esc(cfg.dataTabela || 'Data não informada')}</small></h2></div><button class="btn-mini" id="precos-historico" aria-expanded="false">Histórico e comparativo</button></header>
-      ${legado ? `<div class="precos-legado"><div><b>Reajuste de ${percentual(legado*100)} aguardando regularização</b><p>O método antigo atingiu todas as unidades. A correção mantém esse aumento nas disponíveis, retira o efeito das vendidas e reservadas e registra uma nova versão.</p></div><button class="btn-lime" id="precos-regularizar">Revisar correção</button></div>` : `<form class="precos-form"><label>Reajuste nas disponíveis (%)<input id="precos-percentual" type="number" min="0.0001" max="1000" step="any" placeholder="Ex.: 4" required></label><label>Data da nova tabela<input id="precos-data" type="date" value="${hoje()}" required></label><button class="btn-lime" type="submit">Revisar reajuste</button><p>A versão será criada automaticamente. Vendidas e reservadas mantêm seus preços.</p></form>`}
-      <p class="precos-erro" role="alert" hidden></p><div id="precos-historico-lista" hidden></div>
+      <header class="precos-cab"><div><span class="precos-kicker">Controle de preços</span><h2>Tabela atual <span class="precos-badge">${esc(cfg.versao || 'v1')}</span></h2></div>${legado?'':'<button type="button" class="btn-lime" id="precos-novo" aria-expanded="false" aria-controls="precos-novo-form">+ Novo reajuste</button>'}</header>
+      <div class="precos-atual-dados"><div class="precos-data-destaque"><span>Data da tabela</span><strong>${esc(dataBr(cfg.dataTabela) || 'Não informada')}</strong><small>Data definida para esta versão</small></div><div id="precos-ultimo-registro" aria-live="polite"><span>Última atualização registrada</span><strong class="precos-carregando">Consultando…</strong><small>Horário de Brasília</small></div><div id="precos-atual-reajuste"><span>Reajuste desta versão</span><strong class="precos-carregando">Consultando…</strong></div></div>
+      ${ultimoSalvo && ultimoSalvo.id === cfg.tabelaId ? `<p class="precos-sucesso" role="status">✓ Atualização ${esc(cfg.versao)} salva na nuvem. O comparativo e o PDF estão no histórico abaixo.</p>`:''}
+      ${legado ? `<div class="precos-legado"><div><b>Reajuste de ${percentual(legado*100)} aguardando regularização</b><p>O método antigo atingiu todas as unidades. A correção mantém esse aumento nas disponíveis, retira o efeito das vendidas e reservadas e registra uma nova versão.</p></div><button class="btn-lime" id="precos-regularizar">Revisar correção</button></div>` : `<form class="precos-form" id="precos-novo-form" hidden><div class="precos-form-titulo"><h3>Novo reajuste</h3><p>1. Informe o percentual e a data. 2. Confira os valores. 3. Confirme para salvar.</p></div><label>Aumento nas disponíveis (%)<input id="precos-percentual" type="number" min="0.0001" max="1000" step="any" placeholder="Ex.: 4" required></label><label>Data da nova tabela<input id="precos-data" type="date" value="${hoje()}" required></label><button class="btn-lime" type="submit">Conferir novos valores →</button><p class="precos-form-nota">A aplicação acontece ao confirmar. A data identifica a tabela e não agenda o reajuste. Vendidas e reservadas mantêm os preços.</p></form>`}
+      <p class="precos-erro" role="alert" hidden></p>
+      <section class="precos-historico" aria-labelledby="precos-historico-titulo"><header><div><h3 id="precos-historico-titulo">Histórico de atualizações <span id="precos-historico-quantidade"></span></h3><p>Da mais recente para a mais antiga. Cada PDF conserva os valores daquele registro.</p></div><button type="button" class="btn-mini" id="precos-recarregar">Atualizar histórico</button></header><div id="precos-historico-lista"><p class="precos-origem" role="status">Consultando atualizações salvas…</p></div></section>
     </div>`;
     const erro = msg => {const x=el.querySelector('.precos-erro');x.textContent=msg;x.hidden=!msg;};
     const historico = el.querySelector('#precos-historico-lista');
-    el.querySelector('#precos-historico').onclick = async event => {
-      const btn = event.currentTarget;
-      if(!historico.hidden){historico.hidden=true;btn.setAttribute('aria-expanded','false');return;}
-      historico.hidden=false;btn.setAttribute('aria-expanded','true');btn.disabled=true;historico.innerHTML='<p role="status">Consultando versões salvas…</p>';
+    async function baixar(p,numero,button,mostrarErro=erro) {
+      const label=button.textContent;button.disabled=true;button.textContent='Preparando PDF…';mostrarErro('');
+      try{await exportarPDF(p,numero);}catch(e){mostrarErro(e.message);}finally{button.disabled=false;button.textContent=label;}
+    }
+    function mostrarAtual() {
+      const atual=registroAtual(cfg,lista), p=atual?.registro, registro=dataRegistro(p);
+      el.querySelector('#precos-ultimo-registro').innerHTML=`<span>${p && regularizada(p)?'Regularização registrada em':'Última atualização registrada'}</span><strong>${registro?esc(registro.data):'Não informada'}</strong><small>${registro?`${esc(registro.hora)} · horário de Brasília${p.por?' · '+esc(p.por):''}`:'Sem data confirmada no histórico'}</small>`;
+      el.querySelector('#precos-atual-reajuste').innerHTML=`<span>Reajuste desta versão</span><strong>${p?'+'+percentual(p.percentual):'Não registrado'}</strong><small>${p?`${atual.numero}ª atualização · ${itensDe(p).filter(i=>i.alterada).length} ${itensDe(p).filter(i=>i.alterada).length===1?'unidade reajustada':'unidades reajustadas'}`:'Consulte os preços por unidade abaixo'}</small>`;
+    }
+    function renderHistorico() {
+      el.querySelector('#precos-historico-quantidade').textContent=lista.length?String(lista.length):'';
+      historico.innerHTML=lista.length?lista.map(({registro:p,numero},index)=>{
+        const registro=dataRegistro(p), atual=registroAtual(cfg,lista)?.registro.id===p.id, alteradas=itensDe(p).filter(i=>i.alterada).length;
+        return `<article class="precos-versao${atual?' precos-versao-atual':''}"><div class="precos-versao-linha"><div class="precos-numero" aria-hidden="true">${numero.toString().padStart(2,'0')}</div><div class="precos-versao-identidade"><h4>${numero}ª atualização ${atual?'<span class="precos-atual-tag">Tabela atual</span>':''}</h4><p>${esc(p.versaoAnterior || 'Anterior')} → <b>${esc(p.versaoNova || 'Nova')}</b>${regularizada(p)?' · Histórico reconstruído':''}</p></div><div class="precos-versao-data"><span>Data da tabela</span><strong>${esc(dataBr(p.dataTabela)||'Não informada')}</strong></div><div class="precos-versao-percentual"><strong>+${percentual(p.percentual)}</strong><span>${alteradas} ${alteradas===1?'unidade reajustada':'unidades reajustadas'}</span></div><div class="precos-versao-acoes"><button type="button" class="btn-mini" data-precos-comparar="${index}" aria-label="Comparar valores da ${numero}ª atualização">Comparar valores</button><button type="button" class="btn-mini precos-btn-pdf" data-precos-pdf="${index}" aria-label="Baixar PDF da ${numero}ª atualização">↓ Baixar PDF</button></div></div><div class="precos-versao-rodape"><span>${regularizada(p)?'Regularização salva':'Salva'} em ${registro?`${esc(registro.data)} às ${esc(registro.hora)}`:'data não informada'}${p.por?' · '+esc(p.por):''}</span><span>${itensDe(p).length-alteradas} preços mantidos${itensDe(p).some(i=>i.corrigida)?' · correções de exibição incluídas':''}</span></div></article>`;
+      }).join(''):'<div class="precos-vazio"><b>Ainda não há atualizações registradas</b><p>Ao confirmar um novo reajuste, a data, a numeração, os valores e o PDF aparecerão aqui.</p></div>';
+      historico.querySelectorAll('[data-precos-pdf]').forEach(button=>button.onclick=()=>{const{registro,numero}=lista[Number(button.dataset.precosPdf)];return baixar(registro,numero,button);});
+      historico.querySelectorAll('[data-precos-comparar]').forEach(button=>button.onclick=()=>{const{registro,numero}=lista[Number(button.dataset.precosComparar)];abrirHistorico(registro,numero,button);});
+    }
+    async function carregarHistorico() {
+      if(carregando)return;carregando=true;const button=el.querySelector('#precos-recarregar');button.disabled=true;
       try {
         const r = await STORE.api('precosHistorico');
         if(!el.isConnected)return;
-        const lista=numerarHistorico(r.historico || []).reverse();
-        historico.innerHTML=lista.length?lista.map(({registro:p,numero},index)=>`<details class="precos-versao"><summary><span><b>${numero}ª atualização · ${esc(p.versaoAnterior)} → ${esc(p.versaoNova)}</b> · ${percentual(p.percentual)}</span><small>Tabela: ${esc(dataBr(p.dataTabela)||'Data não informada')} · ${horario(p.criadoEm||p.em)?'Registro: '+esc(horario(p.criadoEm||p.em)):'Registro sem data informada'}</small></summary><div class="precos-resumo"><button type="button" class="btn-mini" data-precos-pdf="${index}">↓ PDF da ${numero}ª atualização</button></div><p class="precos-origem">${p.modo==='regularizar'?'Regularização do reajuste antigo. Comparação reconstruída a partir dos preços base e do percentual que estava salvo. A data deste registro não comprova quando o reajuste original foi aplicado.':'Reajuste aplicado somente às unidades disponíveis.'} ${p.por?`Registrado por ${esc(p.por)}.`:''}</p>${resumo(p)}${comparativo(p)}</details>`).join(''):'<p class="precos-origem">Ainda não há versões registradas. O próximo reajuste salvará o comparativo aqui.</p>';
-        historico.querySelectorAll('[data-precos-pdf]').forEach(button=>button.onclick=async()=>{
-          const {registro,numero}=lista[Number(button.dataset.precosPdf)],label=button.textContent;button.disabled=true;button.textContent='Preparando PDF…';erro('');
-          try{await exportarPDF(registro,numero);}catch(e){erro(e.message);}finally{button.disabled=false;button.textContent=label;}
-        });
-      } catch(e){historico.innerHTML=`<p role="alert">${esc(e.message)}</p>`;}
-      finally{btn.disabled=false;}
-    };
+        lista=numerarHistorico(r.historico || []).reverse();mostrarAtual();renderHistorico();
+      }catch(e){
+        if(!el.isConnected)return;
+        historico.innerHTML=`<p class="precos-origem" role="alert">Não foi possível consultar o histórico. ${esc(e.message)} Use “Atualizar histórico” para tentar novamente.</p>`;
+        el.querySelector('#precos-ultimo-registro').innerHTML='<span>Última atualização registrada</span><strong>Consulta indisponível</strong><small>Tente atualizar o histórico</small>';
+        el.querySelector('#precos-atual-reajuste').innerHTML='<span>Reajuste desta versão</span><strong>Não consultado</strong>';
+      }finally{carregando=false;button.disabled=false;}
+    }
+    el.querySelector('#precos-recarregar').onclick=carregarHistorico;
+    function abrirHistorico(p,numero,origem) {
+      const dialog=document.createElement('dialog');dialog.className='precos-dialog';dialog.setAttribute('aria-labelledby','precos-comparacao-titulo');
+      dialog.innerHTML=`<header><div><span class="precos-kicker">Comparativo salvo · ${esc(p.versaoAnterior)} → ${esc(p.versaoNova)}</span><h2 id="precos-comparacao-titulo">${numero}ª atualização · +${percentual(p.percentual)}</h2><p><b>Data da tabela: ${esc(dataBr(p.dataTabela)||'Não informada')}</b></p><p>${dataRegistro(p)?'Registro: '+esc(horario(p.criadoEm||p.em))+' · Brasília':'Registro sem data informada'}</p></div><button class="btn-mini" data-fechar aria-label="Fechar comparativo">✕</button></header><div class="precos-dialog-conteudo"><p class="precos-origem">${notaRegistro(p)}</p>${comparacaoComFiltros(p)}</div><footer><p class="precos-dialog-erro" role="alert"></p><button type="button" class="btn-mini" data-fechar>Fechar</button><button type="button" class="btn-lime" data-pdf>↓ Baixar PDF completo</button></footer>`;
+      const fechar=()=>{dialog.close();dialog.remove();origem.focus();};
+      dialog.querySelectorAll('[data-fechar]').forEach(b=>b.onclick=fechar);dialog.addEventListener('cancel',e=>{e.preventDefault();fechar();});
+      dialog.querySelector('[data-pdf]').onclick=e=>baixar(p,numero,e.currentTarget,msg=>{dialog.querySelector('.precos-dialog-erro').textContent=msg;});ativarFiltros(dialog,p);
+      document.body.append(dialog);dialog.showModal();dialog.querySelector('[data-fechar]').focus();
+    }
     async function revisar(modo, btn) {
       erro('');
       if(temEdicao()){erro('Salve as edições de unidade antes de revisar o reajuste.');return;}
@@ -119,16 +176,16 @@
     function abrirPrevia(p,dados,origem) {
       const dialog=document.createElement('dialog');dialog.className='precos-dialog';dialog.setAttribute('aria-labelledby','precos-dialog-titulo');
       const operacaoId=crypto.randomUUID();let enviando=false;
-      dialog.innerHTML=`<header><div><span class="precos-kicker">Conferência antes de salvar</span><h2 id="precos-dialog-titulo">${esc(p.versaoAnterior)} → ${esc(p.versaoNova)}</h2><p>${esc(p.dataTabela)} · Reajuste de ${percentual(p.percentual)}</p></div><button class="btn-mini" data-fechar aria-label="Fechar conferência">✕</button></header><div class="precos-dialog-conteudo">${p.modo==='regularizar'?'<p class="precos-origem">Os 4% não serão aplicados novamente sobre o valor exibido. A nova versão consolida o percentual já salvo nas disponíveis. Os preços base das demais ficam preservados.</p>'.replace('4%',percentual(p.percentual)):'<p class="precos-origem">Confira os valores. Somente unidades disponíveis e com preço definido recebem o reajuste.</p>'}${resumo(p)}${comparativo(p)}</div><footer><p class="precos-dialog-erro" role="alert"></p><button class="btn-mini" data-fechar>Voltar</button><button class="btn-lime" data-confirmar>Confirmar e salvar ${esc(p.versaoNova)}</button></footer>`;
+      dialog.innerHTML=`<header><div><span class="precos-kicker">Confira antes de salvar · ${esc(p.versaoAnterior)} → ${esc(p.versaoNova)}</span><h2 id="precos-dialog-titulo">Reajuste de +${percentual(p.percentual)}</h2><p><b>Data da nova tabela: ${esc(dataBr(p.dataTabela))}</b></p></div><button class="btn-mini" data-fechar aria-label="Fechar conferência">✕</button></header><div class="precos-dialog-conteudo">${p.modo==='regularizar'?'<p class="precos-origem">O percentual não será aplicado novamente sobre o valor exibido. A correção consolida o reajuste nas disponíveis e preserva os preços base das demais.</p>':'<p class="precos-origem">Os novos valores entram no sistema somente ao confirmar. Vendidas e reservadas mantêm os preços.</p>'}${comparacaoComFiltros(p)}</div><footer><p class="precos-dialog-erro" role="alert"></p><button class="btn-mini" data-fechar>Voltar</button><button class="btn-lime" data-confirmar>Confirmar e salvar ${esc(p.versaoNova)}</button></footer>`;
       const fechar=()=>{if(enviando)return;dialog.close();dialog.remove();origem.focus();};
-      dialog.querySelectorAll('[data-fechar]').forEach(b=>b.onclick=fechar);
+      dialog.querySelectorAll('[data-fechar]').forEach(b=>b.onclick=fechar);ativarFiltros(dialog,p);
       dialog.addEventListener('cancel',e=>{e.preventDefault();fechar();});
       dialog.querySelector('[data-confirmar]').onclick=async event=>{
         const btn=event.currentTarget;enviando=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);btn.textContent='Salvando na nuvem…';
         dialog.querySelector('.precos-dialog-erro').textContent='';
         try{
-          await STORE.aplicarTabelaPrecos({...dados,token:p.token,operacaoId});
-          dialog.close();dialog.remove();salvo();
+          const r=await STORE.aplicarTabelaPrecos({...dados,token:p.token,operacaoId});
+          ultimoSalvo=r.historico || {id:r.cfg.tabelaId};dialog.close();dialog.remove();salvo();window.scrollTo({top:0,behavior:'smooth'});
         }catch(e){
           dialog.querySelector('.precos-dialog-erro').textContent=e.status===409?`${e.message} Volte e confira uma nova prévia.`:e.message;
           dialog.querySelectorAll('button').forEach(b=>b.disabled=false);
@@ -137,9 +194,10 @@
       };
       document.body.append(dialog);dialog.showModal();dialog.querySelector('[data-fechar]').focus();
     }
-    const form=el.querySelector('form');
-    if(form){form.addEventListener('input',marcarEdicao);form.onsubmit=e=>{e.preventDefault();revisar('reajustar',form.querySelector('button'));};}
+    const form=el.querySelector('form'),novo=el.querySelector('#precos-novo');
+    if(form){form.addEventListener('input',marcarEdicao);form.onsubmit=e=>{e.preventDefault();revisar('reajustar',form.querySelector('button[type="submit"]'));};novo.onclick=()=>{form.hidden=!form.hidden;novo.setAttribute('aria-expanded',String(!form.hidden));novo.textContent=form.hidden?'+ Novo reajuste':'Recolher formulário';if(!form.hidden)form.querySelector('input').focus();};}
     const regularizar=el.querySelector('#precos-regularizar');if(regularizar)regularizar.onclick=()=>revisar('regularizar',regularizar);
+    carregarHistorico();
   }
   window.DiamondPrecos={mount,exportarPDF};
 })();

@@ -28,7 +28,7 @@ const STORE = (() => {
   // ---------- API ----------
   let versaoLeitura = 0;
   const leiturasEmCurso = new Map();
-  const acoesDeLeitura = new Set(['list', 'getCfg', 'listPropostas', 'listLeads', 'listReservas', 'listEnvios']);
+  const acoesDeLeitura = new Set(['list', 'getCfg', 'listPropostas', 'listLeads', 'listReservas', 'listEnvios', 'precosHistorico']);
   async function api(action, body = {}) {
     const sess = getUser();
     const payload = { action, ...body };
