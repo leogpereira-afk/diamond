@@ -4,20 +4,45 @@ import crypto from 'node:crypto';
 export const root=new URL('../',import.meta.url);
 export const source=p=>fs.readFileSync(new URL(p,root),'utf8');
 export const copy=v=>v==null?null:JSON.parse(JSON.stringify(v));
-export function backend({failEvent=false}={}){
+export function backend({failEvent=false,beforePrecoCommit=null,failPrecoCommit=false,beforeCfgCommit=null}={}){
  const reads=[];const tables=new Map();const table=n=>{if(!tables.has(n))tables.set(n,new Map());return tables.get(n);};
  table('cfg').set('usuarios',[{usuario:'domo',nome:'Domo',hash:'fake',papel:'corretor',ativo:true,corretores:[{nome:'Teste'}]},{usuario:'admin',hash:'fake',papel:'admin',ativo:true},{usuario:'cliente',hash:'fake',papel:'cliente',ativo:true}]);table('cfg').set('cfg',{});
  table('unidades').set('u-1',{id:'u-1',unidade:'1',status:'Disponível',precoBase:300000,obs:'interno'});
  table('unidades').set('u-2',{id:'u-2',unidade:'2',status:'Vendido',precoBase:350000});
  const getStore=n=>({followupEnvio:async(id,dados)=>{const e=table('envios').get(id);if(!e)throw Error('ausente');e.acompanhamento=copy(dados);return true;},nextEnvioNumber:async()=>{const n=Math.max(Number(table('cfg').get('seqEnvio'))||0,...[...table('envios').values()].map(e=>Number(e.numero)||0))+1;table('cfg').set('seqEnvio',n);return n;},recordEnvioEvent:async(id,tipo)=>{if(failEvent)throw Error('storage offline');const e=table('envios').get(id);if(!e)return{status:404};if(tipo==='abertura'){e.views=(e.views||0)+1;e.lastView=new Date().toISOString();e.firstView||=e.lastView;}else{if(['interesse','duvida'].includes(tipo)&&[...table('enviosEv').values()].filter(x=>x.envioId===id&&['interesse','duvida'].includes(x.tipo)).length>=50)return{status:429};table('enviosEv').set(id+'-'+crypto.randomUUID(),{envioId:id,tipo,em:new Date().toISOString()});}return{status:200};},getMany:async keys=>keys.map(k=>copy(table(n).get(k))).filter(Boolean),get:async k=>{reads.push(n);return copy(table(n).get(k));},listJSON:async()=>[...table(n)].map(([key,valor])=>({key,valor:copy(valor)})),setJSON:async(k,v)=>{if(n==='enviosEv'&&failEvent)throw Error('storage offline');table(n).set(k,copy(v));},insertReserva:async(k,v)=>{if(table(n).has(k))return false;table(n).set(k,copy(v));return true;},insertJSON:async(k,v)=>{if(table(n).has(k))return false;table(n).set(k,copy(v));return true;},delete:async k=>table(n).delete(k),list:async({prefix=''}={})=>({blobs:[...table(n).keys()].filter(k=>k.startsWith(prefix)).map(key=>({key}))})});
- const sb={rpc:async(name,p)=>{if(name==='dmd_cliente_salvar'){
+ const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+ const sb={rpc:async(name,p)=>{
+ if(name==='dmd_unidade_criar'){
+  if(table('unidades').has(p.p_id))return{error:{message:'UNIDADE_CONFLITO'}};
+  const nova=copy(p.p_unidade);delete nova.precoVersao;
+  const tabelaId=table('cfg').get('cfg')?.tabelaId;if(tabelaId)nova.precoVersao=tabelaId;
+  table('unidades').set(p.p_id,nova);return{data:copy(nova)};
+ }
+ if(name==='dmd_cfg_salvar'){
+  if(beforeCfgCommit)await beforeCfgCommit({table,p});
+  if(!same(table('cfg').get('cfg'),p.p_antes))return{error:{message:'CFG_CONFLITO'}};
+  table('cfg').set('cfg',copy(p.p_depois));return{data:copy(p.p_depois)};
+ }
+ if(name==='dmd_precos_aplicar'){
+  if(beforePrecoCommit)await beforePrecoCommit({table,p});
+  const old=table('precos_historico').get(p.p_operacao_id);
+  if(old){if(old.solicitacaoHash!==p.p_evento.solicitacaoHash)return{error:{message:'OPERACAO_CONFLITO'}};return{data:{repetida:true,cfg:copy(table('cfg').get('cfg')),unidades:copy([...table('unidades').values()]),historico:copy(old)}};}
+  if(!same(table('cfg').get('cfg'),p.p_cfg_antes))return{error:{message:'CFG_CONFLITO'}};
+  if(table('unidades').size!==Object.keys(p.p_unidades_antes).length||[...table('unidades')].some(([id,u])=>!same(u,p.p_unidades_antes[id])))return{error:{message:'UNIDADES_CONFLITO'}};
+  if(failPrecoCommit)return{error:{message:'storage offline'}};
+  for(const [id,u]of Object.entries(p.p_unidades_depois))table('unidades').set(id,copy(u));
+  table('cfg').set('cfg',copy(p.p_cfg_depois));table('precos_historico').set(p.p_operacao_id,copy(p.p_evento));
+  return{data:{repetida:false,cfg:copy(p.p_cfg_depois),unidades:copy([...table('unidades').values()]),historico:copy(p.p_evento)}};
+ }
+ if(name==='dmd_cliente_salvar'){
   const old=table('leads').get(p.p_id)||null,unit=p.p_unidade_id?table('unidades').get(p.p_unidade_id):null;
   if(JSON.stringify(old)!==JSON.stringify(p.p_antes)||(p.p_unidade_id&&JSON.stringify(unit)!==JSON.stringify(p.p_unidade_antes)))return {error:{message:'CLIENTE_CONFLITO'}};
   table('leads').set(p.p_id,copy(p.p_depois));if(p.p_unidade_id)table('unidades').set(p.p_unidade_id,copy(p.p_unidade_depois));table('clientes_historico').set(p.p_evento.id,copy(p.p_evento));return {data:copy(p.p_depois)};
  }const old=table('unidades').get(p.p_id);if(JSON.stringify(old)!==JSON.stringify(p.p_antes))return{error:{message:'RESERVA_CONFLITO'}};table('unidades').set(p.p_id,copy(p.p_depois));table('reservas_historico').set(p.p_evento.id,copy(p.p_evento));table('reservas').delete(p.p_id);return{data:copy(p.p_depois)};}};
  const rc=vm.createContext({sb,getStore,crypto,Date});vm.runInContext(source('supabase/functions/dmd-api/reservas-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export function','function').replaceAll('export async function','async function')+';globalThis.executar=executarReservas;',rc);
  const cc=vm.createContext({sb,getStore,crypto,Date});vm.runInContext(source('supabase/functions/dmd-api/clientes-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export async function','async function')+';globalThis.executar=executarClienteCadastro;',cc);
- const context=vm.createContext({crypto,Buffer,Date,Math,SEED:[],sb,executarClienteCadastro:cc.executar,executarReservas:rc.executar,connectLambda:()=>{},getStore,Deno:{env:{get:k=>k==='DMD_TOKEN'?'fake-gate':undefined}}});
+ const pc=vm.createContext({sb,getStore,crypto,Date});vm.runInContext(source('supabase/functions/dmd-api/precos-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export async function','async function')+';globalThis.executar=executarPrecos;',pc);
+ const context=vm.createContext({crypto,Buffer,Date,Math,SEED:[],sb,executarClienteCadastro:cc.executar,executarReservas:rc.executar,executarPrecos:pc.executar,connectLambda:()=>{},getStore,Deno:{env:{get:k=>k==='DMD_TOKEN'?'fake-gate':undefined}}});
  const load=p=>{const code=source(p).replace(/^import .+;\n/gm,'').replace('export const handler','const handler');const c=vm.createContext({...context});vm.runInContext(code+';globalThis.testHandler=handler;',c);return c.testHandler;};
  const api=load('supabase/functions/dmd-api/api-core.mjs'),pub=load('supabase/functions/dmd-p/p-core.mjs');
  return {table,reads,publicGet:async(query={})=>pub({httpMethod:'GET',path:'/pp-aaaaaaaaaaaaaaaa',headers:{},queryStringParameters:query}),request:async(action,body={},user='domo')=>{const r=await api({httpMethod:'POST',headers:{'x-token':'fake-gate'},body:JSON.stringify({action,...body,...(user?{auth:{usuario:user,senhaHash:'fake'}}:{})})});return {status:r.statusCode,...JSON.parse(r.body)};},pub:async(body={},query={})=>{const r=await pub({httpMethod:'POST',path:'/pp-aaaaaaaaaaaaaaaa',headers:{},queryStringParameters:query,body:JSON.stringify(body)});return {status:r.statusCode,...JSON.parse(r.body)};}};

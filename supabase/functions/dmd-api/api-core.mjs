@@ -3,6 +3,7 @@
 import { getStore, connectLambda, sb } from '../_shared/blobs-shim.mjs';
 import { executarClienteCadastro } from './clientes-api.mjs';
 import { executarReservas } from './reservas-api.mjs';
+import { executarPrecos } from './precos-api.mjs';
 import { executarVagas } from './vagas-api.mjs';
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
@@ -213,9 +214,15 @@ export const handler = async (event) => {
     enviosEv: getStore('enviosEv'), // 1 blob por interação (append sem RMW — nunca se perde)
     leads: getStore('leads'), // CRM: clientes/leads do corretor
     reservas: getStore('reservas'), // pedidos de reserva pendentes (key = unidadeId) — evita 2 corretores pedirem o mesmo apto
+    precos_historico: getStore('precos_historico'),
   };
 
   try {
+    if (['precosPrevia', 'precosAplicar', 'precosHistorico'].includes(action)) {
+      const adm = await validarUsuario(stores.cfg, body.auth, true);
+      if (!adm) return json(403, { erro: 'apenas administrador' });
+      return await executarPrecos(body, adm, json);
+    }
     if(action === 'vagas') {
       const usr=await validarUsuario(stores.cfg,body.auth,false);
       if(!usr || (body.operacao !== 'paraProposta' && !ehSuper(usr)))return json(403,{erro:'Acesso restrito à gestão Diamond.'});
@@ -286,7 +293,7 @@ export const handler = async (event) => {
       // Backup completo: as stores de REGISTROS, achatadas com `_col`, numa
       // paginação única (cursor "store|key"). Binários (fotos, PDFs) ficam de
       // fora — como em todos os backups do hub.
-      const ORDEM = ['unidades', 'propostas', 'leads', 'reservas', 'envios', 'enviosEv', 'cfg'];
+      const ORDEM = ['unidades', 'propostas', 'leads', 'reservas', 'envios', 'enviosEv', 'cfg', 'precos_historico'];
       const [aStore, aKey] = String(body.after || '').split('|');
       const registros = [];
       let nextAfter = null;
@@ -340,17 +347,37 @@ export const handler = async (event) => {
       if (!u.unidade) return json(400, { erro: 'unidade sem número' });
       const id = 'u-' + String(u.unidade);
       const existente = await stores.unidades.get(id, { type: 'json' });
+      if (existente?.precoVersao && u.precoVersao !== existente.precoVersao) {
+        const mudouPreco = Object.hasOwn(u, 'precoBase') && Number(u.precoBase || 0) !== Number(existente.precoBase || 0);
+        const mudouDesconto = Object.hasOwn(u, 'desconto') && Number(u.desconto || 0) !== Number(existente.desconto || 0);
+        if (mudouPreco || mudouDesconto) return json(200, { conflito: true, servidor: existente });
+      }
       if (existente && u.atualizadoEm && existente.atualizadoEm > u.atualizadoEm) {
         return json(200, { conflito: true, servidor: existente });
       }
       if(u.status!==existente?.status&&(u.status==='Reservado'||existente?.status==='Reservado'))return json(409,{erro:'Use a aba Reservas para alterar esta situação.'});
       const grava = { ...existente, ...u, id, atualizadoPor: adm.usuario };
+      // Price revision is owned by the versioning operation, never by an offline edit.
+      if (existente?.precoVersao) grava.precoVersao = existente.precoVersao;
+      else delete grava.precoVersao;
       // regra 4 do blueprint: NÃO reescrever atualizadoEm do cliente
       if (!grava.atualizadoEm) grava.atualizadoEm = now();
       if(existente){
         const {error}=await sb.rpc('dmd_reserva_confirmar',{p_id:id,p_antes:existente,p_depois:grava,p_evento:{id:crypto.randomUUID(),unidadeId:id,unidade:grava.unidade,acao:'atualizar',em:now(),por:grava.atualizadoPor,motivo:'Atualização da unidade',antes:{status:existente.status},depois:{status:grava.status}},p_pedido_em:null,p_vagas_revisao:null,p_vagas_estado:null,p_resolver_pedido:grava.status==='Reservado'||grava.status==='Vendido'});
         if(error)return json(409,{erro:'A unidade mudou durante a gravação. Atualize e tente novamente.'});
-      }else await stores.unidades.setJSON(id,grava);
+      }else {
+        // Creation shares the price-version config lock, so the new row belongs
+        // to exactly one current table and cannot appear halfway through repricing.
+        const { data, error } = await sb.rpc('dmd_unidade_criar', { p_id: id, p_unidade: grava });
+        if (error) {
+          if (/CONFLITO/.test(error.message || '')) {
+            const servidor = await stores.unidades.get(id, { type: 'json' });
+            if (servidor) return json(200, { conflito: true, servidor });
+          }
+          return json(503, { erro: 'Não foi possível criar a unidade. Tente novamente.' });
+        }
+        Object.assign(grava, data);
+      }
       // resolveu o status → o pedido de reserva pendente cumpriu seu papel e sai do espelho
       return json(200, { ok: true, unidade: grava });
     }
@@ -570,9 +597,14 @@ export const handler = async (event) => {
       if (!adm) return json(403, { erro: 'apenas administrador' });
       // MESCLA com a cfg existente (nunca apaga campos não enviados — evita clobber por save parcial)
       const atual = (await stores.cfg.get('cfg', { type: 'json' })) || { ...DEFAULT_CFG };
-      const c = { ...atual, ...(body.cfg || {}), atualizadoEm: now() };
-      await stores.cfg.setJSON('cfg', c);
-      return json(200, { ok: true, cfg: c });
+      const patch = { ...(body.cfg || {}) };
+      // An old photo/config payload must not reactivate a retired multiplier or table.
+      for (const campo of ['reajuste', 'versao', 'dataTabela', 'precosRevisao', 'precosModelo', 'tabelaId', 'corretorGeralHash']) delete patch[campo];
+      const c = { ...atual, ...patch, atualizadoEm: now() };
+      const { error } = await sb.rpc('dmd_cfg_salvar', { p_antes: atual, p_depois: c });
+      if (error) return json(/CONFLITO/.test(error.message || '') ? 409 : 503, { erro: 'A configuração mudou ou não pôde ser salva. Atualize e tente novamente.' });
+      const { corretorGeralHash, ...publica } = c;
+      return json(200, { ok: true, cfg: publica });
     }
 
     // ---------- usuários (corretores) ----------
@@ -739,6 +771,7 @@ export const handler = async (event) => {
       const usr = await validarUsuario(stores.cfg, body.auth, false);
       if (!usr || !ehSuper(usr)) return json(403, { erro: 'sem permissão' });
       const cfg = (await stores.cfg.get('cfg', { type: 'json' })) || { ...DEFAULT_CFG };
+      const cfgAntes = { ...cfg };
       const ch = String(body.senhaHash || '').trim();
       if (!ch) { delete cfg.corretorGeralHash; }
       else {
@@ -746,7 +779,8 @@ export const handler = async (event) => {
         cfg.corretorGeralHash = guardaSenha(ch);
       }
       cfg.atualizadoEm = now();
-      await stores.cfg.setJSON('cfg', cfg);
+      const { error } = await sb.rpc('dmd_cfg_salvar', { p_antes: cfgAntes, p_depois: cfg });
+      if (error) return json(/CONFLITO/.test(error.message || '') ? 409 : 503, { erro: 'A configuração mudou ou não pôde ser salva. Atualize e tente novamente.' });
       return json(200, { ok: true, temSenhaCorretorGeral: !!cfg.corretorGeralHash });
     }
     if (action === 'setSenhaEquipe') {

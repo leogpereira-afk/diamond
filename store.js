@@ -329,6 +329,22 @@ const STORE = (() => {
     emit('dados', { tipo: 'cfg' });
     enqueue({ action: 'setCfg', cfg: c });
   }
+  // Uma tabela de preços só entra no cache depois de confirmada pela nuvem.
+  // O mesmo operacaoId pode ser reenviado após timeout sem cobrar duas vezes.
+  async function aplicarTabelaPrecos(dados) {
+    if (!navigator.onLine) throw Error('Conecte-se à internet para salvar a nova tabela.');
+    if (filaGet().some(x => x.action === 'upsert' || x.action === 'setCfg')) {
+      throw Error('Aguarde a sincronização das unidades e configurações antes de reajustar.');
+    }
+    const usuario = getUser()?.usuario;
+    const r = await api('precosAplicar', dados);
+    if (getUser()?.usuario !== usuario) throw Error('A sessão mudou. Entre novamente para consultar a tabela salva.');
+    if (!r.ok || !r.cfg || !Array.isArray(r.unidades)) throw Error('Não foi possível confirmar a nova tabela. Consulte o histórico antes de tentar novamente.');
+    lsSet(K.cfg, r.cfg);
+    lsSet(K.un, r.unidades);
+    emit('dados', { tipo: 'precos' });
+    return r;
+  }
   function salvarProposta(p) {
     const lista = getPropostas();
     const i = lista.findIndex((x) => x.id === p.id);
@@ -606,7 +622,7 @@ const STORE = (() => {
           }
           if (res && res.conflito) {
             // servidor mais novo vence; aplica e notifica
-            if (item.action === 'upsert') aplicaUnidade(res.servidor);
+            if (item.action === 'upsert') aplicaUnidade(res.servidor, true);
             if (item.action === 'upsertProposta') aplicaProposta(res.servidor);
             if (item.action === 'upsertLead') { aplicaLead(res.servidor); emit('dados', { tipo: 'leads' }); }
             _ultimoErro = null; // a nuvem respondeu (venceu a versão dela); não é falha de envio
@@ -615,6 +631,7 @@ const STORE = (() => {
             continue;
           }
           removeDaFila(item);
+          if (item.action === 'setCfg' && res?.cfg && !filaGet().some(x => x.action === 'setCfg')) lsSet(K.cfg, res.cfg);
           delete _falhas[sig];
           _ultimoErro = null; // um item subiu: a nuvem está aceitando de novo
         } catch (e) {
@@ -631,10 +648,10 @@ const STORE = (() => {
     }
   }
 
-  function aplicaUnidade(remota) {
+  function aplicaUnidade(remota, forcar = false) {
     const lista = getUnidades();
     const i = lista.findIndex((u) => u.id === remota.id);
-    if (i >= 0) { if ((remota.atualizadoEm || '') >= (lista[i].atualizadoEm || '')) lista[i] = remota; }
+    if (i >= 0) { if (forcar || (remota.atualizadoEm || '') >= (lista[i].atualizadoEm || '')) lista[i] = remota; }
     else lista.push(remota);
     lsSet(K.un, lista);
   }
@@ -664,6 +681,12 @@ const STORE = (() => {
       vistas.add(r.id);
       if (excluidas.has(r.id)) continue;
       const local = porId.get(r.id), nova = r.atualizadoEm || '', anterior = local?.atualizadoEm || '';
+      if (chave === K.un && r.precoVersao && r.precoVersao !== local?.precoVersao) {
+        // A revisão financeira do servidor prevalece sobre o relógio do aparelho.
+        // Edições pendentes dos demais campos continuam na fila para conferência.
+        porId.set(r.id, pendentes.has(r.id) && local ? {...local, precoBase:r.precoBase, desconto:r.desconto, precoVersao:r.precoVersao} : r);
+        continue;
+      }
       if (!local || (somenteMaisNovas ? nova > anterior : nova >= anterior)) porId.set(r.id, r);
     }
     const agora = Date.now();
@@ -703,18 +726,43 @@ const STORE = (() => {
         const interno = sess.papel !== 'cliente', como = _como();
         const results = await Promise.allSettled([
           lerPaginas('list', 'unidades', {}, escopo),
-          filaGet().some(x => x.action === 'setCfg') ? null : api('getCfg'),
+          api('getCfg'),
           interno ? lerPaginas('listPropostas', 'propostas', { comoCorretor: como }, escopo) : null,
           interno && (sess.papel === 'admin' || como) ? api('listLeads', { comoCorretor: como }) : null,
           interno ? api('listReservas') : null,
         ]);
         if (escopo !== escopoLeitura()) return;
+        const protegerPar = () => {
+          const falha = results.slice(0, 2).find(x => x.status === 'rejected');
+          if (falha) results[0] = results[1] = falha;
+        };
+        protegerPar();
+        // As duas leituras podem atravessar uma mudança de tabela. Não misturar
+        // os preços de uma versão com o cabeçalho/multiplicador de outra.
+        const tabelaCoerente = (un, config) => un.status !== 'fulfilled' || config.status !== 'fulfilled' ||
+          (un.value || []).every(u => (u.precoVersao || '') === (config.value?.cfg?.tabelaId || ''));
+        if (!tabelaCoerente(results[0], results[1])) {
+          const novas = await Promise.allSettled([lerPaginas('list', 'unidades', {}, escopo), api('getCfg')]);
+          if (escopo !== escopoLeitura()) return;
+          results[0] = novas[0]; results[1] = novas[1];
+          protegerPar();
+          if (!tabelaCoerente(results[0], results[1])) {
+            const motivo = new Error('A tabela está sendo atualizada. Aguarde a próxima sincronização.');
+            results[0] = results[1] = { status: 'rejected', reason: motivo };
+          }
+        }
         const [un, config, prop, crm, reservas] = results;
         let mudou = false;
         if (un.status === 'fulfilled') mudou = aplicaLote(K.un, un.value, 'del', 'upsert', 'unidade', false, true);
-        if (config.status === 'fulfilled' && config.value && !filaGet().some(x => x.action === 'setCfg')) {
+        if (config.status === 'fulfilled' && config.value) {
           const rc = config.value, cfgLocal = getCfg();
-          if (!cfgLocal || (rc.cfg.atualizadoEm || '') > (cfgLocal.atualizadoEm || '')) { lsSet(K.cfg, rc.cfg); mudou = true; }
+          if (filaGet().some(x => x.action === 'setCfg')) {
+            const c = {...cfgLocal};
+            for (const k of ['dataTabela','versao','reajuste','tabelaId','precosRevisao','precosModelo']) {
+              if (k in rc.cfg) c[k] = rc.cfg[k]; else delete c[k];
+            }
+            if (JSON.stringify(c) !== JSON.stringify(cfgLocal)) { lsSet(K.cfg, c); mudou = true; }
+          } else if (!cfgLocal || rc.cfg.tabelaId !== cfgLocal.tabelaId || (rc.cfg.atualizadoEm || '') > (cfgLocal.atualizadoEm || '')) { lsSet(K.cfg, rc.cfg); mudou = true; }
           lsSet(K.usuarios, rc.usuarios || []);
           if (rc.temSenhaCorretorGeral !== undefined) lsSet('dv_temGeral', !!rc.temSenhaCorretorGeral);
           const atual = getUser();
@@ -754,7 +802,7 @@ const STORE = (() => {
     getLeads, pullLeads, salvarLead, excluirLead, listEnvios, salvarCadastroCliente,
     getReservas, pullReservas, pedirReserva, excluirReserva,
     getUnidades, getCfg, getPropostas, getUsuarios, unidadePorId,
-    salvarUnidade, salvarCfg, salvarProposta, excluirProposta, reatribuirCorretor,
+    salvarUnidade, salvarCfg, aplicarTabelaPrecos, salvarProposta, excluirProposta, reatribuirCorretor,
     anexarFotoTipo, girarFotoTipo, anexarFotoEmp, removerFotoEmp, moverFotoEmp, vincularAmenFoto, obterFoto, comprimir,
     anexarFotoApart, trocarFotoApart, renomearApart, removerApart, moverApart,
     anexarLogo, removerLogo, anexarLogoDe, removerLogoDe, ehDomo, podeVerPainel, setVendedor,

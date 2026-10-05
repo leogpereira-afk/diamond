@@ -23,7 +23,9 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-  const valorTabela = (u, cfg) => (u.precoBase || 0) * (1 + ((cfg && cfg.reajuste) || 0));
+  // Preço materializado acompanha a unidade mesmo se a configuração em cache
+  // ainda for da tabela antiga ou a unidade passar a reservada/vendida.
+  const valorTabela = (u, cfg) => (u.precoBase || 0) * (u.precoVersao ? 1 : (1 + ((cfg && cfg.reajuste) || 0)));
   const valorNegociadoTabela = (u, cfg) => valorTabela(u, cfg) * (1 - (u.desconto || 0));
   // ACESSO CLIENTE: só a tabela (unidade/andar/área/status) e a apresentação do prédio.
   // O que fica liberado é configurável em ADM → Config. Nada de CRM, proposta, simulador ou reserva.
@@ -2548,13 +2550,7 @@
       return `<select class="e-vendedor"><option value="|">— quem vendeu?</option>${vendedores.map((v) => { const k = v.empresa + '|' + v.nome; return `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(v.nome)}${v.empresa ? ' · ' + esc(v.empresa) : ' · Domo'}</option>`; }).join('')}${(u.vendedorNome && !conhecido) ? `<option value="${esc(cur)}" selected>${esc(u.vendedorNome)}${u.vendedorEmpresa ? ' · ' + esc(u.vendedorEmpresa) : ''} (antigo)</option>` : ''}</select>`;
     };
     $('#aba-corpo').innerHTML = `
-      <div class="cfg-rapida">
-        <label>Data da tabela<input id="c-data" value="${esc(cfg.dataTabela || '')}"></label>
-        <label>Versão<input id="c-versao" value="${esc(cfg.versao || '')}"></label>
-        <label>Reajuste geral (%)<input id="c-reaj" type="number" step="0.1" value="${((cfg.reajuste || 0) * 100).toFixed(1)}"></label>
-        <button class="btn-lime" id="c-salvar">Aplicar</button>
-        <span class="nota">o reajuste multiplica o preço base de TODAS as unidades</span>
-      </div>
+      <section id="precos-tabela"></section>
       <details class="bloco-fotos"><summary>Fotos por tipo de planta <span class="nota" style="font-weight:400">— configura uma vez; valem para todas as unidades do final</span></summary>
       <div class="tipos-strip">${['01', '02', '03', '04', '05', '06', '07', '08', 'LOJA'].map((t) => `
         <div class="tipo-slot">
@@ -2582,13 +2578,11 @@
             <td class="td-salvar"><button class="btn-mini e-salvar">salvar</button></td>
           </tr>`).join('')}</tbody>
       </table></div>`;
-    $('#c-salvar').onclick = () => {
-      // aplicar re-renderiza a tabela inteira → avisa se há edições de linha pendentes que seriam perdidas
-      if (_sujo && !confirm('Há edições de unidade não salvas nesta tabela que serão perdidas ao aplicar.\n\nAplicar o reajuste/versão mesmo assim?')) return;
-      STORE.salvarCfg({ ...(STORE.getCfg() || {}), dataTabela: $('#c-data').value, versao: $('#c-versao').value, reajuste: (parseFloat($('#c-reaj').value) || 0) / 100 }); // relê cfg fresca no clique
-      _sujo = false;
-      toast('Config aplicada ✓'); vAdmin('unidades');
-    };
+    window.DiamondPrecos.mount($('#precos-tabela'), {
+      temEdicao: () => $$('.adm-un tbody tr').some(linhaDifere),
+      marcarEdicao: () => { _sujo = true; },
+      salvo: () => { _sujo = false; toast('Nova tabela salva na nuvem ✓'); render(); },
+    });
     $$('.adm-un tbody tr').forEach((tr) => {
       const id = tr.dataset.id;
       const statusSel = $('.e-status', tr);
