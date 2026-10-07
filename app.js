@@ -1175,7 +1175,7 @@
               <label>1º balão no mês<input id="s-balp" type="number" value="${inp.balPrimeiro}"></label>
               <label>Repete a cada (meses)<input id="s-bali" type="number" value="${inp.balIntervalo}"></label>
               <label>Entrega (chaves) — mês<input id="s-chaves" type="number" value="${inp.chavesMes}"></label>` : ''}
-              <label>Comissão<select id="s-comissao"><option value="padrao" ${!inp.semComissao?'selected':''}>Com comissão (${pctStr(inp.corretagemPct)})</option><option value="sem" ${inp.semComissao?'selected':''}>Sem comissão</option></select><span class="hint">Nesta proposta. O valor do imóvel permanece igual.</span></label>
+              <label>Comissão<select id="s-comissao"><option value="padrao" ${!inp.semComissao?'selected':''}>Com comissão (${pctStr(inp.corretagemPct)})</option><option value="sem" ${inp.semComissao?'selected':''}>Sem comissão</option></select><span class="nota sim-comissao-nota">Nesta proposta. O valor do imóvel permanece igual.</span></label>
               <label>Índice de correção<select id="s-indice">${['INCC', 'IPCA'].map((x) => `<option ${inp.indice === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
             </div>
             <div id="s-avisos" role="status">${avisosHTML()}</div>
