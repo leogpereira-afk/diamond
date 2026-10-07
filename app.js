@@ -1061,6 +1061,11 @@
     const cfg = STORE.getCfg() || {};
     const u = STORE.unidadePorId(unidadeId);
     if (!u) { app().innerHTML = '<div class="vazio">Unidade não encontrada. <a href="#/home">voltar</a></div>'; return; }
+    if(propostaId&&!STORE.getPropostas().some(p=>p.id===propostaId)){
+      sim=null;
+      app().innerHTML='<div class="vazio">A proposta ainda não está disponível neste dispositivo. Aguarde a sincronização ou abra novamente pelo histórico. <a href="#/admin/historico">Ver propostas</a></div>';
+      return;
+    }
     if (!sim || sim.unidadeId !== unidadeId || sim.rotaPropostaId !== propostaId) {
       sim = { unidadeId, propostaId, rotaPropostaId: propostaId, inp: inputsPadrao(u, cfg), tabela: window.DiamondProposta.tabelas(u,cfg,[])[0], tabelas: [], historicoEstado: 'inicial' };
       if (propostaId) {

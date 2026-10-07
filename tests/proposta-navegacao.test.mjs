@@ -71,7 +71,7 @@ function simulador() {
   ctx.testSim.abrir();
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   return {
-    propostas, estado: () => ctx.testSim.estado(),
+    propostas, estado: () => ctx.testSim.estado(), temSalvar: () => !!document.querySelector('#s-salvar'),
     input(selector, value) {
       const node = document.querySelector(selector);
       assert.ok(node, selector + ' deve existir');
@@ -133,4 +133,12 @@ test('rota explícita de edição reabre o registro salvo e mantém seu ID ao sa
   assert.equal(s.propostas.length, 1);
   assert.equal(s.propostas[0].id, id);
   assert.equal(s.propostas[0].cliente, 'Cliente A atualizado');
+});
+
+test('edição de proposta ausente não abre formulário novo com o ID antigo', async () => {
+  const s = simulador();
+  await s.navegar('#/sim/u-403?editar=registro-ainda-nao-carregado');
+  assert.equal(s.temSalvar(), false);
+  assert.equal(s.estado(), null);
+  assert.equal(s.propostas.length, 0);
 });
