@@ -66,6 +66,9 @@
     const linhas = [];
     const add = (rotulo, valor) => { if (valor !== undefined && valor !== null && valor !== '') linhas.push(`<div><dt>${esc(rotulo)}</dt><dd>${esc(valor)}</dd></div>`); };
     if(p.vaga)add('Vaga de garagem', vagaTexto(p.vaga));
+    if(p.tabela){add('Tabela escolhida',p.tabela.versao||'Versão não registrada');add('Data da tabela',p.tabela.dataTabela||'Não registrada');}
+    if(i.semComissao===true)add('Comissão','Sem comissão');
+    else if(i.corretagemPct!=null)add('Comissão',pctStr(i.corretagemPct)+' · '+(i.quemPagaCorretagem||'Construtora'));
     if (p.forma === 'scp') {
       add('Modalidade', 'SCP');
       // propostas antigas guardam desc10/p12/p2412 (10% e 12 fixos); as novas guardam o número digitado
@@ -1046,6 +1049,9 @@
       chavesMes: cfg.chavesMes ?? 36,
       dataProposta: hoje(), diaVenc: cfg.diaVenc ?? 10,
       indice: cfg.indice || 'INCC',
+      semComissao: false, corretagemPct: (cfg.corretagem || 0) * 100,
+      quemPagaCorretagem: cfg.quemPaga || 'Construtora',
+      correcaoMensal: cfg.correcaoMensal || 0, correcaoDesde: cfg.correcaoDesde || 1,
     };
   }
   let sim = null; // estado do simulador corrente
@@ -1055,31 +1061,37 @@
     const cfg = STORE.getCfg() || {};
     const u = STORE.unidadePorId(unidadeId);
     if (!u) { app().innerHTML = '<div class="vazio">Unidade não encontrada. <a href="#/home">voltar</a></div>'; return; }
-    if (!sim || sim.unidadeId !== unidadeId || sim.propostaId !== propostaId) {
-      sim = { unidadeId, propostaId, inp: inputsPadrao(u, cfg) };
+    if (!sim || sim.unidadeId !== unidadeId || sim.rotaPropostaId !== propostaId) {
+      sim = { unidadeId, propostaId, rotaPropostaId: propostaId, inp: inputsPadrao(u, cfg), tabela: window.DiamondProposta.tabelas(u,cfg,[])[0], tabelas: [], historicoEstado: 'inicial' };
       if (propostaId) {
         const p = STORE.getPropostas().find((x) => x.id === propostaId);
         if (p) {
-          sim.inp = { ...sim.inp, ...p.inp, cliente: p.cliente, clienteTel: p.clienteTel };
+          sim.inp = { ...sim.inp, ...p.inp, cliente: p.cliente || '', clienteTel: p.clienteTel || '' };
           sim.vaga = p.vaga || null;
           sim.criadoEm = p.criadoEm; // preserva a data original da proposta ao re-salvar
-          sim.negSalvo = p.neg > 0 ? p.neg : 0; // reabre com o valor exato que a proposta guardou
+          sim.original = p;
+          // Propostas antigas não registraram a versão. Preservar o valor sem atribuir a tabela atual.
+          sim.tabela = p.tabela ? {...p.tabela, key:'salva', neg:p.neg} : {key:'salva',versao:'',dataTabela:'',neg:p.neg,valorTabela:null,desconto:null,origem:'sem_registro',observacao:'Esta proposta não guardou a versão da tabela. O valor salvo foi preservado.'};
           if (p.corretor) sim.corretorKey = (p.corretorUsuario || '') + '|' + p.corretor; // reabre já no corretor da proposta
         }
       }
     }
     const inp = sim.inp;
-    // valor: em proposta reaberta usa o valor salvo (fiel ao que o cliente recebeu); senão, o da Tabela
-    const neg = sim.negSalvo || valorNegociadoTabela(u, cfg);
-    const plano = PLANO.calc({
-      neg, forma: inp.forma,
-      entradaPct: inp.entradaPct / 100, finalPct: inp.finalPct / 100,
-      nParcelas: inp.nParcelas, balQtde: inp.balQtde, balValor: inp.balValor,
-      balPrimeiro: inp.balPrimeiro, balIntervalo: inp.balIntervalo,
-      chavesMes: inp.chavesMes, correcaoMensal: cfg.correcaoMensal || 0,
-      correcaoDesde: cfg.correcaoDesde || 1,
-      dataProposta: new Date(inp.dataProposta + 'T12:00:00'), diaVenc: inp.diaVenc,
-    });
+    let neg, plano, comissao, liquido;
+    const calcular = () => {
+      neg = Number(sim.tabela?.neg || 0);
+      plano = PLANO.calc({
+        neg, forma: inp.forma, entradaPct: inp.entradaPct / 100, finalPct: inp.finalPct / 100,
+        nParcelas: inp.nParcelas, balQtde: inp.balQtde, balValor: inp.balValor,
+        balPrimeiro: inp.balPrimeiro, balIntervalo: inp.balIntervalo,
+        chavesMes: inp.chavesMes, correcaoMensal: inp.correcaoMensal || 0,
+        correcaoDesde: inp.correcaoDesde || 1,
+        dataProposta: new Date(inp.dataProposta + 'T12:00:00'), diaVenc: inp.diaVenc,
+      });
+      comissao = window.DiamondProposta.comissao(inp,cfg,neg);
+      liquido = plano.totalNominal - (comissao.quemPaga === 'Construtora' ? comissao.valor : 0);
+    };
+    calcular();
     const user = STORE.getUser();
     // AUTORIA DA PROPOSTA — o admin escolhe em nome de qual corretor a proposta sai (padrão: ele mesmo).
     // Propostas NOVAS gravam o corretor escolhido; propostas já existentes mantêm o autor original (regra do servidor).
@@ -1094,10 +1106,30 @@
     };
     // se o corretor da proposta reaberta não está na lista (ex.: renomeado), inclui como 1ª opção p/ não sumir
     if (!rosterCorr.some((r) => (r.usuario + '|' + r.nome) === sim.corretorKey)) rosterCorr.unshift(resolveCorr());
-    const corretagem = neg * (cfg.corretagem || 0);
-    // líquido bate com o que aparece na tela: Total nominal (= valor negociado) − corretagem
-    const liquido = plano.totalNominal - (cfg.quemPaga === 'Construtora' ? corretagem : 0);
     const perso = inp.forma === 'perso';
+    const resumoHTML = () => `<h3>Resumo</h3><p class="sim-referencia">${sim.tabela?.versao ? 'Tabela '+esc(sim.tabela.versao)+' · '+esc(sim.tabela.dataTabela || 'Data não registrada') : 'Valor da proposta salva · tabela não registrada'}</p><div class="linhas">
+      <div><span>Entrada${perso ? ' ('+pctStr(inp.entradaPct)+')' : ''} · ${fmtData(plano.cronograma[0]?.data)}</span><b>${fmt(plano.ent,2)}</b></div>
+      ${plano.nParc ? `<div><span>Parcelas mensais (${plano.nParc}x)</span><b>${fmt(plano.vParc,2)}</b></div>` : ''}
+      ${plano.balQtde ? `<div><span>Balões (${plano.balQtde}x)</span><b>${fmt(plano.balValor,2)}</b></div>` : ''}
+      ${plano.fin ? `<div><span>Parcela final${perso ? ' ('+pctStr(inp.finalPct)+')' : ''} · mês ${plano.chavesMes}</span><b>${fmt(plano.fin,2)}</b></div>` : ''}
+      ${perso && !plano.balQtde && !plano.fin ? '<div class="sim-sem-balao"><span>Sem balão e sem parcela final</span><b>Saldo nas mensais</b></div>' : ''}
+      <div><span>Total nominal</span><b>${fmt(plano.totalNominal,2)}</b></div>
+      ${STORE.isAdmin() ? `<div><span>${inp.semComissao ? 'Sem comissão' : 'Corretagem '+pctStr(comissao.percentual)+' ('+esc(comissao.quemPaga)+')'}</span><b class="${comissao.valor?'neg':''}">${fmt(comissao.valor,2)}</b></div><div class="destaque"><span>LÍQUIDO DA VENDA</span><b>${fmt(liquido,2)}</b></div>` : ''}
+      </div>`;
+    const cronogramaHTML = () => `<h3>Cronograma</h3><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Mês</th><th>Vencimento</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${plano.cronograma.filter(l=>l.total>0).map(l=>{
+      const de=[];if(l.entrada)de.push(perso?'Entrada ('+pctStr(inp.entradaPct)+')':'Entrada / sinal');if(l.parcela)de.push('Parcela mensal');if(l.balao)de.push('Balão');if(l.chaves)de.push('Parcela final'+(perso?' ('+pctStr(inp.finalPct)+')':''));
+      return `<tr><td>${l.m}</td><td>${fmtData(l.data)}</td><td>${de.join(' + ')}</td><td>${fmt(l.total,2)}</td></tr>`;
+    }).join('')}</tbody><tfoot><tr><td colspan="3">TOTAL</td><td>${fmt(plano.totalNominal,2)}</td></tr></tfoot></table></div>`;
+    const avisosHTML = () => `${plano.parcelaNegativa ? '<div class="aviso">Entrada, parcela final e balões ultrapassam o valor negociado.</div>' : !plano.fecha ? '<div class="aviso">O plano não fecha com o valor negociado. Confira os valores.</div>' : ''}`;
+    const atualizarResultados = () => {
+      calcular();
+      $('#s-resumo').innerHTML=resumoHTML();$('#s-cronograma').innerHTML=cronogramaHTML();$('#s-avisos').innerHTML=avisosHTML();
+      $('#s-valor-tabela').textContent=fmt(sim.tabela?.valorTabela,2);$('#s-valor-negociado').textContent=fmt(neg,2);
+      const diluir=$('#s-diluir');if(diluir)diluir.disabled=inp.finalPct===0&&inp.balQtde===0;
+      const desconto=$('#s-desconto');if(desconto)desconto.textContent=sim.tabela?.desconto == null ? 'Não registrado' : pct(sim.tabela.desconto);
+      for(const [id,valor,sufixo] of [['s-entpct',plano.ent,''],['s-finpct',plano.fin,''],['s-nparc',plano.vParc,'/mês']]){const hint=$('#'+id)?.parentElement.querySelector('.hint');if(hint)hint.textContent=fmt(valor,2)+sufixo;}
+      sim.atualizarSalvamento?.();
+    };
 
     app().innerHTML = `
       <div class="sim">
@@ -1114,11 +1146,12 @@
             <div class="linhas">
               <div><span>Andar</span><b>${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</b></div>
               <div><span>Área</span><b>${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—'}</b></div>
-              <div><span>Valor de tabela</span><b>${fmt(valorTabela(u, cfg))}</b></div>
-              ${u.desconto ? `<div><span>Desconto da unidade</span><b>${pct(u.desconto)}</b></div>` : ''}
-              <div class="destaque"><span>VALOR NEGOCIADO</span><b>${fmt(neg)}</b></div>
+              <div><span>Valor da tabela escolhida</span><b id="s-valor-tabela">${fmt(sim.tabela?.valorTabela,2)}</b></div>
+              <div><span>Desconto na tabela escolhida</span><b id="s-desconto">${sim.tabela?.desconto == null ? 'Não registrado' : pct(sim.tabela.desconto)}</b></div>
+              <div class="destaque"><span>VALOR NEGOCIADO</span><b id="s-valor-negociado">${fmt(neg,2)}</b></div>
             </div>
 
+            <section id="s-tabela-box" class="sim-tabela-box" aria-label="Tabela de preços da proposta"></section>
             <h3>Negociação</h3>
             <div class="form">
               <label>Cliente<input id="s-cliente" value="${esc(inp.cliente)}" placeholder="nome do cliente"></label>
@@ -1130,6 +1163,7 @@
             </div>
 
             <h3>Pagamento</h3>
+            ${perso ? `<div class="sim-pagamento-atalho"><button type="button" class="btn-lime" id="s-diluir" ${inp.finalPct===0 && inp.balQtde===0 ? 'disabled' : ''}>Diluir balão nas parcelas</button>${sim.antesDiluir ? '<button type="button" class="btn-mini" id="s-restaurar">Restaurar balão</button>' : ''}<span class="nota">Distribui a parcela final e os balões nas mensais. Mantém a entrada e a quantidade de parcelas.</span></div>` : ''}
             <div class="form">
               <label>Forma<select id="s-forma">${PLANO.FORMAS.map((f) => `<option value="${f.id}" ${inp.forma === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}</select></label>
               ${perso ? `
@@ -1141,42 +1175,21 @@
               <label>1º balão no mês<input id="s-balp" type="number" value="${inp.balPrimeiro}"></label>
               <label>Repete a cada (meses)<input id="s-bali" type="number" value="${inp.balIntervalo}"></label>
               <label>Entrega (chaves) — mês<input id="s-chaves" type="number" value="${inp.chavesMes}"></label>` : ''}
+              <label>Comissão<select id="s-comissao"><option value="padrao" ${!inp.semComissao?'selected':''}>Com comissão (${pctStr(inp.corretagemPct)})</option><option value="sem" ${inp.semComissao?'selected':''}>Sem comissão</option></select><span class="hint">Nesta proposta. O valor do imóvel permanece igual.</span></label>
               <label>Índice de correção<select id="s-indice">${['INCC', 'IPCA'].map((x) => `<option ${inp.indice === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
             </div>
-            ${plano.parcelaNegativa ? '<div class="aviso">⚠ Entrada + parcela final + balões passam de 100% — a parcela mensal ficou negativa.</div>' : ''}
-            ${!plano.fecha && !plano.parcelaNegativa ? '<div class="aviso">⚠ O plano não fecha com o valor negociado — confira parcelas e balões.</div>' : ''}
+            <div id="s-avisos" role="status">${avisosHTML()}</div>
             ${u.status === 'Vendido' ? '<div class="aviso">⚠ Esta unidade está VENDIDA.</div>' : ''}
           </div>
 
           <div class="painel">
-            <h3>Resumo</h3>
-            <div class="linhas">
-              <div><span>Entrada${perso ? ' (' + pctStr(inp.entradaPct) + ')' : ''} · ${fmtData(plano.cronograma[0] && plano.cronograma[0].data)}</span><b>${fmt(plano.ent)}</b></div>
-              ${plano.nParc ? `<div><span>Parcelas mensais (${plano.nParc}x)</span><b>${fmt(plano.vParc, 2)}</b></div>` : ''}
-              ${plano.balQtde ? `<div><span>Balões (${plano.balQtde}x)</span><b>${fmt(plano.balValor)}</b></div>` : ''}
-              ${plano.fin ? `<div><span>Parcela final${perso ? ' (' + pctStr(inp.finalPct) + ')' : ''} · mês ${plano.chavesMes}</span><b>${fmt(plano.fin)}</b></div>` : ''}
-              <div><span>Total nominal</span><b>${fmt(plano.totalNominal)}</b></div>
-              ${STORE.isAdmin() ? `
-              <div><span>(−) Corretagem ${pct(cfg.corretagem || 0)} (${esc(cfg.quemPaga || '')})</span><b class="neg">${fmt(corretagem)}</b></div>
-              <div class="destaque"><span>LÍQUIDO DA VENDA</span><b>${fmt(liquido)}</b></div>` : ''}
-            </div>
+            <div id="s-resumo" aria-live="polite">${resumoHTML()}</div>
             <div class="acoes">
               <button class="btn" id="s-salvar">💾 Salvar proposta</button>
               <button class="btn" id="s-pdf">📄 PDF</button>
             </div>
-            <h3>Cronograma</h3>
-            <div class="tabela-wrap"><table class="tabela">
-              <thead><tr><th>Mês</th><th>Vencimento</th><th>Descrição</th><th>Valor</th></tr></thead>
-              <tbody>${plano.cronograma.filter((l) => l.total > 0).map((l) => {
-                const de = [];
-                if (l.entrada) de.push(perso ? 'Entrada (' + pctStr(inp.entradaPct) + ')' : 'Entrada / sinal');
-                if (l.parcela) de.push('Parcela mensal');
-                if (l.balao) de.push('Balão');
-                if (l.chaves) de.push('Parcela final' + (perso ? ' (' + pctStr(inp.finalPct) + ')' : ''));
-                return `<tr><td>${l.m}</td><td>${fmtData(l.data)}</td><td>${de.join(' + ')}</td><td>${fmt(l.total, 2)}</td></tr>`;
-              }).join('')}</tbody>
-              <tfoot><tr><td colspan="3">TOTAL</td><td>${fmt(plano.totalNominal)}</td></tr></tfoot>
-            </table></div>
+            <p class="nota" id="s-salvo" role="status"></p>
+            <div id="s-cronograma">${cronogramaHTML()}</div>
           </div>
         </div>
       </div>`;
@@ -1203,18 +1216,40 @@
       };
     }
 
-    const liga = (id, campo, num) => { const el = $(id); if (!el) return; el.onchange = () => { sim.inp[campo] = num ? parseFloat(el.value) || 0 : el.value; vSim(unidadeId, propostaId); }; };
-    { const sc = $('#s-corretor'); if (sc) sc.onchange = (e) => { sim.corretorKey = e.target.value; _simCorretorKey = e.target.value; }; } // troca o autor (e lembra p/ as próximas)
-    liga('#s-cliente', 'cliente'); liga('#s-clientetel', 'clienteTel');
-    liga('#s-data', 'dataProposta'); liga('#s-dia', 'diaVenc', 1);
-    liga('#s-forma', 'forma'); liga('#s-indice', 'indice');
-    liga('#s-entpct', 'entradaPct', 1); liga('#s-finpct', 'finalPct', 1); liga('#s-nparc', 'nParcelas', 1);
-    liga('#s-balq', 'balQtde', 1); liga('#s-balv', 'balValor', 1); liga('#s-balp', 'balPrimeiro', 1);
-    liga('#s-bali', 'balIntervalo', 1); liga('#s-chaves', 'chavesMes', 1);
+    // Entradas atualizam só os resultados, preservando foco e cliques no formulário.
+    const liga = (id,campo,num) => {const el=$(id);if(!el)return;el.oninput=()=>{inp[campo]=num?(parseFloat(el.value)||0):el.value;_sujo=true;atualizarResultados();};};
+    const contexto=sim, renderId=Symbol('sim');sim.renderId=renderId;
+    const redesenhar=()=>vSim(unidadeId,propostaId);
+    const pintarTabelas=()=>{
+      const box=$('#s-tabela-box');if(!box||sim!==contexto||sim.renderId!==renderId)return;
+      const escolhida=sim.tabela;
+      const igual=t=>t.versao===escolhida?.versao&&t.dataTabela===escolhida?.dataTabela&&t.tabelaId===escolhida?.tabelaId&&t.neg===escolhida?.neg&&t.desconto===escolhida?.desconto;
+      const opcoes=[...(escolhida?[{...escolhida,key:'selecionada'}]:[]),...sim.tabelas.filter(t=>!igual(t))];
+      box.innerHTML=`<label for="s-tabela">Versão da tabela para esta proposta</label><select id="s-tabela">${opcoes.map(t=>`<option value="${esc(t.key)}">${t.key==='selecionada'?'Em uso · ':''}${esc(t.versao||'Valor salvo sem versão')}${t.dataTabela?' · '+esc(t.dataTabela):''} · ${fmt(t.neg,2)}${t.origem==='reconstruida'?' · base reconstruída':''}</option>`).join('')}</select><p class="nota" role="status">${escolhida?.observacao?esc(escolhida.observacao):'A escolha altera somente esta proposta e será identificada no PDF.'}</p>${sim.historicoEstado==='carregando'?'<p class="nota" role="status">Consultando versões anteriores…</p>':sim.historicoEstado==='erro'?'<p class="aviso">Não foi possível carregar as versões anteriores. O valor em uso foi mantido.</p><button type="button" class="btn-mini" id="s-tabela-retentar">Tentar novamente</button>':''}`;
+      $('#s-tabela').onchange=e=>{const t=opcoes.find(x=>x.key===e.target.value);if(!t)return;sim.tabela={...t};_sujo=true;pintarTabelas();atualizarResultados();};
+      const retry=$('#s-tabela-retentar');if(retry)retry.onclick=carregarTabelas;
+    };
+    const carregarTabelas=async()=>{
+      if(sim.historicoEstado==='carregando')return;sim.historicoEstado='carregando';pintarTabelas();
+      try{const r=await STORE.api('precosHistorico');if(sim!==contexto)return;if(!Array.isArray(r.historico))throw Error('Histórico incompleto');sim.tabelas=window.DiamondProposta.tabelas(u,cfg,r.historico);sim.historicoEstado='pronto';}
+      catch(e){if(sim!==contexto)return;sim.historicoEstado='erro';}
+      sim.pintarTabelas?.();
+    };
+    sim.pintarTabelas=pintarTabelas;
+    pintarTabelas();if(sim.historicoEstado==='inicial')carregarTabelas();
+    {const el=$('#s-corretor');if(el)el.onchange=e=>{sim.corretorKey=e.target.value;_simCorretorKey=e.target.value;_sujo=true;sim.atualizarSalvamento?.();};}
+    liga('#s-cliente','cliente');liga('#s-clientetel','clienteTel');liga('#s-data','dataProposta');liga('#s-dia','diaVenc',1);
+    $('#s-forma').onchange=e=>{inp.forma=e.target.value;_sujo=true;redesenhar();};liga('#s-indice','indice');
+    liga('#s-entpct','entradaPct',1);liga('#s-finpct','finalPct',1);liga('#s-nparc','nParcelas',1);liga('#s-balq','balQtde',1);liga('#s-balv','balValor',1);liga('#s-balp','balPrimeiro',1);liga('#s-bali','balIntervalo',1);liga('#s-chaves','chavesMes',1);
+    $('#s-comissao').onchange=e=>{inp.semComissao=e.target.value==='sem';_sujo=true;atualizarResultados();};
+    const diluir=$('#s-diluir');if(diluir)diluir.onclick=()=>{try{const novo=window.DiamondProposta.diluir(inp);sim.antesDiluir={finalPct:inp.finalPct,balQtde:inp.balQtde,balValor:inp.balValor};Object.assign(inp,novo);_sujo=true;redesenhar();}catch(e){toast(e.message,true);}};
+    const restaurar=$('#s-restaurar');if(restaurar)restaurar.onclick=()=>{Object.assign(inp,sim.antesDiluir);sim.antesDiluir=null;_sujo=true;redesenhar();};
 
     const montaProposta = () => {
       const c = resolveCorr(); // corretor escolhido no seletor (resolvido na hora de salvar/gerar)
       return {
+        ...sim.original,
+        tabela: {...sim.tabela},
         id: sim.propostaId || ('p-' + Date.now() + '-' + u.unidade), vaga: sim.vaga || null,
         unidadeId: u.id, unidade: u.unidade, area: u.area,
         cliente: inp.cliente.trim(), clienteTel: inp.clienteTel.trim(),
@@ -1224,23 +1259,47 @@
       };
     };
     const valida = () => {
+      calcular();
+      if(!neg || !Number.isFinite(neg)){toast('Selecione uma tabela com preço válido para a unidade.',true);return false;}
       if (!inp.cliente.trim()) { toast('Preencha o nome do cliente.', true); return false; }
       if (u.status === 'Vendido' && !STORE.isAdmin()) { toast('Unidade vendida — fale com o administrador.', true); return false; }
+      if (inp.forma==='perso' && [inp.entradaPct,inp.finalPct,inp.nParcelas,inp.balQtde,inp.balValor,inp.balPrimeiro,inp.balIntervalo,inp.chavesMes].some(n=>!Number.isFinite(n)||n<0)){toast('Confira os valores do pagamento: não use números negativos.',true);return false;}
       if (plano.parcelaNegativa) { toast('Ajuste o plano: entrada + parcela final + balões passam de 100%.', true); return false; }
       if (!plano.fecha) { toast('O plano não fecha com o valor negociado — confira parcelas e balões.', true); return false; }
       return true;
     };
-    $('#s-salvar').onclick = () => {
+    sim.atualizarSalvamento=()=>{
+      if(sim!==contexto||sim.renderId!==renderId||!sim.salvamento)return;
+      const estado=$('#s-salvo');if(!estado)return;
+      const {p,corretorKey}=sim.salvamento;
+      const pendente=STORE.filaGet().some(x=>x.action==='upsertProposta'&&x.proposta?.id===p.id);
+      const local=STORE.getPropostas().find(x=>x.id===p.id);
+      const igual=local?.neg===p.neg&&local?.cliente===p.cliente&&JSON.stringify(local?.tabela)===JSON.stringify(p.tabela)&&JSON.stringify(local?.inp)===JSON.stringify(p.inp);
+      const erroSync=STORE.status().estado==='erro';
+      const mudou=JSON.stringify(inp)!==JSON.stringify(p.inp)||JSON.stringify(sim.tabela)!==JSON.stringify(p.tabela)||sim.corretorKey!==corretorKey;
+      estado.textContent=mudou?'Você fez novas alterações. Salve novamente para registrá-las.':!igual?'A proposta mudou na nuvem. Reabra o registro antes de continuar.':erroSync?'Não foi possível confirmar a sincronização. Confira o aviso no topo.':pendente?'Salva neste dispositivo. Aguardando sincronização com a nuvem.':'✓ Proposta salva na nuvem com a tabela e as condições escolhidas.';
+      if(!mudou&&igual&&!erroSync&&!pendente)_sujo=false;
+    };
+    sim.atualizarSalvamento();
+    $('#s-salvar').onclick = async () => {
       if (!valida()) return;
       const p = montaProposta();
-      STORE.salvarProposta(p);
-      sim.propostaId = p.id;
-      toast('Proposta salva ✓');
+      const b=$('#s-salvar'),estado=$('#s-salvo');b.disabled=true;
+      try{
+        const salva=STORE.salvarProposta(p);sim.propostaId=p.id;sim.criadoEm=p.criadoEm;sim.original=salva;
+        sim.salvamento={p,corretorKey:sim.corretorKey};
+        estado.textContent='Proposta salva neste dispositivo. Sincronizando…';
+        await STORE.trySync();
+        if(contexto===sim)sim.atualizarSalvamento?.();
+      }catch(e){if(contexto===sim&&estado.isConnected)estado.textContent='Não foi possível confirmar a gravação: '+e.message;}
+      finally{b.disabled=false;}
     };
     $('#s-pdf').onclick = async () => {
       if (!valida()) return;
-      const { doc, nome } = await gerarPDF(montaProposta(), plano, cfg);
-      doc.save(nome);
+      const b=$('#s-pdf');b.disabled=true;
+      try{const {doc,nome}=await gerarPDF(montaProposta(),plano,cfg);doc.save(nome);}
+      catch(e){toast('Não foi possível gerar o PDF: '+e.message,true);}
+      finally{b.disabled=false;}
     };
     // (botão WhatsApp removido — voltará quando integrar a API oficial do WhatsApp)
   }
@@ -1285,6 +1344,7 @@
     doc.addImage(logo.dataUrl, logo.fmt, CX - lw / 2, baseY - lh, lw, lh);
   }
   async function gerarPDF(p, plano, cfg) {
+    if(p.tabela)cfg={...cfg,versao:p.tabela.versao||'versão não registrada',dataTabela:p.tabela.dataTabela||'data não registrada'};
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const W = 595, H = 842, M = 40;
@@ -1337,6 +1397,8 @@
     const validade = new Date(propData.getTime()); validade.setDate(validade.getDate() + 7);
     const area = p.area ? ' · ' + p.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '';
     const fichas = [
+      ...(p.tabela ? [[['Tabela escolhida',p.tabela.versao||'Não registrada'],['Data da tabela',p.tabela.dataTabela||'Não registrada']]] : []),
+      ...(p.inp?.semComissao ? [[['Comissão','Sem comissão'],['Condição','Nesta proposta']]] : []),
       ...(p.vaga ? [[['Vaga', p.vaga.codigo], ['Pavimento', p.vaga.pavimento]]] : []),
       [['Cliente', p.cliente || '—'], ['Telefone', p.clienteTel || '—']],
       [['Corretor', p.corretor || '—'], ['Telefone', p.corretorTel || '—']],
@@ -1402,6 +1464,8 @@
       doc.text(fmt(l.total, 2), col[3] - 6, y + 12, { align: 'right' });
       y += 16;
     }
+    // O total e as duas notas precisam caber juntos, inclusive com a ficha ampliada.
+    if (y + 46 > H - 24) { doc.addPage(); pag++; cab(pag); y = CTOP; }
     doc.setFillColor(LIME[0], LIME[1], LIME[2]); doc.rect(M, y, W - 2 * M, 20, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(26, 26, 26);
     doc.text('TOTAL', col[0] + 6, y + 14);
@@ -4128,7 +4192,7 @@
     vHome();
   }
 
-  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', () => { sim=null; render(); window.scrollTo(0, 0); });
   document.addEventListener('click', (e) => {
     if (!_sujo || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const a = e.target.closest && e.target.closest('a[href^="#/"]');
@@ -4137,13 +4201,14 @@
   });
   window.addEventListener('beforeunload', (e) => { if (_sujo) { e.preventDefault(); e.returnValue = ''; } }); // fechar/recarregar com edição pendente
   STORE.on('sync', atualizaSync);
+  STORE.on('sync',()=>{if(location.hash.startsWith('#/sim/'))sim?.atualizarSalvamento?.();});
   // leads mudaram (pull/sync trouxe novidade) → repinta só a lista do CRM, sem re-render da rota
   STORE.on('dados', (d) => { if (d && d.tipo === 'leads' && !_sujo && _crm.lista && $(_crm.lista)) crmPinta(); });
   STORE.iniciar(() => {
     const h = location.hash;
     if (_sujo) return; // há edição não salva na tela (ex.: vendedor/preço escolhidos, card do CRM em digitação) — não re-renderiza
     if (h.startsWith('#/admin/painel') || document.querySelector('dialog[open]')) return;
-    if (_painelEquipe || h.startsWith('#/sim/') || document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; // não destruir digitação nem o painel de equipe (fora de rota)
+    if (_painelEquipe || (h.startsWith('#/sim/') && $('#s-cliente')) || document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return; // não destruir digitação; permite carregar uma proposta aberta antes dos dados
     render();
   });
   render();

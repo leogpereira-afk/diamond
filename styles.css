@@ -961,3 +961,16 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
  .gestao-corretores input, .gestao-corretores select { font-size:16px; }
  .gestao-corretores .cor-senha-grupo button { width:100%; }
 }
+
+/* Escolhas da proposta: tabela, distribuição do saldo e comissão. */
+.sim-tabela-box { margin:20px 0; padding:16px; border:1px solid #d9df9b; border-left:4px solid #bdd229; border-radius:12px; background:#fafce9; }
+.sim-tabela-box > label { display:block; font-weight:700; margin-bottom:8px; color:#343b10; }
+.sim-tabela-box select { width:100%; min-height:44px; font-size:14px; background:#fff; }
+.sim-tabela-box p { margin:8px 0 0; line-height:1.45; }
+.sim-pagamento-atalho { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:12px 0 18px; }
+.sim-pagamento-atalho .nota { flex:1 1 100%; line-height:1.45; }
+.sim-pagamento-atalho button:disabled { opacity:.5; cursor:default; }
+.sim-referencia { margin:-2px 0 14px; color:#4c5915; font-weight:600; font-size:13px; }
+.sim-sem-balao { color:#346932; background:#f0f8ec; border-radius:6px; padding-left:8px!important; padding-right:8px!important; }
+#s-salvo:not(:empty) { padding:10px 12px; background:#f3f6e6; border-radius:8px; line-height:1.4; }
+@media(max-width:600px){ .sim-tabela-box{padding:12px}.sim-pagamento-atalho button{width:100%}.sim-grid>.painel{min-width:0}#s-resumo .linhas>div{gap:10px; flex-wrap:wrap} }
