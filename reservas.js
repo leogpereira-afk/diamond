@@ -75,11 +75,11 @@
     if(!dialog.isConnected||!dialog.open)return;
     if(sessao()!==usuario){dialog.close();return;}
     const items=pdfsDaReserva(envios,u,r);
-    if(!items.length){content.innerHTML='<div class="rs-pdf-empty"><strong>Nenhum PDF localizado para este cliente e apartamento.</strong><p>Arquivos baixados e enviados por fora da plataforma só aparecem aqui se também foram registrados em Envios.</p><a href="#/admin/envios">Consultar Envios</a></div>';return;}
+    if(!items.length){content.innerHTML='<div class="rs-pdf-empty"><strong>Nenhum PDF localizado para este cliente e apartamento.</strong><p>Arquivos baixados e enviados por fora da plataforma só aparecem aqui se também foram registrados no CRM.</p><a href="#/admin/envios">Consultar CRM</a></div>';return;}
     content.innerHTML=`<p class="rs-note">${items.some(x=>x.vinculo==='nome')?'Localizados pelo nome e apartamento. Confira o destinatário e a data antes de abrir.':'Arquivos vinculados ao cadastro da proposta ou do cliente.'}</p><div class="rs-pdf-list">${items.map(({envio:e,vinculo})=>{
      const url=String(window.P_URL).replace(/\/$/,'')+'/'+e.id;
      return `<article class="rs-pdf-item"><div><strong>Proposta ${e.numero?'#'+esc(e.numero):'· '+esc(e.id.slice(-8))}</strong><span>${esc(e.cliente)} · Apto ${esc(e.unidade)}</span><span>Link criado em ${esc(fmt(e.em))}</span><small>${esc(e.corretor||'Corretor não informado')}${e.empresa?' · '+esc(e.empresa):''}</small>${e.resumo?.modalidade?`<small>${esc(e.resumo.modalidade)}</small>`:''}</div><div class="rs-pdf-actions"><a class="rs-pdf-open" target="_blank" rel="noopener" href="${esc(url+'?pdf=1&preview=1')}">Abrir PDF original ↗</a><a href="#/admin/envios?envio=${encodeURIComponent(e.id)}">Ver acompanhamento</a></div></article>`;
-    }).join('')}</div><p class="rs-note">É o arquivo original salvo em Envios. Esta consulta não conta como abertura do cliente. O registro do link, sozinho, não confirma a entrega no WhatsApp.</p>`;
+    }).join('')}</div><p class="rs-note">É o arquivo original salvo no CRM. Esta consulta não conta como abertura do cliente. O registro do link, sozinho, não confirma a entrega no WhatsApp.</p>`;
    }catch(e){
     if(!dialog.isConnected||!dialog.open)return;
     if(sessao()!==usuario){dialog.close();return;}

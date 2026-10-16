@@ -20,7 +20,7 @@ test('atualização da rota de Envios preserva a query e pode retirar o deep lin
 test('Limpar filtros zera os controles visíveis e mantém fila vazia explícita quando havia query',()=>{
  const controls=Object.fromEntries(['q','de','ate','corretor','empresa','modalidade'].map(k=>['#env-'+k,{value:'preenchido'}]));
  const state=E.resetControls({querySelector:k=>controls[k]});
- assert.deepEqual({...state},{fila:'',q:''});
+ assert.deepEqual({...state},{fila:'',q:'',ordem:'recentes'});
  assert.ok(Object.values(controls).every(x=>x.value===''));
  assert.equal(E.writeRoute('#/admin/envios?fila=pendente&q=ana',{fila:'',q:'',dropEnvio:true}),'#/admin/envios?fila=');
 });

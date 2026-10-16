@@ -1,6 +1,6 @@
 /* Entradas estáveis para a gestão, sem ampliar as permissões de cada área. */
 (function(root){
-  const entries=[['painel','Painel','◫'],['vendas','Unidades e vendas','▦'],['reservas','Reservas','◷'],['clientes','Clientes','♙'],['historico','Propostas','▤'],['envios','Envios','↗'],['vagas','Garagem','▥'],['corretores','Corretores','♧']];
+  const entries=[['painel','Painel','◫'],['vendas','Unidades e vendas','▦'],['reservas','Reservas','◷'],['clientes','Clientes','♙'],['historico','Propostas','▤'],['envios','CRM','↗'],['vagas','Garagem','▥'],['corretores','Corretores','♧']];
   const admin=[['unidades','Preços e unidades'],['predio','Empreendimento'],['config','Configurações'],['saude','Diagnóstico']];
   function active(hash){const route=String(hash||'').split('?')[0];if(route.startsWith('#/admin/'))return route.slice(8);if(route.startsWith('#/proposta/'))return 'historico';if(route.startsWith('#/cliente/')||route==='#/clientes')return 'clientes';if(route.startsWith('#/conexoes/'))return 'vendas';return '';}
   function html({allowed=false,isAdmin=false,hash=''}={}){

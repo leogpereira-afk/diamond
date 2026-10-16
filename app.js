@@ -2604,8 +2604,8 @@
     if (!STORE.podeVerPainel()) { location.hash = '#/home'; return; }
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
-      ? [['painel', 'Painel de gestão'], ['vendas', 'Unidades e vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'Envios']]
-      : [['painel', 'Painel de gestão'], ['unidades', 'Preços e unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'Envios'], ['saude', 'Saúde']];
+      ? [['painel', 'Painel de gestão'], ['vendas', 'Unidades e vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'CRM']]
+      : [['painel', 'Painel de gestão'], ['unidades', 'Preços e unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'CRM'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
       <div class="admin">
