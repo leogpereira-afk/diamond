@@ -87,6 +87,26 @@
     content.querySelector('#rs-pdfs-retry').onclick=carregar;
    }
   }
+  const candidatos=(S.getPropostas?.()||[]).filter(p=>String(p.unidade)===String(u.unidade)&&String(p.cliente||'').trim().toLocaleLowerCase()===String(r.cliente||'').trim().toLocaleLowerCase());
+  if(candidatos.length){
+   const anexo=document.createElement('section');anexo.className='rs-note';
+   anexo.innerHTML=`<h3>Anexar PDF à proposta</h3><p>Escolha a proposta correspondente ao arquivo. O PDF será guardado no CRM sem enviar mensagem ao cliente.</p><select aria-label="Proposta do anexo">${candidatos.map((p,i)=>`<option value="${i}">${esc(p.cliente)} · ${esc(Number(p.neg).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))} · ${esc(p.criadoEm||p.id)}</option>`).join('')}</select><input type="file" accept="application/pdf,.pdf" aria-label="PDF da proposta"><button type="button">Anexar PDF</button><p role="status"></p>`;
+   dialog.append(anexo);const btn=anexo.querySelector('button'),status=anexo.querySelector('[role="status"]');
+   btn.onclick=async()=>{
+    const file=anexo.querySelector('input').files[0],p=candidatos[Number(anexo.querySelector('select').value)];
+    if(!file||!p){status.textContent='Escolha a proposta e o PDF.';return;}
+    if(file.size>3*1024*1024){status.textContent='O limite é 3 MB.';return;}
+    btn.disabled=true;
+    try{
+     const bytes=new Uint8Array(await file.arrayBuffer());if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw Error('Escolha um PDF válido.');
+     if(sessao()!==usuario)throw Error('A sessão mudou. Abra a reserva novamente.');
+     let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+     const result=await S.api('putPropostaPdf',{base64:btoa(binary),propostaId:p.id,leadId:p.leadId||'',unidade:p.unidade,valor:p.neg,area:p.area,andar:p.andar,cliente:p.cliente,telefone:p.clienteTel||r.telefone||'',corretor:p.corretor,corretorTel:p.corretorTel,empresa:p.corretorEmpresa||'',comoCorretor:S.getUser()?.corretorAtivo?.nome||''});
+     if(result.ok!==true||!/^pp-[a-f0-9]{16,}$/.test(result.id||''))throw Error('O servidor não confirmou o anexo.');
+     status.textContent='PDF anexado e disponível no CRM.';anexo.querySelector('input').value='';await carregar();
+    }catch(e){status.textContent=e.message||'Não foi possível anexar.';}finally{btn.disabled=false;}
+   };
+  }
   await carregar();
  }
 
