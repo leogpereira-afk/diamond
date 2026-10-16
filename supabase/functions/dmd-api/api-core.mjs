@@ -423,7 +423,7 @@ export const handler = async (event) => {
       let _buf; try { _buf = Buffer.from(String(body.base64), 'base64'); } catch (e) { _buf = null; }
       if (!_buf || _buf.length > 3 * 1024 * 1024) return json(413, { erro: 'PDF inválido ou grande demais (máx 3 MB)' });
       if (_buf.slice(0, 5).toString('latin1') !== '%PDF-') return json(400, { erro: 'arquivo não é um PDF' }); // só aceita PDF de verdade
-      const id = 'pp-' + crypto.randomBytes(12).toString('hex'); // 24 hex — inadivinhável (é a credencial do link)
+
       const unidade = String(body.unidade || '').slice(0, 20);
       const proposta = body.propostaId ? await stores.propostas.get(String(body.propostaId),{type:'json'}) : null;
       if(!proposta) return json(409,{erro:'Confirme a gravação da proposta antes de gerar o link.'});
@@ -436,11 +436,22 @@ export const handler = async (event) => {
         const lead=await stores.leads.get(String(body.leadId),{type:'json'});
         if(!lead || proposta.leadId!==body.leadId) return json(409,{erro:'Confirme o vínculo do cliente antes de gerar o link.'});
       }
+      // Reserva uma operação durável antes do upload. Repetir os mesmos bytes
+      // retoma o mesmo documento, inclusive após resposta perdida ou falha parcial.
+      const operacoes = getStore('pdf_operacoes');
+      const chave = sha(JSON.stringify([usr.usuario, proposta.id || body.propostaId, crypto.createHash('sha256').update(_buf).digest('hex'), body.origem || 'gerado']));
+      await operacoes.insertJSON(chave, { id: 'pp-' + crypto.randomBytes(12).toString('hex'), em: now() });
+      const operacao = await operacoes.get(chave, {type:'json'});
+      if(!operacao?.id) throw Error('Não foi possível reservar o arquivamento.');
+      const id = operacao.id;
+      const existente = await stores.envios.get(id,{type:'json'});
+      if(existente) return json(200,{ok:true,id,numero:existente.numero,repetida:true});
       const r=proposta.resumoEnvio;
       const resumo=r&&Array.isArray(r.itens)?{modalidade:String(r.modalidade||proposta.formaLabel||'').slice(0,80),vaga:proposta.vaga?String(proposta.vaga.codigo||'')+' · '+String(proposta.vaga.pavimento||''):'',validade:/^\d{4}-\d{2}-\d{2}$/.test(r.validade)?r.validade:null,itens:r.itens.slice(0,15).map(x=>({rotulo:String(x.rotulo||'').slice(0,80),valor:String(x.valor||'').slice(0,240)}))}:null;
       const numero = await stores.envios.nextEnvioNumber();
       await stores.propostasPdf.setJSON(id, { base64: body.base64, unidade, em: now() }); // PDF (pesado)
-      await stores.envios.setJSON(id, { // analytics (leve) — sem base64
+      await stores.envios.insertJSON(id, { // analytics (leve) — sem base64
+        origem: body.origem === 'anexado' ? 'anexado' : 'gerado',
         numero, resumo, // condições imutáveis do documento gerado
         unidade, valor: Number(body.valor) || 0, area: Number(body.area) || 0, andar: Number.isFinite(+body.andar) ? +body.andar : null, // teaser da landing (sem abrir o PDF)
         logoId: String(body.logoId || '').slice(0, 80), // logo da imobiliária → aparece na landing
@@ -451,7 +462,9 @@ export const handler = async (event) => {
         leadId: String(body.leadId || '').slice(0, 60), // amarra ao cliente no CRM → o sinal volta pro corretor certo
         por: usr.usuario, em: now(), views: 0, firstView: null, lastView: null, eventos: [],
       });
-      return json(200, { ok: true, id, numero });
+      const confirmado = await stores.envios.get(id,{type:'json'});
+      if(!confirmado) throw Error('O arquivamento não foi confirmado. Tente novamente.');
+      return json(200, { ok: true, id, numero: confirmado.numero });
     }
     // numera as propostas (envios) existentes que ainda não têm número, por ORDEM de criação. Admin, single-writer, idempotente.
     // Só numera as SEM número (preserva os já atribuídos pelo contador do putPropostaPdf), começando após o maior existente.

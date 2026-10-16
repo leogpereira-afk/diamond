@@ -56,6 +56,15 @@
    return[{envio:e,vinculo:'nome'}];
   }).sort((a,b)=>(Date.parse(b.envio.em)||0)-(Date.parse(a.envio.em)||0));
  }
+ function propostasDaReserva(propostas,u,r={}){
+  const normalizaNome=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+  return propostas.filter(p=>{
+   if(String(p.unidade)!==String(u.unidade))return false;
+   if(r.propostaId)return p.id===r.propostaId;
+   if(r.leadId)return p.leadId===r.leadId;
+   return !!normalizaNome(r.cliente)&&normalizaNome(p.cliente)===normalizaNome(r.cliente);
+  });
+ }
  async function abrirPdfs(u,r={},opener){
   if(!S.podeVerPainel())return;
   document.querySelector('#rs-pdfs')?.close();
@@ -78,8 +87,8 @@
     if(!items.length){content.innerHTML='<div class="rs-pdf-empty"><strong>Nenhum PDF localizado para este cliente e apartamento.</strong><p>Arquivos baixados e enviados por fora da plataforma só aparecem aqui se também foram registrados no CRM.</p><a href="#/admin/envios">Consultar CRM</a></div>';return;}
     content.innerHTML=`<p class="rs-note">${items.some(x=>x.vinculo==='nome')?'Localizados pelo nome e apartamento. Confira o destinatário e a data antes de abrir.':'Arquivos vinculados ao cadastro da proposta ou do cliente.'}</p><div class="rs-pdf-list">${items.map(({envio:e,vinculo})=>{
      const url=String(window.P_URL).replace(/\/$/,'')+'/'+e.id;
-     return `<article class="rs-pdf-item"><div><strong>Proposta ${e.numero?'#'+esc(e.numero):'· '+esc(e.id.slice(-8))}</strong><span>${esc(e.cliente)} · Apto ${esc(e.unidade)}</span><span>Link criado em ${esc(fmt(e.em))}</span><small>${esc(e.corretor||'Corretor não informado')}${e.empresa?' · '+esc(e.empresa):''}</small>${e.resumo?.modalidade?`<small>${esc(e.resumo.modalidade)}</small>`:''}</div><div class="rs-pdf-actions"><a class="rs-pdf-open" target="_blank" rel="noopener" href="${esc(url+'?pdf=1&preview=1')}">Abrir PDF original ↗</a><a href="#/admin/envios?envio=${encodeURIComponent(e.id)}">Ver acompanhamento</a></div></article>`;
-    }).join('')}</div><p class="rs-note">É o arquivo original salvo no CRM. Esta consulta não conta como abertura do cliente. O registro do link, sozinho, não confirma a entrega no WhatsApp.</p>`;
+     return `<article class="rs-pdf-item"><div><strong>Proposta ${e.numero?'#'+esc(e.numero):'· '+esc(e.id.slice(-8))}</strong><span>${esc(e.cliente)} · Apto ${esc(e.unidade)}</span><span>Link criado em ${esc(fmt(e.em))}</span><small>${e.origem==='anexado'?'PDF anexado':e.origem==='gerado'?'Gerado pelo sistema':'Arquivo histórico'}</small><small>${esc(e.corretor||'Corretor não informado')}${e.empresa?' · '+esc(e.empresa):''}</small>${e.resumo?.modalidade?`<small>${esc(e.resumo.modalidade)}</small>`:''}</div><div class="rs-pdf-actions"><a class="rs-pdf-open" target="_blank" rel="noopener" href="${esc(url+'?pdf=1&preview=1')}">Abrir PDF arquivado ↗</a><a href="#/admin/envios?envio=${encodeURIComponent(e.id)}">Ver acompanhamento</a></div></article>`;
+    }).join('')}</div><p class="rs-note">É a cópia arquivada no CRM; pode incluir anexos ou revisões posteriores. Esta consulta não conta como abertura do cliente. O registro do link, sozinho, não confirma a entrega no WhatsApp.</p>`;
    }catch(e){
     if(!dialog.isConnected||!dialog.open)return;
     if(sessao()!==usuario){dialog.close();return;}
@@ -87,7 +96,7 @@
     content.querySelector('#rs-pdfs-retry').onclick=carregar;
    }
   }
-  const candidatos=(S.getPropostas?.()||[]).filter(p=>String(p.unidade)===String(u.unidade)&&String(p.cliente||'').trim().toLocaleLowerCase()===String(r.cliente||'').trim().toLocaleLowerCase());
+  const candidatos=propostasDaReserva(S.getPropostas?.()||[],u,r);
   if(candidatos.length){
    const anexo=document.createElement('section');anexo.className='rs-note';
    anexo.innerHTML=`<h3>Anexar PDF à proposta</h3><p>Escolha a proposta correspondente ao arquivo. O PDF será guardado no CRM sem enviar mensagem ao cliente.</p><select aria-label="Proposta do anexo">${candidatos.map((p,i)=>`<option value="${i}">${esc(p.cliente)} · ${esc(Number(p.neg).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))} · ${esc(p.criadoEm||p.id)}</option>`).join('')}</select><input type="file" accept="application/pdf,.pdf" aria-label="PDF da proposta"><button type="button">Anexar PDF</button><p role="status"></p>`;
@@ -101,7 +110,7 @@
      const bytes=new Uint8Array(await file.arrayBuffer());if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw Error('Escolha um PDF válido.');
      if(sessao()!==usuario)throw Error('A sessão mudou. Abra a reserva novamente.');
      let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-     const result=await S.api('putPropostaPdf',{base64:btoa(binary),propostaId:p.id,leadId:p.leadId||'',unidade:p.unidade,valor:p.neg,area:p.area,andar:p.andar,cliente:p.cliente,telefone:p.clienteTel||r.telefone||'',corretor:p.corretor,corretorTel:p.corretorTel,empresa:p.corretorEmpresa||'',comoCorretor:S.getUser()?.corretorAtivo?.nome||''});
+     const result=await S.api('putPropostaPdf',{origem:'anexado',base64:btoa(binary),propostaId:p.id,leadId:p.leadId||'',unidade:p.unidade,valor:p.neg,area:p.area,andar:p.andar,cliente:p.cliente,telefone:p.clienteTel||r.telefone||'',corretor:p.corretor,corretorTel:p.corretorTel,empresa:p.corretorEmpresa||'',comoCorretor:S.getUser()?.corretorAtivo?.nome||''});
      if(result.ok!==true||!/^pp-[a-f0-9]{16,}$/.test(result.id||''))throw Error('O servidor não confirmou o anexo.');
      status.textContent='PDF anexado e disponível no CRM.';anexo.querySelector('input').value='';await carregar();
     }catch(e){status.textContent=e.message||'Não foi possível anexar.';}finally{btn.disabled=false;}
@@ -140,5 +149,5 @@
  form.querySelector('[type=submit]').disabled=false;
  form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('[type=submit]');if(button.disabled)return;const body={operacao,unidadeId:u.id,revisao:u.atualizadoEm||'',pedidoEm:pedido?.em||null};for(const key of ['cliente','telefone','corretor','empresa','motivo','vaga'])body[key]=fields[key]?.value||'';if(edit)body.prazo=new Date(fields.prazo.value).toISOString();button.disabled=true;const msg=dialog.querySelector('#rs-error');msg.textContent='Confirmando…';try{await api(body);dialog.close();if(operacao==='reabrir'){await S.pull();location.hash='#/admin/vendas?busca='+encodeURIComponent(u.unidade);}else{location.hash='#/admin/reservas';if(document.querySelector('#aba-corpo'))await render();}}catch(e){erro(msg,e);button.disabled=false;}};
  }
- window.DiamondReservas={render,abrir,lerRota,montarRota,classeReserva,pdfsDaReserva,abrirPdfs};
+ window.DiamondReservas={render,abrir,lerRota,montarRota,classeReserva,pdfsDaReserva,propostasDaReserva,abrirPdfs};
 })();

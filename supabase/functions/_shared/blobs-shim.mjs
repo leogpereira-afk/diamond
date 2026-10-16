@@ -95,7 +95,12 @@ function storeBucket(store) {
   return {
     async get(key, opts) {
       const { data, error } = await sb.storage.from(BUCKET).download(path(key));
-      if (error || !data) return null; // não encontrado = null (semântica do Blobs)
+      if (error) {
+        const status = Number(error.statusCode || error.status);
+        if(status === 404 || error.code === 'NoSuchKey') return null;
+        throw new Error('Não foi possível ler o arquivo no armazenamento. Tente novamente.');
+      }
+      if (!data) throw new Error('O armazenamento retornou uma resposta vazia.');
       const txt = await data.text();
       return (opts && opts.type === 'json') ? JSON.parse(txt) : txt;
     },

@@ -58,7 +58,7 @@ test('ausência de PDF e falha de consulta têm respostas distintas e permitem t
  const empty=dialogSetup(async()=>[]);await empty.open();assert.match(empty.content().innerHTML,/Nenhum PDF localizado/);
  let fail=true;const t=dialogSetup(async()=>{if(fail)throw Error('rede');return[envio];});await t.open();
  assert.match(t.content().innerHTML,/Não foi possível consultar/);assert.doesNotMatch(t.content().innerHTML,/Nenhum PDF/);
- fail=false;await t.content().querySelector('#rs-pdfs-retry').onclick();assert.match(t.content().innerHTML,/Abrir PDF original/);
+ fail=false;await t.content().querySelector('#rs-pdfs-retry').onclick();assert.match(t.content().innerHTML,/Abrir PDF arquivado/);
 });
 test('consulta tardia após sair ou fechar não mostra dados da sessão anterior',async()=>{
  for(const action of ['logout','close']){
@@ -70,3 +70,5 @@ test('consulta tardia após sair ou fechar não mostra dados da sessão anterior
 test('perfil sem acesso ao painel não consulta documentos',async()=>{
  let count=0;const t=dialogSetup(async()=>{count++;return[envio];});t.deny();await t.open();assert.equal(count,0);assert.equal(t.dialog(),undefined);
 });
+
+test('anexo prioriza IDs e normaliza nome somente sem referência',()=>{const ps=[{id:'p1',unidade:'401',cliente:'Nome anterior',leadId:'l1'},{id:'p2',unidade:'401',cliente:'  Ána  de teste '}];assert.equal(R.propostasDaReserva(ps,u,{cliente:'Outro',propostaId:'p1'})[0].id,'p1');assert.equal(R.propostasDaReserva(ps,u,{leadId:'l1'})[0].id,'p1');assert.equal(R.propostasDaReserva(ps,u,r)[0].id,'p2');assert.equal(R.propostasDaReserva(ps,u,{...r,propostaId:'inexistente'}).length,0);assert.equal(R.propostasDaReserva(ps,{unidade:'402'},r).length,0);});
