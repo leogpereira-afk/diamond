@@ -177,8 +177,20 @@ const STORE = (() => {
     }
     const pr=await api('upsertProposta',{proposta:{...proposta,leadId:m.leadId||proposta.leadId||''},comoCorretor:_como()});
     if(pr.conflito||pr.ok!==true)throw Error('A proposta mudou. Atualize antes de enviar.');
-    const r = await api('putPropostaPdf', { base64, comoCorretor:_como(), unidade: m.unidade || '', valor: m.valor || 0, area: m.area || 0, andar: m.andar, cliente: m.cliente || '', corretor: m.corretor || '', corretorTel: m.corretorTel || '', empresa: m.empresa || '', logoId: s.logoId || '', propostaId: m.propostaId || '', leadId: m.leadId || '', auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
+    const r = await api('putPropostaPdf', { base64, comoCorretor:_como(), unidade: m.unidade || '', valor: m.valor || 0, area: m.area || 0, andar: m.andar, cliente: m.cliente || '', telefone: m.telefone || proposta.clienteTel || '', corretor: m.corretor || '', corretorTel: m.corretorTel || '', empresa: m.empresa || '', logoId: s.logoId || '', propostaId: m.propostaId || '', leadId: m.leadId || '', auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
+    if(r.ok!==true||!/^pp-[a-f0-9]{16,}$/.test(r.id||''))throw Error('O servidor não confirmou o armazenamento do PDF. Tente novamente.');
     return window.P_URL + '/' + r.id; // a landing vive na Edge Function dmd-p
+  }
+  // Todo download de proposta arquiva exatamente os mesmos bytes antes de liberá-los.
+  async function arquivarPropostaPdf(base64, proposta) {
+    if(!proposta?.id||!String(proposta.cliente||'').trim())throw Error('Preencha o cliente antes de arquivar a proposta.');
+    salvarProposta(proposta);
+    return enviarPropostaPdf(base64, {
+      propostaId:proposta.id,leadId:proposta.leadId||'',unidade:proposta.unidade,
+      valor:proposta.neg,area:proposta.area,andar:proposta.andar,
+      cliente:proposta.cliente,telefone:proposta.clienteTel,
+      corretor:proposta.corretor,corretorTel:proposta.corretorTel,empresa:proposta.corretorEmpresa
+    });
   }
   // aberturas/interesse dos links (escopado pelo servidor: admin=tudo, master=empresa, corretor=os seus)
   async function listEnvios() { const r = await api('listEnvios', { comoCorretor: _como() }); return r.envios || []; }
@@ -805,7 +817,7 @@ const STORE = (() => {
   return {
     api, sha256, login, logout, getUser, setUser, setCorretorAtivo, setMeusCorretores, trocarMinhaSenha, setSenhaEquipe, enviarPropostaPdf, isAdmin,
     entrarComoUniversal, setSenhaCorretorGeral, temSenhaCorretorGeral: () => lsGet('dv_temGeral', false),
-    getLeads, pullLeads, salvarLead, excluirLead, listEnvios, salvarCadastroCliente,
+    getLeads, pullLeads, salvarLead, excluirLead, arquivarPropostaPdf, listEnvios, salvarCadastroCliente,
     getReservas, pullReservas, pedirReserva, excluirReserva,
     getUnidades, getCfg, getPropostas, getUsuarios, unidadePorId,
     salvarUnidade, salvarCfg, aplicarTabelaPrecos, salvarProposta, excluirProposta, reatribuirCorretor,

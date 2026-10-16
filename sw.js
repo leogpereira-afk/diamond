@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v43';
-const SHELL = ['proposta-domain.js?v=43','precos.js?v=43','precos.css?v=43','clientes-editor.js?v=43','clientes-painel.js?v=43','gestao-domain.js?v=43','gestao.js?v=43','gestao.css?v=43','navegacao.js?v=43','navegacao.css?v=43','vendor/jspdf.umd.min.js?v=43','envios-domain.js?v=43','envios.js?v=43','envios.css?v=43','vagas-disponiveis.js?v=43','./', 'index.html', 'styles.css?v=43', 'config.js?v=43', 'plano.js?v=43', 'store.js?v=43', 'app.js?v=43','reservas.js?v=43','reservas.css?v=43',
-  'vagas-vinculo.js?v=43','vagas-domain.js?v=43','vagas-pdf.js?v=43','vagas.js?v=43','vagas.css?v=43','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v44';
+const SHELL = ['proposta-domain.js?v=44','precos.js?v=44','precos.css?v=44','clientes-editor.js?v=44','clientes-painel.js?v=44','gestao-domain.js?v=44','gestao.js?v=44','gestao.css?v=44','navegacao.js?v=44','navegacao.css?v=44','vendor/jspdf.umd.min.js?v=44','envios-domain.js?v=44','envios.js?v=44','envios.css?v=44','vagas-disponiveis.js?v=44','./', 'index.html', 'styles.css?v=44', 'config.js?v=44', 'plano.js?v=44', 'store.js?v=44', 'app.js?v=44','reservas.js?v=44','reservas.css?v=44',
+  'vagas-vinculo.js?v=44','vagas-domain.js?v=44','vagas-pdf.js?v=44','vagas.js?v=44','vagas.css?v=44','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = [];
 
 self.addEventListener('install', (e) => {

@@ -988,7 +988,7 @@
     $('#u-pdf').onclick = async () => {
       const b = $('#u-pdf'), label = b.textContent;
       b.disabled = true; b.textContent = 'Gerando…';
-      try { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } }
+      try { const r = await preparar(); if (r) { await baixarPropostaArquivada(r.doc,r.nome,r.proposta); toast('PDF salvo no CRM e baixado ✓'); } }
       catch (e) { toast('Não foi possível gerar o PDF: ' + e.message, true); }
       finally { b.disabled = false; b.textContent = label; }
     };
@@ -1308,11 +1308,26 @@
     $('#s-pdf').onclick = async () => {
       if (!valida()) return;
       const b=$('#s-pdf');b.disabled=true;
-      try{const {doc,nome}=await gerarPDF(montaProposta(),plano,cfg);doc.save(nome);}
+      try{const p=montaProposta();p.resumoEnvio=resumoDoPlano(p,plano);const {doc,nome}=await gerarPDF(p,plano,cfg);await baixarPropostaArquivada(doc,nome,p);sim.propostaId=p.id;sim.criadoEm=p.criadoEm;sim.original=STORE.getPropostas().find(x=>x.id===p.id)||p;sim.salvamento={p,corretorKey:sim.corretorKey};if(contexto===sim)sim.atualizarSalvamento?.();toast('PDF salvo no CRM e baixado ✓');}
       catch(e){toast('Não foi possível gerar o PDF: '+e.message,true);}
       finally{b.disabled=false;}
     };
     // (botão WhatsApp removido — voltará quando integrar a API oficial do WhatsApp)
+  }
+
+  async function baixarPropostaArquivada(doc,nome,proposta){
+    const base64=doc.output('datauristring').split(',')[1];
+    await STORE.arquivarPropostaPdf(base64,proposta);
+    doc.save(nome);
+  }
+  function resumoDoPlano(p,plano){
+    const validade=new Date((p.inp.dataProposta||STORE.diaLocalISO(p.criadoEm))+'T12:00:00');validade.setDate(validade.getDate()+7);
+    return{modalidade:plano.formaLabel,validade:STORE.ymdLocal(validade),itens:[
+      {rotulo:'Entrada',valor:fmt(plano.ent,2)},
+      {rotulo:'Parcelas mensais',valor:plano.nParc+' × '+fmt(plano.vParc,2)+' (valores nominais)'},
+      {rotulo:'Balões',valor:plano.balQtde?plano.balQtde+' × '+fmt(plano.balValor,2):'Sem balões'},
+      {rotulo:'Parcela final',valor:fmt(plano.fin,2)+' · mês '+plano.chavesMes},
+      {rotulo:'Correção',valor:p.inp.indice||'INCC'}]};
   }
 
   // Recupera a planta antes de liberar qualquer PDF. A segunda tentativa ignora
@@ -3991,8 +4006,9 @@
     };
     $('#scp-pdf').onclick = async () => {
       if (!validaScp() || !await conferirVaga(_scp)) return;
+      if(!_scp.cliente.trim()){toast('Preencha o nome do cliente para salvar o PDF no CRM.',true);return;}
       const btn = $('#scp-pdf'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'gerando…';
-      try { const { doc, nome } = await gerarPdfScp(u, base, _scp, cfg, ator(), _scp.cliente.trim(), _scp.tel.trim()); doc.save(nome); await registrarScp(); toast('PDF gerado ✓' + (_scp.cliente.trim() ? ' · cliente salvo 👥' : '')); }
+      try { const { doc, nome } = await gerarPdfScp(u, base, _scp, cfg, ator(), _scp.cliente.trim(), _scp.tel.trim()); const p=scpProposta(u,base,_scp,cfg,ator());const cr=await registrarScp(p);if(cr?.id)p.leadId=cr.id;await baixarPropostaArquivada(doc,nome,p);toast('PDF salvo no CRM e baixado ✓'); }
       catch (e) { toast('Erro ao gerar o PDF: ' + e.message, true); }
       finally { btn.disabled = false; btn.textContent = t; }
     };

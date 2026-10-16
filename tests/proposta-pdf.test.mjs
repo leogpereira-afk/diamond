@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const { jsPDF } = require('../vendor/jspdf.umd.min.js');
 
 const fixture = { mime: 'image/jpeg', base64: fs.readFileSync(new URL('../pdf-diamond.jpg', import.meta.url)).toString('base64') };
-function setup({ foto = fixture, obterFoto, unidade = { unidade: '403' } } = {}) {
+function setup({ foto = fixture, obterFoto, arquivarPropostaPdf, unidade = { unidade: '403' } } = {}) {
   function Document(options) {
     const doc = new jsPDF(options), text = doc.text.bind(doc);
     doc.texts = [];
@@ -25,7 +25,7 @@ function setup({ foto = fixture, obterFoto, unidade = { unidade: '403' } } = {})
   const ctx = vm.createContext({
     window: { jspdf: { jsPDF: Document } }, Date, Math, setTimeout, clearTimeout,
     Image: class { set src(value) { this.width = 900; this.height = 550; queueMicrotask(() => value.endsWith(fixture.base64) ? this.onload() : this.onerror()); } },
-    STORE: { unidadePorId: () => unidade, obterFoto: obterFoto || (async () => foto) },
+    STORE: { arquivarPropostaPdf, unidadePorId: () => unidade, obterFoto: obterFoto || (async () => foto) },
   });
   vm.runInContext(source('plano.js'), ctx);
   vm.runInContext(source('proposta-domain.js'), ctx);
@@ -35,10 +35,11 @@ function setup({ foto = fixture, obterFoto, unidade = { unidade: '403' } } = {})
   vm.runInContext(code.slice(0, cut) + `
     imgData = async () => null;
     carregarLogoImob = async () => null;
-    globalThis.pdfTools = { gerarPDF, gerarPropostaSimples, gerarPdfScp };
+    globalThis.pdfTools = { gerarPDF, gerarPropostaSimples, gerarPdfScp, baixarPropostaArquivada };
   })();`, ctx);
   return {
     gerar: ctx.pdfTools.gerarPDF,
+    baixar: ctx.pdfTools.baixarPropostaArquivada,
     simples: ctx.pdfTools.gerarPropostaSimples,
     scp: ctx.pdfTools.gerarPdfScp,
     diluir: ctx.window.DiamondProposta.diluir,
@@ -193,4 +194,11 @@ test('tipo da unidade define a planta, mantendo fallback do cadastro antigo', as
     const expected = cfg.fotosTipo[unidade.unidade === 'LOJA' ? 'LOJA' : unidade.unidade.slice(-2)] || unidade.fotoId;
     assert.deepEqual(calls, [expected]);
   }
+});
+
+test('PDF completo, simples e SCP arquivam os mesmos bytes liberados no download',async()=>{
+  const archives=[],s=setup({arquivarPropostaPdf:async(data,p)=>archives.push({data,id:p.id})}),p=proposta(),u={unidade:'403',precoBase:300000,area:45,andar:4};
+  const docs=[await s.gerar(p,s.plano(p),cfgAtual),await s.simples(u,cfgAtual,'Teste','',{}),await s.scp(u,300000,{},cfgAtual,{},'Teste','')];
+  for(const {doc,nome} of docs){let downloaded;doc.save=()=>{downloaded=doc.output('datauristring').split(',')[1];};await s.baixar(doc,nome,p);assert.equal(downloaded,archives.at(-1).data);assert.equal(archives.at(-1).id,p.id);assert.match(Buffer.from(downloaded,'base64').toString('latin1'),/^%PDF-/);}
+  assert.equal(archives.length,3);
 });
