@@ -15,3 +15,12 @@
 .rs-row[data-state="cancelada"] .rs-deadline strong, .rs-row[data-state="recusado"] .rs-deadline strong { color: #555; background: #f1f1f1; border-color: #d5d5d5; }
 
 .rs-row[data-state="vencida"]{border-left-color:#c62828}.rs-row[data-state="vencida"] .rs-deadline strong{color:#9b2020;background:#fdf0f1;border-color:#e8b8bd}
+
+/* Consulta do documento original na reserva, sem gerar uma nova proposta. */
+.rs-actions .rs-pdf-button{background:#f6f7e8;color:#344000;border-color:#b5bd8c;font-weight:700}
+.rs-pdfs header h2{margin-bottom:8px}.rs-pdfs header p{margin:6px 0 16px}.rs-pdf-list{display:grid;gap:12px;margin:16px 0}
+.rs-pdf-item{display:flex;justify-content:space-between;align-items:center;gap:18px;border:1px solid #ddd;border-radius:12px;padding:16px}
+.rs-pdf-item>div:first-child{display:flex;flex-direction:column;gap:6px;min-width:0;overflow-wrap:anywhere}.rs-pdf-item span{font-size:14px;color:#555}
+.rs-pdf-actions{display:flex;flex-direction:column;gap:12px;flex-shrink:0}.rs-pdf-actions a{font-size:13px;color:#344000}.rs-pdf-actions .rs-pdf-open{background:#191919;color:#e5ff3d;text-decoration:none;border-radius:8px;padding:12px;font-weight:700;min-height:44px;box-sizing:border-box}
+.rs-pdf-empty{padding:20px 0}.rs-pdf-empty p{font-size:14px;line-height:1.5;color:#62625d}
+@media(max-width:600px){.rs-pdf-item{flex-direction:column;align-items:stretch}.rs-pdf-actions{gap:16px}.rs-pdf-actions a{text-align:center;min-height:44px}}

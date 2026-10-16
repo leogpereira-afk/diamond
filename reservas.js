@@ -34,9 +34,62 @@
  if(unidadeFiltro)rows=rows.filter(x=>(x.u?.id||x.p?.unidadeId||x.h?.unidadeId)===unidadeFiltro);
  rows=rows.filter(x=>x.u&&[x.u.unidade,x.r.cliente,x.r.corretor,x.h?.motivo].join(' ').toLocaleLowerCase('pt-BR').includes(q));
  rows.sort((a,b)=>filtro==='historico'?b.h.em.localeCompare(a.h.em):filtro==='pedidos'?a.p.em.localeCompare(b.p.em):(a.r.prazo||'9999').localeCompare(b.r.prazo||'9999'));
- box.innerHTML=rows.length?rows.map((x,i)=>`<article class="rs-row" data-state="${x.h?({reservar:'reservado',prorrogar:'reservado',cancelar:'cancelada',vender:'vendido',recusar:'recusado',reabrir:'cancelada'})[x.h.acao]||'historico':x.p?'pedido':classeReserva(x.u)=='vencidas'?'vencida':classeReserva(x.u)=='incompletas'?'incompleta':'reservado'}"><div class="rs-unit">Apto <strong>${esc(x.u.unidade)}</strong>${x.r.vaga?`<small>${esc(x.r.vaga)}</small>`:''}</div><div class="rs-person"><strong>${esc(x.r.cliente||'Cliente não informado')}</strong><span>${esc(x.r.corretor||'Corretor não informado')}</span>${x.r.telefone?`<span>${esc(x.r.telefone)}</span>`:''}</div><div class="rs-deadline"><strong>${x.h?esc(({reservar:'Reserva confirmada',prorrogar:'Prazo prorrogado',cancelar:'Reserva cancelada',vender:'Convertida em venda',recusar:'Pedido recusado',reabrir:'Unidade voltou a disponível'})[x.h.acao]):x.p?'Aguardando aprovação':classeReserva(x.u)==='vencidas'?'Prazo vencido':classeReserva(x.u)==='incompletas'?'Prazo ausente ou inválido':'Reservado'}</strong><span>${esc(fmt(x.h?.em||x.p?.em||x.r.prazo))}</span>${x.h?`<small>${esc(x.h.por)} · ${esc(x.h.motivo)}</small>`:''}</div><div class="rs-actions">${x.h?'':(x.p?[['reservar','Aprovar'],['recusar','Recusar']]:[['prorrogar',classeReserva(x.u)==='incompletas'?'Completar':'Prorrogar'],['vender','Converter em venda'],['cancelar','Cancelar']]).map(([a,l])=>`<button class="${['cancelar','recusar'].includes(a)?'btn-danger':''}" data-rs-index="${i}" data-rs-action="${a}">${l}</button>`).join('')}</div></article>`).join(''):`<div class="rs-empty">${unidadeFiltro&&!unidadeAlvo?'Apartamento não encontrado.':unidadeAlvo?`Nenhum registro de ${esc(unidadeAlvo.unidade)} nesta seleção.`:'Nenhuma reserva nesta seleção.'}</div>`;
+ box.innerHTML=rows.length?rows.map((x,i)=>`<article class="rs-row" data-state="${x.h?({reservar:'reservado',prorrogar:'reservado',cancelar:'cancelada',vender:'vendido',recusar:'recusado',reabrir:'cancelada'})[x.h.acao]||'historico':x.p?'pedido':classeReserva(x.u)=='vencidas'?'vencida':classeReserva(x.u)=='incompletas'?'incompleta':'reservado'}"><div class="rs-unit">Apto <strong>${esc(x.u.unidade)}</strong>${x.r.vaga?`<small>${esc(x.r.vaga)}</small>`:''}</div><div class="rs-person"><strong>${esc(x.r.cliente||'Cliente não informado')}</strong><span>${esc(x.r.corretor||'Corretor não informado')}</span>${x.r.telefone?`<span>${esc(x.r.telefone)}</span>`:''}</div><div class="rs-deadline"><strong>${x.h?esc(({reservar:'Reserva confirmada',prorrogar:'Prazo prorrogado',cancelar:'Reserva cancelada',vender:'Convertida em venda',recusar:'Pedido recusado',reabrir:'Unidade voltou a disponível'})[x.h.acao]):x.p?'Aguardando aprovação':classeReserva(x.u)==='vencidas'?'Prazo vencido':classeReserva(x.u)==='incompletas'?'Prazo ausente ou inválido':'Reservado'}</strong><span>${esc(fmt(x.h?.em||x.p?.em||x.r.prazo))}</span>${x.h?`<small>${esc(x.h.por)} · ${esc(x.h.motivo)}</small>`:''}</div><div class="rs-actions"><button type="button" class="rs-pdf-button" data-rs-pdf="${i}">📄 PDFs do cliente</button>${x.h?'':(x.p?[['reservar','Aprovar'],['recusar','Recusar']]:[['prorrogar',classeReserva(x.u)==='incompletas'?'Completar':'Prorrogar'],['vender','Converter em venda'],['cancelar','Cancelar']]).map(([a,l])=>`<button class="${['cancelar','recusar'].includes(a)?'btn-danger':''}" data-rs-index="${i}" data-rs-action="${a}">${l}</button>`).join('')}</div></article>`).join(''):`<div class="rs-empty">${unidadeFiltro&&!unidadeAlvo?'Apartamento não encontrado.':unidadeAlvo?`Nenhum registro de ${esc(unidadeAlvo.unidade)} nesta seleção.`:'Nenhuma reserva nesta seleção.'}</div>`;
+ box.querySelectorAll('[data-rs-pdf]').forEach(b=>b.onclick=()=>{const x=rows[+b.dataset.rsPdf];abrirPdfs(x.u,x.r,b);});
  box.querySelectorAll('[data-rs-index]').forEach(b=>b.onclick=()=>{const x=rows[+b.dataset.rsIndex];abrir(x.u.id,b.dataset.rsAction,x.p);});
  }
+
+ // Envios guarda o PDF original. Sem referência explícita, nome + apartamento
+ // são candidatos para conferência, nunca uma associação gravada automaticamente.
+ function pdfsDaReserva(envios,u,r={}){
+  const nome=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
+  const telefone=v=>{let n=String(v||'').replace(/\D/g,'');if(n.startsWith('55')&&n.length>=12)n=n.slice(2);return n;};
+  const unidade=String(u?.unidade||'').trim().toUpperCase();
+  if(!unidade)return[];
+  return envios.flatMap(e=>{
+   if(!/^pp-[a-f0-9]{16,}$/i.test(e.id||'')||String(e.unidade||'').trim().toUpperCase()!==unidade)return[];
+   const refs=['propostaId','leadId'].filter(k=>r[k]);
+   if(refs.length){if(refs.some(k=>e[k]!==r[k]))return[];return[{envio:e,vinculo:'referencia'}];}
+   if(!nome(r.cliente)||nome(r.cliente)!==nome(e.cliente))return[];
+   const a=telefone(r.telefone),b=telefone(e.telefone);
+   if(a&&b&&a!==b)return[];
+   return[{envio:e,vinculo:'nome'}];
+  }).sort((a,b)=>(Date.parse(b.envio.em)||0)-(Date.parse(a.envio.em)||0));
+ }
+ async function abrirPdfs(u,r={},opener){
+  if(!S.podeVerPainel())return;
+  document.querySelector('#rs-pdfs')?.close();
+  const dialog=document.createElement('dialog');dialog.id='rs-pdfs';dialog.className='rs-dialog rs-pdfs';
+  dialog.setAttribute('aria-labelledby','rs-pdfs-title');
+  dialog.innerHTML=`<header><div><p class="rs-eyebrow">DIAMOND · DOCUMENTOS</p><h2 id="rs-pdfs-title">PDFs do cliente · Apto ${esc(u.unidade)}</h2><p>${esc(r.cliente||'Cliente não informado')}</p></div><button type="button" id="rs-pdfs-close" aria-label="Fechar PDFs">×</button></header><div id="rs-pdfs-content" aria-live="polite"></div>`;
+  document.body.append(dialog);dialog.showModal();
+  const fechar=()=>dialog.close(),sessao=()=>{const s=S.getUser();return JSON.stringify([s?.usuario,s?.corretorAtivo?.nome]);},usuario=sessao();
+  dialog.querySelector('#rs-pdfs-close').onclick=fechar;
+  window.addEventListener('hashchange',fechar);
+  dialog.addEventListener('close',()=>{window.removeEventListener('hashchange',fechar);dialog.remove();if(opener?.isConnected)opener.focus();},{once:true});
+  const content=dialog.querySelector('#rs-pdfs-content');
+  async function carregar(){
+   content.innerHTML='<p role="status">Consultando os PDFs registrados…</p>';
+   try{
+    const envios=await S.listEnvios();
+    if(!dialog.isConnected||!dialog.open)return;
+    if(sessao()!==usuario){dialog.close();return;}
+    const items=pdfsDaReserva(envios,u,r);
+    if(!items.length){content.innerHTML='<div class="rs-pdf-empty"><strong>Nenhum PDF localizado para este cliente e apartamento.</strong><p>Arquivos baixados e enviados por fora da plataforma só aparecem aqui se também foram registrados em Envios.</p><a href="#/admin/envios">Consultar Envios</a></div>';return;}
+    content.innerHTML=`<p class="rs-note">${items.some(x=>x.vinculo==='nome')?'Localizados pelo nome e apartamento. Confira o destinatário e a data antes de abrir.':'Arquivos vinculados ao cadastro da proposta ou do cliente.'}</p><div class="rs-pdf-list">${items.map(({envio:e,vinculo})=>{
+     const url=String(window.P_URL).replace(/\/$/,'')+'/'+e.id;
+     return `<article class="rs-pdf-item"><div><strong>Proposta ${e.numero?'#'+esc(e.numero):'· '+esc(e.id.slice(-8))}</strong><span>${esc(e.cliente)} · Apto ${esc(e.unidade)}</span><span>Link criado em ${esc(fmt(e.em))}</span><small>${esc(e.corretor||'Corretor não informado')}${e.empresa?' · '+esc(e.empresa):''}</small>${e.resumo?.modalidade?`<small>${esc(e.resumo.modalidade)}</small>`:''}</div><div class="rs-pdf-actions"><a class="rs-pdf-open" target="_blank" rel="noopener" href="${esc(url+'?pdf=1&preview=1')}">Abrir PDF original ↗</a><a href="#/admin/envios?envio=${encodeURIComponent(e.id)}">Ver acompanhamento</a></div></article>`;
+    }).join('')}</div><p class="rs-note">É o arquivo original salvo em Envios. Esta consulta não conta como abertura do cliente. O registro do link, sozinho, não confirma a entrega no WhatsApp.</p>`;
+   }catch(e){
+    if(!dialog.isConnected||!dialog.open)return;
+    if(sessao()!==usuario){dialog.close();return;}
+    content.innerHTML='<p class="rs-error" role="alert">Não foi possível consultar os PDFs agora. Tente novamente.</p><button type="button" id="rs-pdfs-retry">Tentar novamente</button>';
+    content.querySelector('#rs-pdfs-retry').onclick=carregar;
+   }
+  }
+  await carregar();
+ }
+
  async function abrir(id,operacao='reservar',pedido){
  if(!S.podeVerPainel())return;
  if(operacao==='reservar'&&id&&S.unidadePorId(id)?.status==='Vendido')return alert('Esta unidade está vendida. Escolha Disponível na linha e salve para encerrar a venda antes de fazer uma nova reserva.');
@@ -67,5 +120,5 @@
  form.querySelector('[type=submit]').disabled=false;
  form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('[type=submit]');if(button.disabled)return;const body={operacao,unidadeId:u.id,revisao:u.atualizadoEm||'',pedidoEm:pedido?.em||null};for(const key of ['cliente','telefone','corretor','empresa','motivo','vaga'])body[key]=fields[key]?.value||'';if(edit)body.prazo=new Date(fields.prazo.value).toISOString();button.disabled=true;const msg=dialog.querySelector('#rs-error');msg.textContent='Confirmando…';try{await api(body);dialog.close();if(operacao==='reabrir'){await S.pull();location.hash='#/admin/vendas?busca='+encodeURIComponent(u.unidade);}else{location.hash='#/admin/reservas';if(document.querySelector('#aba-corpo'))await render();}}catch(e){erro(msg,e);button.disabled=false;}};
  }
- window.DiamondReservas={render,abrir,lerRota,montarRota,classeReserva};
+ window.DiamondReservas={render,abrir,lerRota,montarRota,classeReserva,pdfsDaReserva,abrirPdfs};
 })();
