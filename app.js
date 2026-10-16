@@ -1529,22 +1529,14 @@
 
     {
       const { foto, durl, dim } = await plantaParaProposta(STORE.unidadePorId(p.unidadeId), cfg);
-      // A planta é a ÚLTIMA coisa do documento e quase sempre cai numa página
-      // só dela. Antes ela era espremida no alto (maxH 320) e sobravam ~59% da
-      // página em branco embaixo — de longe parecia que a planta "subiu".
-      // Agora ela usa a altura disponível e o bloco fica centrado na página.
+      // Insere após o texto; usa outra página apenas se a planta não couber.
       const TITULO_H = 22, RESPIRO = 14, RODAPE = 30;
       const maxW = W - 2 * M;
-      const alturaLivre = (H - RODAPE) - CTOP - TITULO_H - RESPIRO; // se ficar sozinha
-      const maxH = Math.max(320, alturaLivre);
+      const maxH = H - RODAPE - CTOP - TITULO_H - RESPIRO - 10;
       const escl = Math.min(maxW / dim.w, maxH / dim.h);
       const dw = dim.w * escl, dh = dim.h * escl;
-      if (y + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
-      y += 10; // afasta da faixa do topo (ou do bloco anterior)
-      // Sobrou muito espaço? Centraliza o bloco verticalmente — nada vem depois.
-      const bloco = TITULO_H + RESPIRO + dh;
-      const sobra = (H - RODAPE) - y - bloco;
-      if (sobra > 60) y += Math.round(sobra / 2);
+      if (y + 10 + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+      y += 10;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
       doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
       y += RESPIRO;
