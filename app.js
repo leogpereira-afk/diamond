@@ -985,7 +985,13 @@
       const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga); return { ...g, proposta: p, msg: msgSimples()+'\nVálida até '+fmtData(p.resumoEnvio.validade) };
     };
 
-    $('#u-pdf').onclick = async () => { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } };
+    $('#u-pdf').onclick = async () => {
+      const b = $('#u-pdf'), label = b.textContent;
+      b.disabled = true; b.textContent = 'Gerando…';
+      try { const r = await preparar(); if (r) { r.doc.save(r.nome); toast('Proposta gerada ✓'); } }
+      catch (e) { toast('Não foi possível gerar o PDF: ' + e.message, true); }
+      finally { b.disabled = false; b.textContent = label; }
+    };
     // WhatsApp por LINK: gera o PDF → hospeda na plataforma → manda saudação + link (o cliente clica e abre o PDF)
     $('#u-whats').onclick = async () => {
       if (!d.cliente.trim()) { toast('Preencha o nome do cliente.', true); return; }
@@ -1309,6 +1315,29 @@
     // (botão WhatsApp removido — voltará quando integrar a API oficial do WhatsApp)
   }
 
+  // Recupera a planta antes de liberar qualquer PDF. A segunda tentativa ignora
+  // o cache, incluindo imagens antigas que existem mas não podem ser decodificadas.
+  async function plantaParaProposta(u, cfg) {
+    const fileId = u && fotoDe(u, cfg);
+    if (!fileId) throw new Error('Planta não cadastrada para esta unidade. Cadastre a imagem em Configurações antes de gerar a proposta.');
+    for (let tentativa = 0; tentativa < 2; tentativa++) {
+      try {
+        const foto = await STORE.obterFoto(fileId, { atualizar: tentativa > 0 });
+        if (!foto) continue;
+        const durl = `data:${foto.mime};base64,${foto.base64}`;
+        const dim = await new Promise((res, rej) => {
+          const i = new Image();
+          const timer = setTimeout(() => { i.onload = i.onerror = null; rej(new Error('Tempo de leitura da planta esgotado')); }, 8000);
+          i.onload = () => { clearTimeout(timer); i.width > 0 && i.height > 0 ? res({ w: i.width, h: i.height }) : rej(new Error('Planta inválida')); };
+          i.onerror = () => { clearTimeout(timer); rej(new Error('Planta inválida')); };
+          i.src = durl;
+        });
+        return { foto, durl, dim };
+      } catch (e) { /* mais uma tentativa, diretamente na nuvem */ }
+    }
+    throw new Error('Não foi possível carregar a planta desta unidade. A proposta não foi gerada. Confira a conexão e tente novamente; se persistir, confira a imagem em Configurações.');
+  }
+
   // ---------- PDF ----------
   const _imgCache = {};
   async function imgData(url) {
@@ -1483,37 +1512,30 @@
     doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} por ${p.corretor}${p.corretorTel ? ' · ' + p.corretorTel : ''}.`, M, y + 12);
     y += 30;
 
-    try {
-      const un = STORE.unidadePorId(p.unidadeId);
-      const foto = un ? await STORE.obterFoto(fotoDe(un, cfg)) : null;
-      if (foto) {
-        const durl = `data:${foto.mime};base64,${foto.base64}`;
-        const dim = await new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.width, h: i.height }); i.onerror = () => res(null); i.src = durl; });
-        if (dim) {
-          // A planta é a ÚLTIMA coisa do documento e quase sempre cai numa página
-          // só dela. Antes ela era espremida no alto (maxH 320) e sobravam ~59% da
-          // página em branco embaixo — de longe parecia que a planta "subiu".
-          // Agora ela usa a altura disponível e o bloco fica centrado na página.
-          const TITULO_H = 22, RESPIRO = 14, RODAPE = 30;
-          const maxW = W - 2 * M;
-          const alturaLivre = (H - RODAPE) - CTOP - TITULO_H - RESPIRO; // se ficar sozinha
-          const maxH = Math.max(320, alturaLivre);
-          const escl = Math.min(maxW / dim.w, maxH / dim.h);
-          const dw = dim.w * escl, dh = dim.h * escl;
-          if (y + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
-          y += 10; // afasta da faixa do topo (ou do bloco anterior)
-          // Sobrou muito espaço? Centraliza o bloco verticalmente — nada vem depois.
-          const bloco = TITULO_H + RESPIRO + dh;
-          const sobra = (H - RODAPE) - y - bloco;
-          if (sobra > 60) y += Math.round(sobra / 2);
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
-          doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
-          y += RESPIRO;
-          doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
-          y += dh;
-        }
-      }
-    } catch (e) { /* sem imagem, segue sem ela */ }
+    {
+      const { foto, durl, dim } = await plantaParaProposta(STORE.unidadePorId(p.unidadeId), cfg);
+      // A planta é a ÚLTIMA coisa do documento e quase sempre cai numa página
+      // só dela. Antes ela era espremida no alto (maxH 320) e sobravam ~59% da
+      // página em branco embaixo — de longe parecia que a planta "subiu".
+      // Agora ela usa a altura disponível e o bloco fica centrado na página.
+      const TITULO_H = 22, RESPIRO = 14, RODAPE = 30;
+      const maxW = W - 2 * M;
+      const alturaLivre = (H - RODAPE) - CTOP - TITULO_H - RESPIRO; // se ficar sozinha
+      const maxH = Math.max(320, alturaLivre);
+      const escl = Math.min(maxW / dim.w, maxH / dim.h);
+      const dw = dim.w * escl, dh = dim.h * escl;
+      if (y + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+      y += 10; // afasta da faixa do topo (ou do bloco anterior)
+      // Sobrou muito espaço? Centraliza o bloco verticalmente — nada vem depois.
+      const bloco = TITULO_H + RESPIRO + dh;
+      const sobra = (H - RODAPE) - y - bloco;
+      if (sobra > 60) y += Math.round(sobra / 2);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
+      doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
+      y += RESPIRO;
+      doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
+      y += dh;
+    }
 
     // (a logomarca da imobiliária agora sai centralizada abaixo da barra do
     // topo, na 1ª página — não mais no fim do documento)
@@ -1605,22 +1627,18 @@
     y += 52 + 10;
     doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(115, 115, 115);
     doc.text(`Proposta válida por 7 dias — até ${fmtData(validade)}.`, M, y); y += 18;
-    // planta ilustrada
-    try {
-      const foto = await STORE.obterFoto(fotoDe(u, cfg));
-      if (foto) {
-        const durl = `data:${foto.mime};base64,${foto.base64}`;
-        const dim = await new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.width, h: i.height }); i.onerror = () => res(null); i.src = durl; });
-        if (dim) {
-          const maxW = W - 2 * M, maxH = H - y - 82; // reserva o rodapé p/ a logo da imobiliária + texto
-          const escl = Math.min(maxW / dim.w, maxH / dim.h);
-          const dw = dim.w * escl, dh = dim.h * escl;
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
-          doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 8;
-          doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh); y += dh;
-        }
-      }
-    } catch (e) { /* sem imagem */ }
+    // Mantém a planta legível; abre uma página se não houver espaço suficiente.
+    {
+      const { foto, durl, dim } = await plantaParaProposta(u, cfg);
+      const maxW = W - 2 * M;
+      if (H - y - 90 < 180) { doc.addPage(); drawBanda(doc, cfg, 'PROPOSTA', doc.getNumberOfPages(), logos); y = 100; }
+      const escala = Math.min(maxW / dim.w, (H - y - 90) / dim.h);
+      const dw = dim.w * escala, dh = dim.h * escala;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
+      doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 14;
+      doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
+      y += dh;
+    }
     // (logo da imobiliária agora sai grande, centralizada abaixo da banda)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(174, 174, 178);
     // o corretor é da IMOBILIÁRIA dele — o prédio é que é da Domo (o cabeçalho já diz isso)
@@ -1703,20 +1721,18 @@
     notas.push('SCP — Sociedade em Conta de Participação. Valores nominais, sujeitos a análise e formalização em contrato.');
     const wrap = doc.splitTextToSize(notas.join(' '), W - 2 * M);
     doc.text(wrap, M, y); y += wrap.length * 11 + 10;
-    // planta ilustrada (se couber)
-    try {
-      const foto = await STORE.obterFoto(fotoDe(u, cfg));
-      if (foto) {
-        const durl = `data:${foto.mime};base64,${foto.base64}`;
-        const dim = await new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.width, h: i.height }); i.onerror = () => res(null); i.src = durl; });
-        if (dim) {
-          const maxW = W - 2 * M, maxH = H - y - 82;
-          if (maxH > 60) { const escl = Math.min(maxW / dim.w, maxH / dim.h); const dw = dim.w * escl, dh = dim.h * escl;
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26); doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 8;
-            doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh); }
-        }
-      }
-    } catch (e) { /* sem planta */ }
+    // Mantém a planta legível; abre uma página se não houver espaço suficiente.
+    {
+      const { foto, durl, dim } = await plantaParaProposta(u, cfg);
+      const maxW = W - 2 * M;
+      if (H - y - 90 < 180) { doc.addPage(); drawBanda(doc, cfg, 'PROPOSTA SCP', doc.getNumberOfPages(), logos); y = 100; }
+      const escala = Math.min(maxW / dim.w, (H - y - 90) / dim.h);
+      const dw = dim.w * escala, dh = dim.h * escala;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
+      doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 14;
+      doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
+      y += dh;
+    }
     // (logo da imobiliária agora sai grande, centralizada abaixo da banda)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(174, 174, 178);
     doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')}${user && user.nome ? ' · ' + user.nome : ''} · Domo Construtora`, CX, H - 30, { align: 'center' });

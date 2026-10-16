@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { source, copy } from './helpers.mjs';
 
 const require = createRequire(import.meta.url);
 const { jsPDF } = require('../vendor/jspdf.umd.min.js');
 
-function setup() {
+const fixture = { mime: 'image/jpeg', base64: fs.readFileSync(new URL('../pdf-diamond.jpg', import.meta.url)).toString('base64') };
+function setup({ foto = fixture, obterFoto, unidade = { unidade: '403' } } = {}) {
   function Document(options) {
     const doc = new jsPDF(options), text = doc.text.bind(doc);
     doc.texts = [];
@@ -21,8 +23,9 @@ function setup() {
     return doc;
   }
   const ctx = vm.createContext({
-    window: { jspdf: { jsPDF: Document } }, Date, Math,
-    STORE: { unidadePorId: () => ({ unidade: '403' }), obterFoto: async () => null },
+    window: { jspdf: { jsPDF: Document } }, Date, Math, setTimeout, clearTimeout,
+    Image: class { set src(value) { this.width = 900; this.height = 550; queueMicrotask(() => value.endsWith(fixture.base64) ? this.onload() : this.onerror()); } },
+    STORE: { unidadePorId: () => unidade, obterFoto: obterFoto || (async () => foto) },
   });
   vm.runInContext(source('plano.js'), ctx);
   vm.runInContext(source('proposta-domain.js'), ctx);
@@ -32,10 +35,12 @@ function setup() {
   vm.runInContext(code.slice(0, cut) + `
     imgData = async () => null;
     carregarLogoImob = async () => null;
-    globalThis.pdfTools = { gerarPDF };
+    globalThis.pdfTools = { gerarPDF, gerarPropostaSimples, gerarPdfScp };
   })();`, ctx);
   return {
     gerar: ctx.pdfTools.gerarPDF,
+    simples: ctx.pdfTools.gerarPropostaSimples,
+    scp: ctx.pdfTools.gerarPdfScp,
     diluir: ctx.window.DiamondProposta.diluir,
     plano: p => ctx.window.PLANO.calc({
       ...p.inp, neg: p.neg,
@@ -45,7 +50,7 @@ function setup() {
   };
 }
 
-const cfgAtual = { versao: 'v2', dataTabela: '05/10/2026', corretagem: 0.06 };
+const cfgAtual = { fotosTipo: { '03': 'planta-teste' }, versao: 'v2', dataTabela: '05/10/2026', corretagem: 0.06 };
 function proposta({ inp = {}, ...rest } = {}) {
   return {
     id: 'p-teste-pdf', unidadeId: 'u-403', unidade: '403', area: 45,
@@ -142,5 +147,50 @@ test('paginação preserva todas as mensais, o total e as notas finais dentro da
       assert.ok(row.y <= doc.internal.pageSize.getHeight() - 20,
         `${nParcelas} parcelas: "${row.text}" em y=${row.y} invade a margem inferior da página ${row.page}`);
     }
+  }
+});
+
+for (const foto of [null, { mime: 'image/jpeg', base64: 'invalida' }]) {
+  test('PDF não retorna documento sem a planta esperada: ' + (foto ? 'inválida' : 'indisponível'), async () => {
+    const s = setup({ foto }), p = proposta();
+    await assert.rejects(s.gerar(p, s.plano(p), { ...cfgAtual, fotosTipo: { '03': 'planta-teste' } }), /planta/i);
+  });
+}
+
+const qtdImagens = doc => Object.keys(doc.internal.collections.addImage_images || {}).length;
+test('planta é incorporada nos três modelos de proposta', async () => {
+  const s = setup(), p = proposta(), u = { unidade: '403', precoBase: 300000, area: 45, andar: 4 };
+  const resultados = [await s.gerar(p, s.plano(p), cfgAtual), await s.simples(u, cfgAtual, 'Teste', '', {}), await s.scp(u, 300000, {}, cfgAtual, {}, 'Teste', '')];
+  for (const { doc } of resultados) {
+    assert.equal(qtdImagens(doc), 1);
+    assert.match(texto(doc), /Unidade 403 · planta ilustrada/);
+    assert.match(doc.output(), /Subtype \/Image/);
+  }
+});
+test('falha temporária ou cache ilegível é recuperado diretamente da nuvem', async () => {
+  for (const primeira of [null, { ...fixture, base64: 'invalida' }]) {
+    const calls = [];
+    const s = setup({ obterFoto: async (id, opts) => { calls.push({ id, ...opts }); return calls.length === 1 ? primeira : fixture; } }), p = proposta();
+    const { doc } = await s.gerar(p, s.plano(p), cfgAtual);
+    assert.equal(qtdImagens(doc), 1);
+    assert.deepEqual(calls, [{ id: 'planta-teste', atualizar: false }, { id: 'planta-teste', atualizar: true }]);
+  }
+});
+test('propostas simples e SCP também impedem PDF incompleto', async () => {
+  const s = setup({ foto: null }), u = { unidade: '403', precoBase: 300000 };
+  await assert.rejects(s.simples(u, cfgAtual, 'Teste', '', {}), /planta/i);
+  await assert.rejects(s.scp(u, 300000, {}, cfgAtual, {}, 'Teste', ''), /planta/i);
+});
+test('planta sem cadastro exige correção em Configurações', async () => {
+  const s = setup(), p = proposta();
+  await assert.rejects(s.gerar(p, s.plano(p), {}), /Planta não cadastrada/);
+});
+test('tipo da unidade define a planta, mantendo fallback do cadastro antigo', async () => {
+  for (const unidade of [{ unidade: '801', fotoId: 'antiga' }, { unidade: '808' }, { unidade: 'LOJA' }, { unidade: '999', fotoId: 'antiga' }]) {
+    const calls = [], cfg = { ...cfgAtual, fotosTipo: { '01': 'tipo01', '08': 'tipo08', LOJA: 'loja' } };
+    const s = setup({ unidade, obterFoto: async id => { calls.push(id); return fixture; } }), p = proposta({ unidade: unidade.unidade });
+    await s.gerar(p, s.plano(p), cfg);
+    const expected = cfg.fotosTipo[unidade.unidade === 'LOJA' ? 'LOJA' : unidade.unidade.slice(-2)] || unidade.fotoId;
+    assert.deepEqual(calls, [expected]);
   }
 });

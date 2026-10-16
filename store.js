@@ -28,7 +28,7 @@ const STORE = (() => {
   // ---------- API ----------
   let versaoLeitura = 0;
   const leiturasEmCurso = new Map();
-  const acoesDeLeitura = new Set(['list', 'getCfg', 'listPropostas', 'listLeads', 'listReservas', 'listEnvios', 'precosHistorico']);
+  const acoesDeLeitura = new Set(['list', 'getFoto', 'getCfg', 'listPropostas', 'listLeads', 'listReservas', 'listEnvios', 'precosHistorico']);
   async function api(action, body = {}) {
     const sess = getUser();
     const payload = { action, ...body };
@@ -396,7 +396,7 @@ const STORE = (() => {
     return new Promise((res, rej) => {
       const tx = db.transaction('fotos', 'readwrite');
       tx.objectStore('fotos').put({ id, base64, mime });
-      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+      tx.oncomplete = res; tx.onerror = tx.onabort = () => rej(tx.error);
     });
   }
   async function fotoLocalGet(id) {
@@ -580,13 +580,19 @@ const STORE = (() => {
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
     salvarCfg({ ...cfg, apartamentos: arr });
   }
-  async function obterFoto(fileId) {
+  // O cache é uma otimização; sua falha não pode impedir o uso da foto da nuvem.
+  async function obterFoto(fileId, { atualizar = false } = {}) {
     if (!fileId) return null;
-    const local = await fotoLocalGet(fileId);
-    if (local) return local;
+    const valida = f => f && /^image\/(jpeg|png|webp)$/i.test(f.mime || '') && typeof f.base64 === 'string' && f.base64.length > 0;
+    if (!atualizar) {
+      try { const local = await fotoLocalGet(fileId); if (valida(local)) return local; }
+      catch (e) { /* IndexedDB indisponível: buscar na nuvem */ }
+    }
     try {
       const r = await api('getFoto', { fileId });
-      await fotoLocalSet(fileId, r.base64, r.mime);
+      if (!valida(r)) return null;
+      try { await fotoLocalSet(fileId, r.base64, r.mime); }
+      catch (e) { /* quota/cache bloqueado: a foto baixada continua utilizável */ }
       return { id: fileId, base64: r.base64, mime: r.mime };
     } catch (e) { return null; }
   }
