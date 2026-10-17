@@ -1,3 +1,4 @@
+import { executarNegociacoes } from './negociacoes-api.mjs';
 // api-core.mjs — PORTE FIEL do netlify/functions/api.js para Deno/Supabase.
 // Mesmo contrato (36 actions, x-token), mesmo código; só o armazenamento mudou (blobs-shim → Postgres/Storage).
 import { getStore, connectLambda, sb } from '../_shared/blobs-shim.mjs';
@@ -218,6 +219,11 @@ export const handler = async (event) => {
   };
 
   try {
+    if (action === 'negociacoes') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      const r=await executarNegociacoes(body,usr,{getStore,sb});
+      return json(r.status,r.data);
+    }
     if (['precosPrevia', 'precosAplicar', 'precosHistorico'].includes(action)) {
       const adm = await validarUsuario(stores.cfg, body.auth, true);
       if (!adm) return json(403, { erro: 'apenas administrador' });
