@@ -128,4 +128,8 @@ test('ranking de corretores conta só unidade Vendida com quem vendeu, junta gra
  assert.equal(r.totalVendidas,5);assert.equal(r.semCorretor,1);
  assert.deepEqual(Array.from(r.lista,x=>[x.nome,x.vendas,x.posicao]),[['Ana Fictícia',2,1],['Bruno Fictício',1,2],['Carla Fictícia',1,2]]);
  assert.deepEqual(Array.from(r.lista[0].unidades),['101','201']);
+ assert.deepEqual(Array.from(r.lista[0].lista,v=>v.unidade),['101','201']);assert.deepEqual(Array.from(r.semCorretorVendas,v=>v.unidade),['303']);
+ const win={DiamondGestaoDomain:D};const vc=vm.createContext({window:win,Intl,Date,URLSearchParams});vm.runInContext(source('gestao.js').replace('window.DiamondGestao={render};','window.DiamondGestao={render,visualCharts};'),vc);
+ const html=win.DiamondGestao.visualCharts({model:D.build({unidades}),unitsOk:true,leadsOk:true,proposalsOk:true});
+ assert.match(html,/5 vendas efetivadas/);assert.match(html,/Sem corretor marcado/);assert.equal((html.match(/class="gt-rank-vendas-lista"/g)||[]).length,4);assert.match(html,/#\/conexoes\/a\?/);
 });

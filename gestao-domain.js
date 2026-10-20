@@ -32,17 +32,19 @@
   // ou espaço diferente conta junto; empate divide a posição (1º, 1º, 3º). Venda sem
   // corretor marcado não entra no ranking e é contada à parte, para corrigir.
   const chave=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+  const porUnidade=(a,b)=>a.unidade.localeCompare(b.unidade,'pt-BR',{numeric:true});
   function rankingCorretores(unidades=[]){
-    const vendidas=unidades.filter(u=>u.status==='Vendido'),mapa=new Map();let semCorretor=0;
+    const vendidas=unidades.filter(u=>u.status==='Vendido'),mapa=new Map(),semCorretorVendas=[];let semCorretor=0;
     for(const u of vendidas){
-      const nome=String(u.vendedorNome||'').replace(/\s+/g,' ').trim();if(!nome){semCorretor++;continue;}
+      const venda={id:u.id,unidade:String(u.unidade??'').trim(),comprador:String(u.compradorNome||'').trim()};
+      const nome=String(u.vendedorNome||'').replace(/\s+/g,' ').trim();if(!nome){semCorretor++;semCorretorVendas.push(venda);continue;}
       const empresa=String(u.vendedorEmpresa||'').replace(/\s+/g,' ').trim(),k=chave(nome)+'|'+chave(empresa);
-      const r=mapa.get(k)||{nome,empresa,vendas:0,unidades:[]};r.vendas++;r.unidades.push(String(u.unidade??'').trim());mapa.set(k,r);
+      const r=mapa.get(k)||{nome,empresa,vendas:0,unidades:[],lista:[]};r.vendas++;r.unidades.push(venda.unidade);r.lista.push(venda);mapa.set(k,r);
     }
     const lista=[...mapa.values()].sort((a,b)=>b.vendas-a.vendas||a.nome.localeCompare(b.nome,'pt-BR'));
     let posicao=0,anterior=null;
-    lista.forEach((r,i)=>{if(r.vendas!==anterior){posicao=i+1;anterior=r.vendas;}r.posicao=posicao;r.unidades=r.unidades.filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));});
-    return {lista,semCorretor,totalVendidas:vendidas.length};
+    lista.forEach((r,i)=>{if(r.vendas!==anterior){posicao=i+1;anterior=r.vendas;}r.posicao=posicao;r.unidades=r.unidades.filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));r.lista.sort(porUnidade);});
+    return {lista,semCorretor,semCorretorVendas:semCorretorVendas.sort(porUnidade),totalVendidas:vendidas.length};
   }
   function charts({unidades=[],leads=[],propostas=[],now=new Date()}={}){
     const hoje=todaySP(now),[year,month]=hoje.split('-').map(Number);
