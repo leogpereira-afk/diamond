@@ -109,7 +109,23 @@ test('gráficos ocultam números de fontes com falha e informam consulta parcial
  vm.runInContext(code,viewCtx);
  const model=D.build({now:new Date('2026-10-01T12:00:00Z'),propostas:[{criadoEm:'2026-10-01'}]});
  const failed=win.DiamondGestao.visualCharts({model,unitsOk:false,leadsOk:false,proposalsOk:false});
- assert.equal((failed.match(/Consulta indisponível/g)||[]).length,4);assert.doesNotMatch(failed,/class="gt-month /);
+ assert.equal((failed.match(/Consulta indisponível/g)||[]).length,5);assert.match(failed,/Ranking de corretores/);assert.doesNotMatch(failed,/class="gt-ranking"/);assert.doesNotMatch(failed,/class="gt-month /);
  const partial=win.DiamondGestao.visualCharts({model,unitsOk:true,leadsOk:true,proposalsOk:true,proposalsComplete:false});
  assert.match(partial,/Leitura parcial/);assert.match(partial,/Propostas não são vendas/);assert.match(partial,/#\/admin\/clientes\?etapa=proposta/);
+});
+
+test('ranking de corretores conta só unidade Vendida com quem vendeu, junta grafias e divide empate',()=>{
+ const unidades=[
+  {id:'a',unidade:'201',status:'Vendido',vendedorNome:'Ana Fictícia',vendedorEmpresa:'Imob Exemplo'},
+  {id:'b',unidade:'101',status:'Vendido',vendedorNome:' ana  ficticia ',vendedorEmpresa:'imob exemplo'},
+  {id:'c',unidade:'301',status:'Vendido',vendedorNome:'Bruno Fictício',vendedorEmpresa:''},
+  {id:'d',unidade:'302',status:'Vendido',vendedorNome:'Carla Fictícia',vendedorEmpresa:''},
+  {id:'e',unidade:'303',status:'Vendido',vendedorNome:''},
+  {id:'f',unidade:'304',status:'Reservado',vendedorNome:'Ana Fictícia',vendedorEmpresa:'Imob Exemplo'},
+  {id:'g',unidade:'305',status:'Disponível',vendedorNome:'Bruno Fictício'},
+ ];
+ const r=D.build({unidades}).charts.ranking;
+ assert.equal(r.totalVendidas,5);assert.equal(r.semCorretor,1);
+ assert.deepEqual(Array.from(r.lista,x=>[x.nome,x.vendas,x.posicao]),[['Ana Fictícia',2,1],['Bruno Fictício',1,2],['Carla Fictícia',1,2]]);
+ assert.deepEqual(Array.from(r.lista[0].unidades),['101','201']);
 });

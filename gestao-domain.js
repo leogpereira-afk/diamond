@@ -27,6 +27,23 @@
     reservation:(filtro,id='')=>`#/admin/reservas?filtro=${encodeURIComponent(filtro)}${id?'&unidade='+encodeURIComponent(id):''}`,
     envio:id=>`#/admin/envios?envio=${encodeURIComponent(id)}&fila=pendente`,
   };
+  // Ranking de corretores pelas vendas efetivadas: unidade com situação Vendido e o
+  // "quem vendeu" marcado em Unidades e vendas. Mesma pessoa escrita com acento, caixa
+  // ou espaço diferente conta junto; empate divide a posição (1º, 1º, 3º). Venda sem
+  // corretor marcado não entra no ranking e é contada à parte, para corrigir.
+  const chave=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+  function rankingCorretores(unidades=[]){
+    const vendidas=unidades.filter(u=>u.status==='Vendido'),mapa=new Map();let semCorretor=0;
+    for(const u of vendidas){
+      const nome=String(u.vendedorNome||'').replace(/\s+/g,' ').trim();if(!nome){semCorretor++;continue;}
+      const empresa=String(u.vendedorEmpresa||'').replace(/\s+/g,' ').trim(),k=chave(nome)+'|'+chave(empresa);
+      const r=mapa.get(k)||{nome,empresa,vendas:0,unidades:[]};r.vendas++;r.unidades.push(String(u.unidade??'').trim());mapa.set(k,r);
+    }
+    const lista=[...mapa.values()].sort((a,b)=>b.vendas-a.vendas||a.nome.localeCompare(b.nome,'pt-BR'));
+    let posicao=0,anterior=null;
+    lista.forEach((r,i)=>{if(r.vendas!==anterior){posicao=i+1;anterior=r.vendas;}r.posicao=posicao;r.unidades=r.unidades.filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));});
+    return {lista,semCorretor,totalVendidas:vendidas.length};
+  }
   function charts({unidades=[],leads=[],propostas=[],now=new Date()}={}){
     const hoje=todaySP(now),[year,month]=hoje.split('-').map(Number);
     const months=Array.from({length:6},(_,i)=>{
@@ -48,7 +65,7 @@
     const stock=[['Disponível','Disponíveis','green'],['Reservado','Reservadas','purple'],['Vendido','Vendidas','red']].map(([key,label,tone])=>({key,label,tone,value:unidades.filter(u=>u.status===key).length}));
     const unknownStock=unidades.length-stock.reduce((n,s)=>n+s.value,0);
     if(unknownStock)stock.push({key:'outros',label:'Outra situação',tone:'neutral',value:unknownStock});
-    return {stock,stages,months,invalidDates,outsidePeriod,futureDates,periodTotal:months.reduce((n,m)=>n+m.value,0),leadsTotal:leads.length,stockTotal:unidades.length};
+    return {stock,stages,months,ranking:rankingCorretores(unidades),invalidDates,outsidePeriod,futureDates,periodTotal:months.reduce((n,m)=>n+m.value,0),leadsTotal:leads.length,stockTotal:unidades.length};
   }
   function build({unidades=[],pedidos=[],leads=[],envios=[],propostas=[],now=new Date()}={}){
     const hoje=todaySP(now),resUn=unidades.filter(u=>u.status==='Reservado');
@@ -65,5 +82,5 @@
       charts:charts({unidades,leads,propostas,now}),
     };
   }
-  root.DiamondGestaoDomain={todaySP,dateSP,when,build,charts,routes};
+  root.DiamondGestaoDomain={todaySP,dateSP,when,build,charts,rankingCorretores,routes};
 })(typeof window!=='undefined'?window:globalThis);
