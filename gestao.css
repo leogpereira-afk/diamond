@@ -51,3 +51,15 @@
 @media(max-width:400px){.gt-chart{padding:12px}.gt-chart h2{font-size:15px}.gt-months{gap:6px}.gt-month>span:last-child{font-size:10px}.gt-metric{gap:7px;padding:10px}.gt-metric b{font-size:24px}}
 @media print{.gt-charts{grid-template-columns:repeat(2,minmax(0,1fr))}.gt-chart{print-color-adjust:exact;-webkit-print-color-adjust:exact}.gt-charts-report .gt-chart-note{line-height:1.35}.gt-chart a{color:inherit!important}.gt-charts-report{break-inside:avoid}.gt-charts-report .gt-bar-track i,.gt-charts-report .gt-month-track i{border:1px solid #65707b}.gt-report .gt-table{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
 @media(max-width:520px){.gt-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;overflow:visible}.gt-tabs a{text-align:center;min-height:44px;display:grid;place-items:center;padding:8px;font-size:12px}.gt-tabs a.on{background:#30361d;border-radius:7px 7px 0 0}}
+
+/* Ranking de corretores (vendas efetivadas). */
+.gt-chart-ranking{border-top-color:#c9a227}.gt-chart-ranking .gt-chart-icon{background:#fbf3d3;color:#8a6a00}
+.gt-ranking{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.gt-ranking li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:6px;border-radius:8px;--chart-tone:#7a8590}
+.gt-ranking .gt-bar-track{grid-column:2/-1}
+.gt-rank-lugar{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#e9edf1;color:#33404a;font-weight:800;font-size:13px;font-variant-numeric:tabular-nums}
+.gt-rank-nome{display:flex;flex-direction:column;min-width:0}.gt-rank-nome b{font-size:14px;color:#17232a;overflow-wrap:anywhere}.gt-rank-nome small{font-size:11px;color:#5b6872;line-height:1.4}
+.gt-rank-vendas{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums}.gt-rank-vendas b{font-size:20px;color:#17232a}.gt-rank-vendas small{font-size:11px;color:#5b6872}
+.gt-ranking .gt-rank-pos-1{background:#fbf3d3;--chart-tone:#c9a227}.gt-rank-pos-1 .gt-rank-lugar{background:#c9a227;color:#1d1600}
+.gt-ranking .gt-rank-pos-2{--chart-tone:#8f9aa3}.gt-rank-pos-2 .gt-rank-lugar{background:#cfd6dc;color:#1f2a32}
+.gt-ranking .gt-rank-pos-3{--chart-tone:#b07a45}.gt-rank-pos-3 .gt-rank-lugar{background:#e7cdb3;color:#3a2410}
