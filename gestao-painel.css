@@ -9,3 +9,36 @@
 .di-panel .di-kpi{padding:12px 14px}.di-panel .di-kpi-top{min-height:40px}.di-panel .di-kpi .di-icon{width:42px;height:42px}.di-panel .di-kpi>strong{font-size:clamp(22px,2.1vw,28px);line-height:1.15;margin-top:4px}.di-panel .di-kpi>small{margin-top:5px;min-height:28px;font-size:10px}.di-panel .di-kpi-open{bottom:12px}.di-financial>a{padding:11px 14px}.di-financial b{font-size:20px;margin:5px 0}.di-financial{gap:10px;margin-bottom:14px}.di-card{padding:16px}.di-title{margin-bottom:13px}.di-pulse{margin:7px 0 14px}
 @media(min-width:421px) and (max-width:650px){.di-panel .di-kpi>strong{font-size:18px}.di-panel .di-kpi{padding:10px}}
 @media(max-width:420px){.di-panel .di-kpi>strong{font-size:25px}.di-panel .di-kpi>small{min-height:0}}
+
+/* Densidade visual: reduzir espaços mantendo todos os rótulos e detalhes. */
+@media screen{
+ .di-panel{padding:18px}
+ .di-header{gap:14px;margin-bottom:12px}
+ .di-tabs{margin-bottom:12px}.di-tab{padding:10px 12px}
+ .di-kpis{gap:9px}
+ .di-panel .di-kpi{padding:10px 12px}
+ .di-panel .di-kpi-top{min-height:34px}
+ .di-panel .di-kpi .di-icon{width:36px;height:36px}
+ .di-panel .di-kpi>strong{font-size:clamp(22px,2.1vw,28px);line-height:1.15;margin-top:3px}
+ .di-panel .di-kpi>small{margin-top:4px;min-height:0;font-size:10px}
+ .di-panel .di-kpi-open{bottom:10px;right:10px}
+ .di-financial>a{padding:9px 12px}.di-financial b{font-size:20px;margin:4px 0}
+ .di-financial{gap:8px;margin-bottom:10px}
+ .di-card{padding:12px;margin-bottom:12px}.di-grid{gap:12px;margin-bottom:12px}
+ .di-title{gap:10px;margin-bottom:10px}.di-title p{margin-top:4px}
+ .di-pulse{gap:8px 14px;margin:6px 0 10px}
+ .di-stockbar{margin:16px 0 12px}.di-stocklist a{padding:9px 0}
+ .di-trend{gap:12px;margin:14px 0 8px}
+ .di-table th{padding:9px 10px}.di-table td{padding:9px 10px}
+ .di-people li{gap:10px;padding:10px 0}
+ .di-alerts>li>div>a{gap:10px;padding:10px 0}
+ .di-filters{margin-bottom:12px}.di-filters>summary{padding:10px 12px}
+ .di-note{margin-top:8px}.di-sources{margin-top:12px}
+}
+@media screen and (max-width:650px){
+ .di-panel{padding:12px}.di-header-actions{margin-top:10px}
+ .di-panel .di-kpi{padding:10px}.di-card{padding:12px}
+ .di-btn,.di-tab{min-height:44px}
+}
+@media screen and (min-width:421px) and (max-width:650px){.di-panel .di-kpi>strong{font-size:18px}}
+@media screen and (max-width:420px){.di-panel .di-kpi>strong{font-size:25px}}

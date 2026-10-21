@@ -2837,7 +2837,7 @@
     uns.forEach((u) => addVend(u.vendedorNome, u.vendedorEmpresa));
     vendedores.sort((a, b) => a.nome.localeCompare(b.nome));
     const vendSel = (u) => { const cur = (u.vendedorEmpresa || '') + '|' + (u.vendedorNome || ''); const conhecido = vendedores.some((v) => (v.empresa + '|' + v.nome) === cur);
-      return `<select class="v-vend"><option value="|">— quem vendeu?</option>${vendedores.map((v) => { const k = v.empresa + '|' + v.nome; return `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(v.nome)}${v.empresa ? ' · ' + esc(v.empresa) : ' · Domo'}</option>`; }).join('')}${(u.vendedorNome && !conhecido) ? `<option value="${esc(cur)}" selected>${esc(u.vendedorNome)}${u.vendedorEmpresa ? ' · ' + esc(u.vendedorEmpresa) : ''}</option>` : ''}</select>`; };
+      return `<select class="v-vend" aria-label="Vendedor da unidade ${esc(u.unidade)}"><option value="|">— quem vendeu?</option>${vendedores.map((v) => { const k = v.empresa + '|' + v.nome; return `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(v.nome)}${v.empresa ? ' · ' + esc(v.empresa) : ' · Domo'}</option>`; }).join('')}${(u.vendedorNome && !conhecido) ? `<option value="${esc(cur)}" selected>${esc(u.vendedorNome)}${u.vendedorEmpresa ? ' · ' + esc(u.vendedorEmpresa) : ''}</option>` : ''}</select>`; };
     const nDisp = uns.filter((u) => u.status === 'Disponível').length;
     const nRes = uns.filter((u) => u.status === 'Reservado').length;
     const nVend = uns.filter((u) => u.status === 'Vendido').length;
@@ -2874,17 +2874,17 @@
       </div>` : ''}
       <div class="nota">Edite o <b>cliente</b>, o <b>status</b> e <b>quem vendeu</b> na própria linha. Incluir um cliente não altera a situação da unidade.</div>
       <div class="filtros"><input id="v-busca" aria-label="Buscar unidade ou comprador" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status" aria-label="Situação da unidade"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
-      <div class="tabela-wrap"><table class="tabela adm-un">
-        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Cliente / comprador</th><th>Vaga vinculada</th><th>Vendedor</th><th></th></tr></thead>
+      <div class="tabela-wrap dv-sales-wrap"><table class="tabela adm-un dv-sales-table" aria-label="Unidades e vendas">
+        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Cliente / comprador</th><th>Vaga vinculada</th><th>Vendedor</th><th>Ações</th></tr></thead>
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
-          <td data-lab="Unidade"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${esc(u.unidade)}</a></td>
-          <td data-lab="Andar">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
-          <td data-lab="Valor">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
-          <td data-lab="Status"><select class="v-status">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
+          <td data-lab="Unidade" class="dv-sale-unit"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${uiIcon('building')}<span>${esc(u.unidade)}</span></a></td>
+          <td data-lab="Andar" class="dv-sale-floor">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
+          <td data-lab="Valor de tabela" class="dv-sale-price">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
+          <td data-lab="Status" class="dv-sale-status"><select class="v-status" aria-label="Status da unidade ${esc(u.unidade)}">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
           <td data-lab="Cliente / comprador" class="td-comprador">${clienteVendaHTML(u)}</td>
           <td data-lab="Vaga vinculada" class="td-vaga"><span class="nota">Consultando…</span></td>
           <td data-lab="Vendedor" class="td-vendedor">${vendSel(u)}</td>
-          <td class="td-salvar"><button class="btn-mini v-salvar">salvar</button></td>
+          <td class="td-salvar"><button class="btn-mini v-salvar" aria-label="Salvar unidade ${esc(u.unidade)}">salvar</button></td>
         </tr>`).join('')}</tbody></table></div>`;
     const wireCliente=tr=>{const btn=$('.v-cliente-editar',tr);if(btn)btn.onclick=()=>{if(_sujo){toast('Salve as alterações de status e vendedor antes de editar o cliente.',true);return;}const busca=$('#v-busca').value,status=$('#v-status').value;window.DiamondClienteEditor.abrir({unidadeId:tr.dataset.id,onSaved:()=>{toast('Cliente salvo e vinculado ✓');aVendas();$('#v-busca').value=busca;$('#v-status').value=status;$('#v-busca').dispatchEvent(new Event('input'));$('#v-status').dispatchEvent(new Event('change'));}});};};
     const linhas = $$('.adm-un tbody tr');
