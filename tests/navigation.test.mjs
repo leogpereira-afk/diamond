@@ -5,7 +5,7 @@ import {source} from './helpers.mjs';
 
 function appFixture({propostas = [], leads = [], envios = [], unidade = {id:'u-1',unidade:'401',status:'Vendido',precoBase:999999}} = {}) {
   const nodes = new Map();
-  const node = () => ({innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){}},querySelectorAll:()=>[],setAttribute(){},addEventListener(){},remove(){}});
+  const node = () => ({innerHTML:'',textContent:'',style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},querySelectorAll:()=>[],setAttribute(){},addEventListener(){},remove(){}});
   const get = k => { if(!nodes.has(k)) nodes.set(k,node()); return nodes.get(k); };
   const STORE = {getCfg:()=>({}),getUser:()=>({usuario:'domo',nome:'Domo',papel:'corretor',ehMaster:true,temSenhaEquipe:true,corretorAtivo:{nome:'Teste'}}),isAdmin:()=>false,podeVerPainel:()=>true,getPropostas:()=>propostas,getLeads:()=>leads,getUnidades:()=>[unidade],unidadePorId:id=>id===unidade.id?unidade:null,listEnvios:async()=>envios};
   const context = vm.createContext({window:{P_URL:'https://example.invalid/p'},document:{body:node(),querySelector:get,querySelectorAll:()=>[],createElement:node},location:{hash:'#/proposta/p-antiga'},STORE,URLSearchParams,Date,Math});

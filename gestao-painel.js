@@ -9,11 +9,7 @@
  function route(view,extra={}){const p=new URLSearchParams(location.hash.split('?')[1]||'');p.set('visao',view);for(const [k,v] of Object.entries(extra)){if(v==null)p.delete(k);else p.set(k,v);}return '#/admin/painel?'+p;}
  const record=(tipo,id)=>'#/'+tipo+'/'+encodeURIComponent(id)+'?voltar='+encodeURIComponent(location.hash);
  const link=(url,label,cls='di-link')=>`<a class="${cls}" href="${e(url)}">${label}</a>`;
- function icon(kind){const shapes={
-  building:'<path fill="#829b28" d="M16 24 43 10 66 24 39 39z"/><path fill="#bfd754" d="M16 24 39 39v35L16 59z"/><path fill="#607924" d="M39 39 66 24v35L39 74z"/><path d="m23 34 9 5m-9 7 9 5m-9 7 9 5m15-16 11-6m-11 19 11-6" stroke="#edf5b4" stroke-width="4"/>',
-  coins:'<ellipse cx="42" cy="63" rx="28" ry="10" fill="#8b6a15"/><path d="M14 51v12c0 13 56 13 56 0V51" fill="#c8a22e"/><ellipse cx="42" cy="51" rx="28" ry="11" fill="#f1d46e"/><path d="M18 36v12c0 12 48 12 48 0V36" fill="#b88a18"/><ellipse cx="42" cy="36" rx="24" ry="10" fill="#ffe994"/><path d="M24 22v11c0 10 36 10 36 0V22" fill="#d4ab32"/><ellipse cx="42" cy="22" rx="18" ry="8" fill="#fff0ae"/><path d="m38 19 7 1-7 4 7 1" fill="none" stroke="#b28c20" stroke-width="2"/>',
-  users:'<ellipse cx="43" cy="71" rx="29" ry="7" fill="#e4e6fb"/><path d="M45 42c23-10 30 6 26 22L48 70" fill="#7273b6"/><circle cx="57" cy="29" r="13" fill="#b1b1e1"/><path d="M16 64c-3-21 5-29 20-29s22 8 20 29c-9 10-31 11-40 0" fill="#8c8cc6"/><path d="M16 64c-3-21 5-29 20-29v36c-8 0-15-2-20-7" fill="#c3c2ec"/><circle cx="36" cy="21" r="15" fill="#d4d1f6"/>',
-  key:'<path d="m45 38 27 25-9 10-8-7 4-5-8-7-5 4-13-13" fill="#4e8c84"/><path d="m40 33 27 25-9 10-8-7 4-5-8-7-5 4-13-13" fill="#9dd1bb"/><circle cx="29" cy="28" r="23" fill="#538e82"/><circle cx="27" cy="24" r="22" fill="#b5dfc9"/><circle cx="23" cy="20" r="8" fill="#619b8a"/>'};return `<svg class="di-icon" viewBox="0 0 84 84" aria-hidden="true"><ellipse cx="42" cy="77" rx="28" ry="4" fill="#000" opacity=".08"/>${shapes[kind]||shapes.building}</svg>`;}
+ const icon=kind=>window.DiamondVisual?.icon(kind,'di-icon')||'';
  function kpi(label,value,sub,href,kind,accent=''){return `<a class="di-kpi ${accent}" href="${e(href)}"><div class="di-kpi-top"><span>${label}</span>${icon(kind)}</div><strong>${value}</strong><small>${sub}</small><span class="di-kpi-open" aria-hidden="true">↗</span></a>`;}
  const note=s=>`<p class="di-note">${s}</p>`;
  const title=(h,s='',action='')=>`<div class="di-title"><div><h2>${h}</h2>${s?`<p>${s}</p>`:''}</div>${action}</div>`;

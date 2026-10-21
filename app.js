@@ -4,6 +4,7 @@
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
   const app = () => $('#app');
+  const uiIcon = kind => window.DiamondVisual?.icon(kind)||'';
   // há edição NÃO salva na tela? (o pull de 30s não pode re-renderizar e apagar o que a pessoa digitou)
   let _sujo = false;
   const marcarSujo = (sel) => { const el = $(sel); if (!el || el.dataset.sujoOn) return; el.dataset.sujoOn = '1'; el.addEventListener('input', () => { _sujo = true; }); };
@@ -116,7 +117,7 @@
     const u = STORE.unidadePorId(p.unidadeId);
     app().innerHTML = `<section class="registro">
       <a class="volta" href="${esc(volta)}">← Voltar à consulta</a>
-      <header class="registro-top"><div><span class="registro-kicker">Proposta original · ${fmtData(p.criadoEm)}</span><h1>${esc(p.cliente || 'Cliente não informado')}</h1><p>Unidade ${esc(p.unidade)} · ${esc(p.formaLabel || (p.forma === 'scp' ? 'SCP' : p.forma) || 'Proposta')}</p></div><div class="registro-valor"><small>Valor registrado</small><strong>${fmt(p.neg, 2)}</strong></div></header>
+      <header class="registro-top"><div class="dv-record-title">${uiIcon(location.hash.split('/')[1])}<div><span class="registro-kicker">Proposta original · ${fmtData(p.criadoEm)}</span><h1>${esc(p.cliente || 'Cliente não informado')}</h1><p>Unidade ${esc(p.unidade)} · ${esc(p.formaLabel || (p.forma === 'scp' ? 'SCP' : p.forma) || 'Proposta')}</p></div></div><div class="registro-valor"><small>Valor registrado</small><strong>${fmt(p.neg, 2)}</strong></div></header>
       <nav class="registro-acoes" aria-label="Navegação da proposta">${STORE.isAdmin() && u && p.forma !== 'scp' ? `<a class="btn-mini" href="#/sim/${encodeURIComponent(u.id)}?editar=${encodeURIComponent(p.id)}">Editar no simulador</a>` : ''}${u ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', u.id))}">⌂ Histórico da unidade</a><span class="registro-status">Unidade hoje: ${esc(u.status)}</span>` : '<span class="registro-status">Unidade não localizada</span>'}</nav>
       <div class="registro-grade"><section class="painel"><h2>Condições da proposta</h2>${condicoesSalvasHTML(p)}</section><section class="painel"><h2>Atendimento</h2><dl class="registro-dados"><div><dt>Corretor original</dt><dd>${esc(p.corretor || 'Não informado')}</dd></div><div><dt>Empresa</dt><dd>${esc(p.corretorEmpresa || 'Não informada')}</dd></div><div><dt>Telefone do cliente</dt><dd>${esc(p.clienteTel || 'Não informado')}</dd></div></dl><p class="nota">Esta consulta preserva os valores e a autoria do registro original.</p></section></div>
       <section class="painel"><h2>Cliente e envios vinculados</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section>
@@ -136,7 +137,7 @@
     if (!l) { app().innerHTML = `<div class="vazio">Cliente não localizado neste acesso. <a href="${esc(volta)}">Voltar</a></div>`; return; }
     const unidade = STORE.getUnidades().find((u) => String(u.unidade) === String(l.unidade));
     const crm = STORE.podeVerPainel() ? '#/admin/clientes' : '#/clientes';
-    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(volta)}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Cliente · ${esc(estLab(l.estagio))}</span><h1>${esc(l.cliente)}</h1><p>${esc(l.corretorNome || 'Responsável não informado')}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</p></div><div class="registro-acoes">${STORE.podeVerPainel()?'<button type="button" class="btn-lime" id="cliente-editar-dados">Editar dados</button>':''}<a class="btn-mini" href="${crm}?cliente=${encodeURIComponent(l.id)}">Ver atendimento</a></div></header>
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(volta)}">← Voltar à consulta</a><header class="registro-top"><div class="dv-record-title">${uiIcon(location.hash.split('/')[1])}<div><span class="registro-kicker">Cliente · ${esc(estLab(l.estagio))}</span><h1>${esc(l.cliente)}</h1><p>${esc(l.corretorNome || 'Responsável não informado')}${l.empresaNome ? ' · ' + esc(l.empresaNome) : ''}</p></div></div><div class="registro-acoes">${STORE.podeVerPainel()?'<button type="button" class="btn-lime" id="cliente-editar-dados">Editar dados</button>':''}<a class="btn-mini" href="${crm}?cliente=${encodeURIComponent(l.id)}">Ver atendimento</a></div></header>
       <div class="registro-grade"><section class="painel"><h2>Próximo passo</h2><p class="registro-proximo">${l.proximoContato ? 'Retorno em ' + fmtData(l.proximoContato) : 'Definir o próximo contato no CRM'}</p><p>${esc(l.obs || 'Sem observações registradas.')}</p></section><section class="painel"><h2>Informações do cliente</h2><dl class="registro-dados"><div><dt>Primeiro contato</dt><dd>${fmtData(l.primeiroContato)}</dd></div><div><dt>Telefone</dt><dd>${esc(l.clienteTel || 'Não informado')}</dd></div><div><dt>Unidade de interesse</dt><dd>${esc(l.unidade || 'Não informada')}</dd></div>${Object.entries({'E-mail':l.cadastro?.email,'CPF / CNPJ':l.cadastro?.documento,'Endereço':l.cadastro?.endereco,'Cidade / UF':[l.cadastro?.cidade,l.cadastro?.uf].filter(Boolean).join(' / '),'CEP':l.cadastro?.cep,'Observações do cadastro':l.cadastro?.observacoes}).map(([label,value])=>`<div class="cliente-cadastro-dados"><dt>${esc(label)}</dt><dd>${esc(value||'Não informado')}</dd></div>`).join('')}</dl>${unidade ? `<a class="btn-mini" href="${esc(rotaRegistro('conexoes', unidade.id))}">⌂ Histórico da unidade</a>` : ''}</section></div>
       <section class="painel"><h2>Propostas e envios</h2><div id="registro-conexoes"><p class="nota">Consultando vínculos…</p></div></section></section>`;
     if($('#cliente-editar-dados'))$('#cliente-editar-dados').onclick=()=>window.DiamondClienteEditor.abrir({clienteId:l.id,onSaved:()=>{toast('Dados do cliente salvos ✓');vCliente(id);}});
@@ -153,7 +154,7 @@
     }
     if (!u) { app().innerHTML = '<p class="vazio">Unidade não localizada.</p>'; return; }
     const propostas = STORE.getPropostas().filter((p) => p.unidadeId === id);
-    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(voltaRegistro('#/home'))}">← Voltar à consulta</a><header class="registro-top"><div><span class="registro-kicker">Histórico da unidade</span><h1>Unidade ${esc(u.unidade)}</h1><p>${esc(u.status)} · ${propostas.length} proposta(s) neste acesso</p></div>${u.status === 'Disponível' ? `<a class="btn-lime" href="#/sim/${encodeURIComponent(u.id)}">Nova proposta</a>` : ''}</header>
+    app().innerHTML = `<section class="registro"><a class="volta" href="${esc(voltaRegistro('#/home'))}">← Voltar à consulta</a><header class="registro-top"><div class="dv-record-title">${uiIcon(location.hash.split('/')[1])}<div><span class="registro-kicker">Histórico da unidade</span><h1>Unidade ${esc(u.unidade)}</h1><p>${esc(u.status)} · ${propostas.length} proposta(s) neste acesso</p></div></div>${u.status === 'Disponível' ? `<a class="btn-lime" href="#/sim/${encodeURIComponent(u.id)}">Nova proposta</a>` : ''}</header>
       ${warning?`<p class="aviso" role="alert">${esc(warning)}</p>`:''}
       ${gestao?`<dl class="unit-facts"><div><dt>${u.status==='Reservado'?'Cliente da reserva':'Comprador registrado'}</dt><dd>${esc(compradorVenda(u,STORE.getLeads()))}<small>Cadastro da unidade ou cliente fechado vinculado à unidade.</small></dd></div><div><dt>Corretor responsável</dt><dd>${esc(u.reserva?.corretor||u.vendedorNome||'Não informado')}<small>${esc(u.reserva?.empresa||u.vendedorEmpresa||'Empresa não informada')}</small></dd></div><div><dt>${u.status==='Reservado'?'Prazo da reserva':'Situação atual'}</dt><dd>${u.status==='Reservado'?(u.reserva?.prazo?esc(new Date(u.reserva.prazo).toLocaleString('pt-BR')):'Prazo não informado'):esc(u.status)}</dd></div></dl><nav class="registro-acoes" aria-label="Gerenciar unidade"><a class="btn-mini" href="#/admin/vendas?busca=${encodeURIComponent(u.unidade)}">Gerenciar unidade</a>${u.status==='Reservado'?`<a class="btn-mini" href="#/admin/reservas?unidade=${encodeURIComponent(u.id)}&filtro=${!Number.isFinite(Date.parse(u.reserva?.prazo))?'incompletas':Date.parse(u.reserva.prazo)<=Date.now()?'vencidas':'ativas'}">Controlar esta reserva</a>`:''}<a class="btn-mini" href="#/admin/historico?unidade=${encodeURIComponent(u.unidade)}">Consultar todas as propostas</a></nav>`:''}
       <section class="painel"><h2>Propostas registradas</h2><p class="nota">Uma proposta é uma negociação e não comprova a compra da unidade.</p>${listaPropostasHTML(propostas)}</section>
@@ -575,8 +576,9 @@
     const somaVend = vend.reduce((s, u) => s + valorNegociadoTabela(u, cfg), 0);
     const chip = (label, arr, soma, status, cls) =>
       `<button class="chip ${cls} ${filtros.status === status ? 'on' : ''}" data-status="${status}">
-        ${label}: <b>${arr.length}</b>${STORE.isAdmin() && soma > 0 ? ' · ' + fmt(soma) : ''}</button>`;
+        ${uiIcon(status==='Disponível'?'key':status==='Reservado'?'calendar':'building')}<span>${label}: <b>${arr.length}</b></span>${STORE.isAdmin() && soma > 0 ? ' · ' + fmt(soma) : ''}</button>`;
     app().innerHTML = `
+      ${window.DiamondVisual?.heading('home','Espelho de unidades','Disponibilidade, plantas e tabela comercial.')||''}
       <div class="espelho-top">
         ${STORE.podeVerPainel()?'<a class="btn-crm" href="#/admin/reservas">🔖 Reservar apartamento</a>':''}
         ${cli ? '' : `${(STORE.getUser() || {}).usuario === 'domo' ? '<a class="btn-crm" href="#/scp">💠 SCP</a> <a class="btn-crm" href="#/admin/painel">◫ Painel de gestão</a>' : ''}
@@ -806,7 +808,7 @@
         <a class="volta" href="#/home">← espelho</a>
         <div class="painel uni-painel">
           <div class="sim-foto${fotoDe(u, cfg) ? ' zoomavel' : ''}" data-fotoid="${fotoDe(u, cfg)}">${fotoDe(u, cfg) ? '<span class="foto-zoom">🔍</span>' : ''}</div>
-          <h2>Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
+          <h2 class="dv-unit-title">${uiIcon('key')}Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
           <div class="linhas">
             <div><span>Andar</span><b>${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</b></div>
             <div><span>Área</span><b>${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—'}</b></div>
@@ -1153,7 +1155,7 @@
               <button class="btn-mini" id="s-fotobtn">📷 Foto do tipo ${tipoDe(u)}${tipoDe(u) === 'LOJA' ? '' : ' — vale para todas as unidades final ' + tipoDe(u)}</button>
               <button class="btn-mini" id="s-girar" title="girar 90°">↻ girar imagem</button>
             </div>` : ''}
-            <h2>Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
+            <h2 class="dv-unit-title">${uiIcon('key')}Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
             <div class="linhas">
               <div><span>Andar</span><b>${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</b></div>
               <div><span>Área</span><b>${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—'}</b></div>
@@ -2282,7 +2284,7 @@
       const d = CRM_FOCOS[k]; const arr = leads.filter(d.fn); const n = arr.length;
       const sub = d.sub ? d.sub(arr) : '';
       return `<button type="button" class="kpi kpi-btn ${n && d.cls ? d.cls : ''} ${foco === k ? 'kpi-on' : ''}" data-foco="${k}" title="clique para filtrar">
-        <div class="kpi-v">${n}</div><div class="kpi-l">${d.lab}</div>${sub ? '<div class="kpi-sub">' + sub + '</div>' : ''}</button>`;
+        ${uiIcon('chart')}<div class="kpi-v">${n}</div><div class="kpi-l">${d.lab}</div>${sub ? '<div class="kpi-sub">' + sub + '</div>' : ''}</button>`;
     };
     return `<div class="dash-kpis crm-kpis">${Object.keys(CRM_FOCOS).map(kpi).join('')}</div>`;
   }
@@ -2444,7 +2446,7 @@
     const porCor = {};
     leads.forEach((l) => { const k = (l.empresaNome || '') + '|' + (l.corretorNome || '—'); const o = porCor[k] = porCor[k] || { corretor: l.corretorNome || '—', empresa: l.empresaNome || '', total: 0, fechados: 0 }; o.total++; if (l.estagio === 'fechado') o.fechados++; });
     const rank = Object.values(porCor).sort((a, b) => b.fechados - a.fechados || (b.fechados / b.total) - (a.fechados / a.total)).slice(0, 8);
-    const kpi = (v, l, cls, sub) => `<div class="kpi ${cls || ''}"><div class="kpi-v">${v}</div><div class="kpi-l">${l}</div>${sub ? '<div class="kpi-sub">' + sub + '</div>' : ''}</div>`;
+    const kpi = (v, l, cls, sub) => `<div class="kpi ${cls || ''}">${uiIcon('chart')}<div class="kpi-v">${v}</div><div class="kpi-l">${l}</div>${sub ? '<div class="kpi-sub">' + sub + '</div>' : ''}</div>`;
     // UNIDADES vendidas por corretor — vem do "quem vendeu" da unidade (1 cliente pode levar vários aptos)
     const cfgU = STORE.getCfg() || {};
     const vmap = {};
@@ -2503,9 +2505,9 @@
       const chaves = Object.keys(grupos).sort((a, b) => String(a).padStart(5, '0') < String(b).padStart(5, '0') ? -1 : 1);
       $('#he-corpo').innerHTML = `
         <div class="dash-kpis crm-kpis">
-          <div class="kpi"><div class="kpi-v">${lista.length}</div><div class="kpi-l">Propostas</div></div>
-          <div class="kpi"><div class="kpi-v">${new Set(lista.map((p) => String(p.unidade))).size}</div><div class="kpi-l">Aptos</div></div>
-          <div class="kpi"><div class="kpi-v">${new Set(lista.map((p) => p.corretor)).size}</div><div class="kpi-l">Corretores</div></div>
+          <div class="kpi">${uiIcon('chart')}<div class="kpi-v">${lista.length}</div><div class="kpi-l">Propostas</div></div>
+          <div class="kpi">${uiIcon('chart')}<div class="kpi-v">${new Set(lista.map((p) => String(p.unidade))).size}</div><div class="kpi-l">Aptos</div></div>
+          <div class="kpi">${uiIcon('chart')}<div class="kpi-v">${new Set(lista.map((p) => p.corretor)).size}</div><div class="kpi-l">Corretores</div></div>
         </div>
         ${chaves.length ? chaves.map((un) => `
           <div class="hist-grupo">
@@ -2612,11 +2614,11 @@
     const soDomo = !STORE.isAdmin(); // domo: painel restrito (vê tudo + muda vendedor; SEM config/preços/imobiliárias)
     const tabs = soDomo
       ? [['painel', 'Painel de gestão'], ['vendas', 'Unidades e vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'CRM'], ['negociacoes', 'Negociações']]
-      : [['painel', 'Painel de gestão'], ['unidades', 'Preços e unidades'], ['vendas', 'Vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Config'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'CRM'], ['negociacoes', 'Negociações'], ['saude', 'Saúde']];
+      : [['painel', 'Painel de gestão'], ['unidades', 'Preços e unidades'], ['vendas', 'Unidades e vendas'], ['reservas', 'Reservas'], ['vagas', 'Vagas de garagem'], ['predio', 'Prédio'], ['config', 'Configurações'], ['corretores', 'Corretores'], ['clientes', 'Cadastro de clientes'], ['historico', 'Propostas'], ['envios', 'CRM'], ['negociacoes', 'Negociações'], ['saude', 'Saúde']];
     tab = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0]; // aba não permitida p/ o papel → 1ª disponível
     app().innerHTML = `
-      <div class="admin">
-        ${tab==='painel'?'':`<header class="page-heading"><div><h1>${esc(tabs.find(([id])=>id===tab)[1])}</h1><p>${esc(({vendas:'Consulte compradores e a situação de cada unidade.',historico:'Encontre e consulte as condições originais de cada proposta.',clientes:'Carteira de atendimento, negociações e próximos contatos.',negociacoes:'Propostas da Domo, decisões e próximos passos da equipe.',envios:'Documentos compartilhados e acompanhamento dos retornos.',reservas:'Pedidos, prazos e decisões de reserva.',vagas:'Disponibilidade e vínculos das vagas de garagem.'})[tab]||'Gestão Diamond')}</p></div><a class="btn-mini" href="#/admin/painel">Voltar ao painel</a></header>`}
+      <div class="admin dv-workspace" data-area="${tab}">
+        ${tab==='painel'?'':(window.DiamondVisual?.heading(tab,tabs.find(([id])=>id===tab)[1],({vendas:'Consulte compradores e a situação de cada unidade.',historico:'Condições originais, documentos e histórico de propostas.',clientes:'Cadastros, atendimento e próximos contatos.',negociacoes:'Decisões e próximos passos da equipe Domo.',envios:'Documentos compartilhados e acompanhamento dos retornos.',reservas:'Pedidos, prazos e decisões de reserva.',vagas:'Disponibilidade e vínculos das vagas de garagem.',corretores:'Imobiliárias, responsáveis e acessos da equipe.',unidades:'Tabela comercial, disponibilidade e informações das unidades.',predio:'Fotos, plantas e apresentação do empreendimento.',config:'Condições comerciais e preferências do sistema.',saude:'Sincronização e disponibilidade dos serviços.'})[tab]||'Gestão Diamond','<a class="btn-mini" href="#/admin/painel">Voltar ao painel</a>')||'')}
         <div id="aba-corpo"></div>
       </div>`;
     ({ painel: () => window.DiamondGestao.render({compradorVenda}), unidades: aUnidades, predio: aPredio, config: aConfig, corretores: aCorretores, clientes: aClientes, historico: aHistorico, envios: aEnvios, negociacoes: () => window.DiamondNegociacoes.render(), saude: aSaude, vendas: aVendas, reservas: () => window.DiamondReservas.render(), vagas: aVagas }[tab] || (soDomo ? aVendas : aUnidades))();
@@ -2847,10 +2849,10 @@
 
     $('#aba-corpo').innerHTML = `
       <div class="hist-resumo">
-        <button type="button" class="chip chip-f" data-st="Disponível">Disponíveis: <b>${nDisp}</b></button>
-        <button type="button" class="chip chip-f" data-st="Reservado">Reservadas: <b>${nRes}</b></button>
-        <button type="button" class="chip chip-f" data-st="Vendido">Vendidas: <b>${nVend}</b></button>
-        <button type="button" class="chip chip-f" data-st="">Total: <b>${uns.length}</b></button>
+        <button type="button" class="chip chip-f" data-st="Disponível">${uiIcon('key')}Disponíveis: <b>${nDisp}</b></button>
+        <button type="button" class="chip chip-f" data-st="Reservado">${uiIcon('calendar')}Reservadas: <b>${nRes}</b></button>
+        <button type="button" class="chip chip-f" data-st="Vendido">${uiIcon('building')}Vendidas: <b>${nVend}</b></button>
+        <button type="button" class="chip chip-f" data-st="">${uiIcon('chart')}Total: <b>${uns.length}</b></button>
         <a class="btn-lista-pdf" href="#/admin/reservas">🔖 Reservas</a><button type="button" class="btn-lista-pdf" id="v-baixar">⬇ Baixar esta lista (PDF)</button>
       </div>
       ${pedidos.length ? `
@@ -3267,10 +3269,10 @@
       <section class="gestao-corretores" aria-label="Gestão de imobiliárias e corretores">
       <div class="cor-gestao-top"><div><span class="cor-eyebrow">REDE DE VENDAS</span><h2>Equipes conectadas. Gestão em dia.</h2><p>Encontre sua imobiliária, organize os corretores e acompanhe os acessos.</p></div><button type="button" class="btn-lime" id="cor-nova">＋ Nova empresa</button></div>
       <div class="cor-resumo" aria-label="Resumo da rede">
-        <button type="button" data-cor-filtro="todas"><span>Empresas</span><strong>${empresas.length}</strong><small>Ver toda a rede</small></button>
-        <button type="button" data-cor-filtro="ativas"><span>Com acesso ativo</span><strong>${empresas.filter(e => e.ativo !== false).length}</strong><small>Empresas liberadas</small></button>
-        <div><span>Corretores cadastrados</span><strong>${totalCorretores}</strong><small>Inclui os responsáveis</small></div>
-        <button type="button" data-cor-filtro="pendentes"><span>Senha de equipe pendente</span><strong>${empresas.filter(e => e.ativo !== false && !e.temSenhaEquipe).length}</strong><small>Conferir acesso por empresa</small></button>
+        <button type="button" data-cor-filtro="todas">${uiIcon('building')}<span>Empresas</span><strong>${empresas.length}</strong><small>Ver toda a rede</small></button>
+        <button type="button" data-cor-filtro="ativas">${uiIcon('key')}<span>Com acesso ativo</span><strong>${empresas.filter(e => e.ativo !== false).length}</strong><small>Empresas liberadas</small></button>
+        <div>${uiIcon('users')}<span>Corretores cadastrados</span><strong>${totalCorretores}</strong><small>Inclui os responsáveis</small></div>
+        <button type="button" data-cor-filtro="pendentes">${uiIcon('settings')}<span>Senha de equipe pendente</span><strong>${empresas.filter(e => e.ativo !== false && !e.temSenhaEquipe).length}</strong><small>Conferir acesso por empresa</small></button>
       </div>
       ${soDomo ? '<div class="nota">Aqui você cria e gerencia os <b>corretores</b> e as imobiliárias que enviam propostas. Os preços e a configuração do prédio ficam com o administrador.</div>' : `
       <details class="cor-config"><summary>Administradores da Domo</summary><h3>Administradores (equipe Domo)</h3>
@@ -3726,12 +3728,12 @@
     const dash = nTotal ? `
       <div class="dash">
         <div class="dash-kpis">
-          <div class="kpi"><div class="kpi-v">${nTotal}</div><div class="kpi-l">Propostas</div></div>
-          <div class="kpi"><div class="kpi-v">${aptosComProp}${totalUnidades ? '<span class="kpi-de">/' + totalUnidades + '</span>' : ''}</div><div class="kpi-l">Aptos com proposta</div></div>
-          <div class="kpi"><div class="kpi-v">${fmtC(valorTotal)}</div><div class="kpi-l">Volume proposto</div></div>
-          <div class="kpi"><div class="kpi-v">${fmtC(ticket)}</div><div class="kpi-l">Ticket médio</div></div>
-          <div class="kpi kpi-lime"><div class="kpi-v">${ult7}</div><div class="kpi-l">Últimos 7 dias</div></div>
-          <div class="kpi kpi-venda"><div class="kpi-v">${vendidas.length}</div><div class="kpi-l">Vendidas${valorVendas ? '<span class="kpi-de"> · tabela: ' + fmtC(valorVendas) + '</span>' : ''}</div></div>
+          <div class="kpi">${uiIcon('document')}<div class="kpi-v">${nTotal}</div><div class="kpi-l">Propostas</div></div>
+          <div class="kpi">${uiIcon('building')}<div class="kpi-v">${aptosComProp}${totalUnidades ? '<span class="kpi-de">/' + totalUnidades + '</span>' : ''}</div><div class="kpi-l">Aptos com proposta</div></div>
+          <div class="kpi">${uiIcon('coins')}<div class="kpi-v">${fmtC(valorTotal)}</div><div class="kpi-l">Volume proposto</div></div>
+          <div class="kpi">${uiIcon('coins')}<div class="kpi-v">${fmtC(ticket)}</div><div class="kpi-l">Ticket médio</div></div>
+          <div class="kpi kpi-lime">${uiIcon('calendar')}<div class="kpi-v">${ult7}</div><div class="kpi-l">Últimos 7 dias</div></div>
+          <div class="kpi kpi-venda">${uiIcon('key')}<div class="kpi-v">${vendidas.length}</div><div class="kpi-l">Vendidas${valorVendas ? '<span class="kpi-de"> · tabela: ' + fmtC(valorVendas) + '</span>' : ''}</div></div>
         </div>
         <div class="dash-grid">
           <div class="dash-card">
@@ -3946,7 +3948,7 @@
       <div class="sim">
         <a class="volta" href="#/home">← espelho</a>
         <div class="painel">
-          <h2>SCP <span class="nota" style="font-weight:400">— Sociedade em Conta de Participação</span></h2>
+          <h2 class="dv-unit-title">${uiIcon('coins')}SCP <span class="nota" style="font-weight:400">— Sociedade em Conta de Participação</span></h2>
           <div class="form">
             <label>Unidade
               <select id="scp-unidade">
@@ -4105,7 +4107,7 @@
       <div class="sim">
         <a class="volta" href="#/home">← espelho</a>
         <div class="painel">
-          <h2>Retorno do investimento <span class="nota" style="font-weight:400">— análise interna (adm / Domo)</span></h2>
+          <h2 class="dv-unit-title">${uiIcon('chart')}Retorno do investimento <span class="nota" style="font-weight:400">— análise interna (adm / Domo)</span></h2>
           <div class="form">
             <label>Unidade
               <select id="ret-unidade">
@@ -4168,6 +4170,7 @@
     const _fab = $('#fab-domo'); if (_fab) _fab.remove(); // só reaparece nas telas do "site" (espelho/unidade)
     renderTopo();
     const h = location.hash || '#/home';
+    document.body.classList.toggle('diamond-ui',h !== '#/login');
     if (!STORE.getUser() && h !== '#/login') { location.hash = '#/login'; return; }
     if (h === '#/login') { $('#topo').innerHTML = ''; vLogin(); return; }
     const _u = STORE.getUser();
