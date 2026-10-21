@@ -73,12 +73,13 @@
     const host=document.querySelector('#aba-corpo');if(!host)return;
     document.body.classList.remove('gestao-print-mode');
     if(!window.STORE?.podeVerPainel?.()){host.innerHTML='<section class="gt-panel"><h2>Acesso restrito</h2><p>O painel gerencial está disponível apenas para perfis autorizados.</p></section>';return;}
-    const params=new URLSearchParams(location.hash.split('?')[1]||''),visao=['compradores','retornos','relatorios'].includes(params.get('visao'))?params.get('visao'):'resumo';
+    const params=new URLSearchParams(location.hash.split('?')[1]||''),visao=['compradores','vendas','estoque','comercial','permutas','pendencias','retornos','relatorios'].includes(params.get('visao'))?params.get('visao'):'resumo';
     const consultas=[
       STORE.api('reservasPainel',{operacao:'listar'}),
       STORE.api('listLeads',{comoCorretor:STORE.getUser()?.corretorAtivo?.nome||''}),
       STORE.listEnvios(),
       listAllProposals(),
+      STORE.api('vendasCondicoes',{operacao:'listar'}),
     ];
     host.innerHTML='<section class="gt-panel"><p role="status">Atualizando os dados gerenciais…</p></section>';
     Promise.allSettled(consultas).then(results=>{
@@ -98,6 +99,11 @@
       const tab=[['resumo','Visão geral'],['compradores','Compradores'],['retornos','Retornos'],['relatorios','Relatório']].map(([key,label])=>`<a href="${esc(routeBack(key))}" class="${key===visao?'on':''}" ${key===visao?'aria-current="page"':''}>${label}</a>`).join('');
       const stamp=new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'});
       const coverage=`<div class="gt-coverage"><b>Consulta ${esc(stamp)} · horário de Brasília</b><div>${sources.map(([n,s,d])=>`<span class="${s==='rejected'?'err':''}"><b>${esc(n)}:</b> ${esc(stateText(s))} · ${esc(d)}</span>`).join('')}</div>${freshness.estado==='offline'?'<p class="gt-warning">O painel está sem conexão. Propostas vêm do cache local; consultas que falharam estão marcadas.</p>':''}</div>`;
+      const conditionsResult=results[4],conditionsOk=conditionsResult?.status==='fulfilled'&&conditionsResult.value?.ok!==false&&Array.isArray(conditionsResult.value?.condicoes);
+      if(window.DiamondPainel&&visao!=='retornos'){
+        host.innerHTML=window.DiamondPainel.render({visao,model,unidades,leads,propostas,historico:unitsOk?(resResult.value.historico||[]):[],condicoes:conditionsOk?conditionsResult.value.condicoes:[],conditionsOk,unitsOk,leadsOk,envOk,proposalsOk,coverage});
+        window.DiamondPainel.wire(host,()=>render({compradorVenda}));return;
+      }
       let body='';
       if(visao==='resumo')body=overview({model,unitsOk,leadsOk,envOk,proposalsOk,proposalsComplete:proposalResult.value?.completa,propostas,leads,compradorVenda});
       if(visao==='compradores')body=buyers({model,unitsOk,leads,compradorVenda});

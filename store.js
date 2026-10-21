@@ -33,7 +33,7 @@ const STORE = (() => {
     const sess = getUser();
     const payload = { action, ...body };
     if (sess && !payload.auth) payload.auth = { usuario: sess.usuario, senhaHash: sess.senhaHash };
-    const leitura = acoesDeLeitura.has(action) || (action === 'reservasPainel' && body.operacao === 'listar') || (action === 'vagas' && ['carregar', 'paraProposta'].includes(body.operacao));
+    const leitura = (action === 'vendasCondicoes' && body.operacao === 'listar') || acoesDeLeitura.has(action) || (action === 'reservasPainel' && body.operacao === 'listar') || (action === 'vagas' && ['carregar', 'paraProposta'].includes(body.operacao));
     if (!leitura) { versaoLeitura++; leiturasEmCurso.clear(); return requisicao(payload); }
     const chave = JSON.stringify(payload);
     let pendente = leiturasEmCurso.get(chave);
