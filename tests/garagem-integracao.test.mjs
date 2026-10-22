@@ -36,8 +36,8 @@ test('API reabre 701 sem vaga e sincroniza sem alterar a vaga vendida de 1001',a
   const {b,u,f,row,unit,reabrir,sync}=fixture();f.vinculos[2][3]='V18';row().estado=V.importar(f);
   const outraLinha=copy(f.vinculos[2]),outraUnidade=copy(b.table('unidades').get('u-1001'));
   const r=await reabrir();assert.equal(r.status,200,r.erro);sync();
-  assert.equal(unit().status,'Disponível');assert.equal(unit().compradorNome,undefined);assert.equal(unit().vendedorNome,undefined);
-  for(const k of ['precoBase','desconto','precoM2','area','precoVersao'])assert.equal(unit()[k],u[k],k);
+  assert.equal(unit().status,'Disponível');assert.equal(unit().desconto,0);assert.equal(unit().compradorNome,undefined);assert.equal(unit().vendedorNome,undefined);
+  for(const k of ['precoBase','precoM2','area','precoVersao'])assert.equal(unit()[k],u[k],k);
   assert.equal(f.vinculos[1][2],'');assert.equal(f.vinculos[1][3],'');assert.equal(f.vinculos[1][4],'');assert.equal(f.vinculos[1][6],'Disponível');
   assert.deepEqual(f.vinculos[2],outraLinha);assert.deepEqual(b.table('unidades').get('u-1001'),outraUnidade);
   assert.equal(V.efetivas(row().estado)[17].apartamento,'Apto 1001');assert.equal(V.efetivas(row().estado)[17].situacao,'vendida');

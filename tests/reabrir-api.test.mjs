@@ -12,9 +12,9 @@ function fixture({garagem=true,antesCommit}={}){
  return{b,u,f,estado:()=>b.table('domo_vagas_estado').get('diamond')?.estado};
 }
 const req=(u,extra={})=>({operacao:'reabrir',unidadeId:u.id,revisao:u.atualizadoEm||'',motivo:'Distrato confirmado pela direção',...extra});
-test('reabre venda com motivo/histórico, preservando preço, CRM e propostas',async()=>{
+test('reabre venda com motivo/histórico e sem desconto, preservando CRM e propostas',async()=>{
  const {b,u}=fixture({garagem:false}),leads=copy([...b.table('leads')]),props=copy([...b.table('propostas')]);
- const r=await b.request('reservasPainel',req(u));assert.equal(r.status,200,r.erro);assert.equal(r.unidade.status,'Disponível');assert.equal(r.unidade.precoBase,u.precoBase);assert.equal(r.unidade.desconto,u.desconto);assert.equal(r.unidade.precoVersao,u.precoVersao);
+ const r=await b.request('reservasPainel',req(u));assert.equal(r.status,200,r.erro);assert.equal(r.unidade.status,'Disponível');assert.equal(r.unidade.precoBase,u.precoBase);assert.equal(r.unidade.desconto,0);assert.equal(r.unidade.precoVersao,u.precoVersao);
  for(const k of ['compradorNome','clienteId','clienteVinculadoNome','compradorFonte','vendedorNome','vendedorEmpresa','reserva'])assert.equal(r.unidade[k],undefined,k);
  assert.deepEqual([...b.table('leads')],leads);assert.deepEqual([...b.table('propostas')],props);
  const h=(await b.request('reservasPainel',{operacao:'listar'})).historico.find(x=>x.acao==='reabrir');assert.equal(h.antes.compradorNome,u.compradorNome);assert.equal(h.antes.clienteId,u.clienteId);assert.equal(h.antes.vendedorNome,u.vendedorNome);assert.equal(h.depois.status,'Disponível');assert.equal(h.motivo,req(u).motivo);

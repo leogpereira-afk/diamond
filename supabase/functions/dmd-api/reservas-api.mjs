@@ -1,6 +1,37 @@
 import {sb,getStore} from '../_shared/blobs-shim.mjs';
 import './vagas-domain.js';
 const texto=(s,n=160)=>String(s||'').trim().slice(0,n);
+
+// Reserved/sold prices are frozen by a table update. Walk the linked table
+// history, never the version marker alone (that marker is set on ALL units).
+export function precoParaLiberacao(u,cfg,historico){
+ const conferir=()=>{throw Error('Não foi possível conferir o preço da tabela vigente. Confira o histórico da tabela antes de liberar.');};
+ const validar=n=>{if(!Number.isFinite(n)||n<0||!Number.isSafeInteger(Math.round(n*100)))conferir();return n;};
+ const origem=u.precoTabelaOrigem;
+ if(!cfg.tabelaId)return validar(Number(origem?.precoBase??u.precoBase??0)); // legacy multiplier remains in cfg; do not apply twice
+ const porId=new Map(historico.map(h=>[h.id,h])),visitados=new Set(),fatores=[];
+ let id=cfg.tabelaId,base;
+ while(id){
+  if(origem&&id===origem.tabelaId){base=validar(Number(origem.precoBase));break;}
+  if(visitados.has(id))conferir();visitados.add(id);
+  const h=porId.get(id);if(!h)conferir();
+  const item=h.itens?.find(x=>x.id===u.id);
+  if(!item){
+   // A unit created after this snapshot uses its own base. Never borrow the
+   // price/m² of a different apartment.
+   if(base===undefined){if(u.precoVersao!==cfg.tabelaId)conferir();base=validar(Number(u.precoBase||0));}
+   break;
+  }
+  if(item.status==='Disponível'){base=validar(Number(item.novo));break;}
+  base=validar(Number(item.anterior));
+  const pct=Number(h.percentual);if(!Number.isFinite(pct)||pct<=0||pct>1000)conferir();
+  fatores.unshift(1+pct/100);
+  id=h.cfgAntes?.tabelaId;
+ }
+ if(!id&&origem&&!origem.tabelaId)base=validar(Number(origem.precoBase));
+ for(const fator of fatores)base=validar(Math.round((base*fator+Number.EPSILON)*100)/100);
+ return validar(base);
+}
 export function prepararReserva(u,b,pedido,por,agora=new Date().toISOString()){
  const acao=b.operacao,anterior=u.reserva||{};
  if(!['reservar','prorrogar','cancelar','vender','recusar','reabrir'].includes(acao))throw Error('Operação inválida.');
@@ -18,6 +49,7 @@ export function prepararReserva(u,b,pedido,por,agora=new Date().toISOString()){
   if(acao==='prorrogar'&&anterior.prazo&&Date.parse(r.prazo)<=Date.parse(anterior.prazo))throw Error('O novo prazo deve ser posterior ao prazo atual.');
  }
  const depois={...u,atualizadoEm:agora,atualizadoPor:por};
+ if(acao==='reservar')depois.precoTabelaOrigem={precoBase:Number(u.precoBase||0),tabelaId:u.precoVersao||null};
  if(acao==='reservar'||acao==='prorrogar'){depois.status='Reservado';depois.reserva=r;depois.vendedorNome=r.corretor;depois.vendedorEmpresa=r.empresa;}
  if(acao==='cancelar'){depois.status='Disponível';delete depois.reserva;depois.vendedorNome='';depois.vendedorEmpresa='';}
  if(acao==='vender'){const cliente=texto(b.cliente||r.cliente);if(!cliente)throw Error('Informe o comprador antes de converter em venda.');depois.status='Vendido';depois.compradorNome=cliente;delete depois.reserva;}
@@ -57,6 +89,17 @@ export async function executarReservas(b,usr,json){
   }
  }
  const por=usr.nome||usr.usuario,{depois,event}=prepararReserva(u,b,pedido,por);
+ let cfgLiberacao=null;
+ if(['cancelar','reabrir'].includes(b.operacao)){
+  cfgLiberacao=await getStore('cfg').get('cfg',{type:'json'});
+  if(!cfgLiberacao)throw Error('Não foi possível conferir a tabela vigente. Atualize antes de liberar.');
+  const tabelas=cfgLiberacao.tabelaId?(await getStore('precos_historico').listJSON()).map(x=>x.valor).filter(Boolean):[];
+  depois.precoBase=precoParaLiberacao(u,cfgLiberacao,tabelas);depois.desconto=0;
+  delete depois.precoTabelaOrigem;
+  if(cfgLiberacao.tabelaId)depois.precoVersao=cfgLiberacao.tabelaId;
+  Object.assign(event.antes,{precoBase:u.precoBase||0,desconto:u.desconto||0,precoVersao:u.precoVersao||null});
+  Object.assign(event.depois,{precoBase:depois.precoBase,desconto:0,precoVersao:depois.precoVersao||null,tabelaId:cfgLiberacao.tabelaId||null,reajuste:cfgLiberacao.reajuste||0});
+ }
  let estado=null,revisao=null;
  const anterior=u.reserva?.vaga||'',codigo=depois.reserva?.vaga||anterior||propria?.codigo;
  if(b.operacao==='reabrir'&&garagem){
@@ -93,7 +136,7 @@ export async function executarReservas(b,usr,json){
   const ajuste=V.validarAjuste(codigo,{situacao:b.operacao==='cancelar'?'disponivel':b.operacao==='vender'?'vendida':'reservada',apartamento:b.operacao==='cancelar'?(estrutural?v.apartamento:''):propria?.apartamento||'Apto '+u.unidade,cliente:b.operacao==='cancelar'?'':b.operacao==='vender'?depois.compradorNome:r.cliente,reserva:b.operacao==='cancelar'?'':dia(r.inicio),expiracao:b.operacao==='cancelar'?'':dia(r.prazo),motivo:b.motivo,observacoes:v.observacoes||'',contrato:v.contrato||''},garagem.estado);
   estado={...garagem.estado,ajustes:{...garagem.estado.ajustes,[codigo]:ajuste},historico:[...(garagem.estado.historico||[]),{id:crypto.randomUUID(),em:event.em,por,acao:'reservaApartamento',vaga:codigo,antes:v,depois:ajuste,motivo:b.motivo}]};revisao=garagem.revisao;
  }
- const {data,error}=await sb.rpc('dmd_reserva_confirmar',{p_id:u.id,p_antes:u,p_depois:depois,p_evento:event,p_pedido_em:b.pedidoEm||null,p_vagas_revisao:revisao,p_vagas_estado:estado,p_resolver_pedido:b.operacao!=='reabrir'});
+ const {data,error}=await sb.rpc('dmd_reserva_confirmar',{p_id:u.id,p_antes:u,p_depois:depois,p_evento:event,p_pedido_em:b.pedidoEm||null,p_vagas_revisao:revisao,p_vagas_estado:estado,p_resolver_pedido:b.operacao!=='reabrir',...(cfgLiberacao?{p_cfg_antes:cfgLiberacao}:{})});
  if(error)throw Error(/CONFLITO/.test(error.message)?'Os dados mudaram durante a confirmação. Atualize e confira novamente.':'Não foi possível salvar. Nenhuma alteração foi confirmada.');
  return json(200,{ok:true,unidade:data});
  }catch(e){return json(409,{erro:e.message});}

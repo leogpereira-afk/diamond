@@ -45,6 +45,7 @@ export function backend({beforeWrite=null,failEvent=false,beforePrecoCommit=null
   table('leads').set(p.p_id,copy(p.p_depois));if(p.p_unidade_id)table('unidades').set(p.p_unidade_id,copy(p.p_unidade_depois));table('clientes_historico').set(p.p_evento.id,copy(p.p_evento));return {data:copy(p.p_depois)};
  }
  if(beforeReservaCommit)await beforeReservaCommit({table,p});
+ if(p.p_cfg_antes&&!same(table('cfg').get('cfg'),p.p_cfg_antes))return{error:{message:'CFG_CONFLITO'}};
  const old=table('unidades').get(p.p_id);if(JSON.stringify(old)!==JSON.stringify(p.p_antes))return{error:{message:'RESERVA_CONFLITO'}};
  if(p.p_vagas_estado){const vaga=table('domo_vagas_estado').get('diamond');if(!vaga||vaga.revisao!==p.p_vagas_revisao)return{error:{message:'VAGAS_CONFLITO'}};vaga.estado=copy(p.p_vagas_estado);vaga.revisao++;}
  table('unidades').set(p.p_id,copy(p.p_depois));table('reservas_historico').set(p.p_evento.id,copy(p.p_evento));if(p.p_resolver_pedido!==false)table('reservas').delete(p.p_id);return{data:copy(p.p_depois)};}};

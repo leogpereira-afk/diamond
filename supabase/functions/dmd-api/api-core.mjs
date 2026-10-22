@@ -350,7 +350,9 @@ export const handler = async (event) => {
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = await stores.unidades.getMany(fatia);
-      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,...publica})=>publica), total, nextAfter });
+      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,...publica})=>publica.status==='Reservado'
+        ? {...Object.fromEntries(['id','unidade','status','andar','area','tipo','fotoId','atualizadoEm','precoVersao'].filter(k=>Object.hasOwn(publica,k)).map(k=>[k,publica[k]])),precoRestrito:true}
+        : publica), total, nextAfter });
     }
 
     if (action === 'upsert') {
@@ -371,6 +373,10 @@ export const handler = async (event) => {
       }
       if(u.status!==existente?.status&&(u.status==='Reservado'||existente?.status==='Reservado'))return json(409,{erro:'Use a aba Reservas para alterar esta situação.'});
       const grava = { ...existente, ...u, id, atualizadoPor: adm.usuario };
+      // Only the reservation transition owns this baseline. An offline form
+      // must not overwrite it or restore a snapshot after release.
+      if(existente?.precoTabelaOrigem)grava.precoTabelaOrigem=existente.precoTabelaOrigem;
+      else delete grava.precoTabelaOrigem;
       // Price revision is owned by the versioning operation, never by an offline edit.
       if (existente?.precoVersao) grava.precoVersao = existente.precoVersao;
       else delete grava.precoVersao;

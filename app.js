@@ -604,13 +604,14 @@
         ${lista.map((u) => {
           const vt = valorNegociadoTabela(u, cfg); // preço EFETIVO (aplica desconto da unidade)
           const temDesc = (u.desconto || 0) > 0;
+          const restrito = u.status === 'Reservado' && !STORE.podeVerPainel();
           const pedida = resPend[u.id]; // pedido de reserva pendente → todos veem (evita 2 corretores no mesmo apto)
           const clicavel = !cli && (u.status === 'Disponível' || STORE.isAdmin()); // corretor não abre vendido/reservado; cliente não abre nada
           return `<${clicavel ? 'a' : 'div'} class="lin ${u.status === 'Vendido' ? 'vendido' : u.status === 'Reservado' ? 'reservado' : ''} ${clicavel ? '' : 'lin-travada'}" data-un="${esc(String(u.unidade))}" ${clicavel ? `href="#/sim/${encodeURIComponent(u.id)}"` : ''}>
             <span class="lin-foto" data-fotoid="${fotoDe(u, cfg)}"></span>
             <span class="lin-un">${esc(u.unidade)}</span>
             <span class="lin-info">${u.andar === 0 ? 'Térreo' : u.andar + 'º andar'} · ${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—'}</span>
-            <span class="lin-preco">${cli
+            <span class="lin-preco">${restrito ? '<span class="sem-preco">Valor restrito</span>' : cli
               ? (u.status !== 'Disponível' ? '' /* cliente: sem valor em vendido/reservado */
                   : (cc.precos && u.precoBase ? fmt(vt) + (u.area ? '<small>' + fmt(vt / u.area) + '/m²</small>' : '') : '<span class="sem-preco">consultar</span>'))
               : (u.precoBase ? (temDesc ? '<s class="preco-de">' + fmt(valorTabela(u, cfg)) + '</s> ' : '') + fmt(vt) + (temDesc ? ' <span class="preco-desc">−' + pct(u.desconto) + '</span>' : '') : (u.status === 'Disponível' ? '<span class="sem-preco">consultar</span>' : '')) + (u.precoBase && u.area ? '<small>' + fmt(vt / u.area) + '/m²</small>' : '')}</span>

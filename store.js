@@ -276,7 +276,16 @@ const STORE = (() => {
   }
 
   // ---------- dados locais ----------
-  const getUnidades = () => lsGet(K.un, []);
+  const getUnidades = () => {
+    const unidades=lsGet(K.un, []);
+    if(podeVerPainel())return unidades;
+    // Sanitize older offline snapshots as well as current API responses.
+    const publicas=unidades.map(u=>u.status==='Reservado'
+      ? {...Object.fromEntries(['id','unidade','status','andar','area','tipo','fotoId','atualizadoEm','precoVersao'].filter(k=>Object.hasOwn(u,k)).map(k=>[k,u[k]])),precoRestrito:true}
+      : u);
+    if(JSON.stringify(publicas)!==JSON.stringify(unidades))localStorage.setItem(K.un,JSON.stringify(publicas));
+    return publicas;
+  };
   const getCfg = () => lsGet(K.cfg, null);
   const getPropostas = () => lsGet(K.prop, []);
   const getUsuarios = () => lsGet(K.usuarios, []);
@@ -699,6 +708,7 @@ const STORE = (() => {
       vistas.add(r.id);
       if (excluidas.has(r.id)) continue;
       const local = porId.get(r.id), nova = r.atualizadoEm || '', anterior = local?.atualizadoEm || '';
+      if (chave === K.un && r.precoRestrito) { porId.set(r.id,r); continue; }
       if (chave === K.un && r.precoVersao && r.precoVersao !== local?.precoVersao) {
         // A revisão financeira do servidor prevalece sobre o relógio do aparelho.
         // Edições pendentes dos demais campos continuam na fila para conferência.
