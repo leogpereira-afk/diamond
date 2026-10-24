@@ -706,6 +706,7 @@
   }
 
   function vUnidade(id) {
+    if(bloquearSimuladorIndisponivel())return;
     const cfg = STORE.getCfg() || {};
     const u = STORE.unidadePorId(id);
     if (!u) { app().innerHTML = '<div class="vazio">Unidade não encontrada. <a href="#/home">voltar ao espelho</a></div>'; return; }
@@ -4231,6 +4232,12 @@
     const rota = location.hash.match(/^#\/sim\/([^?]+)/);
     if (!rota) return false;
     let id; try { id = decodeURIComponent(rota[1]); } catch (_) { return false; }
+    if (STORE.disponibilidadeConfirmada?.() === false) {
+      sim=null;_sujo=false;
+      document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
+      app().innerHTML='<div class="vazio" role="status">Conferindo disponibilidade… <span>Aguarde a confirmação da conexão.</span></div>';
+      return true;
+    }
     const unidade = STORE.unidadePorId(id);
     if (!unidade || unidade.status === 'Disponível') return false;
     sim = null;

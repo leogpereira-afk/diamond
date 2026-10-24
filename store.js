@@ -65,6 +65,11 @@ const STORE = (() => {
     return lsGet(K.user, null);
   }
   let disponibilidadeLive;
+  let disponibilidadeValidada = false;
+  function invalidarDisponibilidade() {
+    disponibilidadeValidada=false;versaoLeitura++;leiturasEmCurso.clear();
+    emit('sync',status());
+  }
   function setUser(sess, lembrar) {
     localStorage.removeItem(K.user); sessionStorage.removeItem(K.user);
     if (lembrar) lsSet(K.user, sess);
@@ -782,8 +787,10 @@ const STORE = (() => {
           }
         }
         const [un, config, prop, crm, reservas] = results;
-        let mudou = false;
-        if (un.status === 'fulfilled') mudou = aplicaLote(K.un, un.value, 'del', 'upsert', 'unidade', false, true);
+        const confirmada = un.status==='fulfilled' && config.status==='fulfilled';
+        let mudou = confirmada && !disponibilidadeValidada;
+        disponibilidadeValidada = confirmada;
+        if (un.status === 'fulfilled') mudou = aplicaLote(K.un, un.value, 'del', 'upsert', 'unidade', false, true) || mudou;
         if (config.status === 'fulfilled' && config.value) {
           const rc = config.value, cfgLocal = getCfg();
           if (filaGet().some(x => x.action === 'setCfg')) {
@@ -811,7 +818,7 @@ const STORE = (() => {
         if (!falha) lsSet(K.last, now());
         if (mudou) for (const fn of ciclo.callbacks) fn();
         emit('sync', status());
-      } catch (e) { if (escopo === escopoLeitura()) { _erroLeitura = e; emit('sync', status()); } }
+      } catch (e) { if (escopo === escopoLeitura()) { disponibilidadeValidada=false; _erroLeitura = e; emit('sync', status()); } }
     })();
     try { return await ciclo.promise; }
     finally { if (cicloLeitura === ciclo) cicloLeitura = null; }
@@ -837,12 +844,14 @@ const STORE = (() => {
     window.addEventListener('storage',()=>disponibilidadeLive?.restart());
     setInterval(() => { trySync(); }, 8000);
     setInterval(() => { if (!document.hidden) pull(onRefresh); }, 30000);
-    window.addEventListener('online', () => { disponibilidadeLive?.restart(); trySync(); pull(onRefresh); });
+    window.addEventListener('offline', invalidarDisponibilidade);
+    window.addEventListener('online', () => { invalidarDisponibilidade(); disponibilidadeLive?.restart(true); trySync(); pull(onRefresh); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(onRefresh); });
     trySync(); pull(onRefresh);
   }
 
   return {
+    disponibilidadeConfirmada:()=>navigator.onLine && disponibilidadeValidada,
     api, sha256, login, logout, getUser, setUser, setCorretorAtivo, setMeusCorretores, trocarMinhaSenha, setSenhaEquipe, enviarPropostaPdf, isAdmin,
     entrarComoUniversal, setSenhaCorretorGeral, temSenhaCorretorGeral: () => lsGet('dv_temGeral', false),
     getLeads, pullLeads, salvarLead, excluirLead, arquivarPropostaPdf, listEnvios, salvarCadastroCliente,

@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v55';
-const SHELL = ['visual.js?v=55','visual.css?v=55','negociacoes.js?v=55','negociacoes.css?v=55','proposta-domain.js?v=55','precos.js?v=55','precos.css?v=55','clientes-editor.js?v=55','clientes-painel.js?v=55','gestao-domain.js?v=55','gestao.js?v=55','gestao-insights.js?v=55','gestao-painel.js?v=55','gestao-painel.css?v=55','gestao.css?v=55','navegacao.js?v=55','navegacao.css?v=55','vendor/jspdf.umd.min.js?v=55','envios-domain.js?v=55','envios.js?v=55','envios.css?v=55','vagas-disponiveis.js?v=55','./', 'index.html', 'styles.css?v=55', 'config.js?v=55', 'plano.js?v=55', 'disponibilidade-live.js?v=55', 'store.js?v=55', 'app.js?v=55','reservas.js?v=55','reservas.css?v=55',
-  'vagas-vinculo.js?v=55','vagas-domain.js?v=55','vagas-pdf.js?v=55','vagas.js?v=55','vagas.css?v=55','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v56';
+const SHELL = ['visual.js?v=56','visual.css?v=56','negociacoes.js?v=56','negociacoes.css?v=56','proposta-domain.js?v=56','precos.js?v=56','precos.css?v=56','clientes-editor.js?v=56','clientes-painel.js?v=56','gestao-domain.js?v=56','gestao.js?v=56','gestao-insights.js?v=56','gestao-painel.js?v=56','gestao-painel.css?v=56','gestao.css?v=56','navegacao.js?v=56','navegacao.css?v=56','vendor/jspdf.umd.min.js?v=56','envios-domain.js?v=56','envios.js?v=56','envios.css?v=56','vagas-disponiveis.js?v=56','./', 'index.html', 'styles.css?v=56', 'config.js?v=56', 'plano.js?v=56', 'disponibilidade-live.js?v=56', 'store.js?v=56', 'app.js?v=56','reservas.js?v=56','reservas.css?v=56',
+  'vagas-vinculo.js?v=56','vagas-domain.js?v=56','vagas-pdf.js?v=56','vagas.js?v=56','vagas.css?v=56','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = [];
 
 self.addEventListener('install', (e) => {

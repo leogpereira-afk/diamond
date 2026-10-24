@@ -2,9 +2,9 @@
 window.criarDisponibilidadeLive = function({url, token, sessao, receber, sincronizar}) {
  let controller=null, timer=null, identity='', stopped=false, attempt=0;
  const key=s=>s ? JSON.stringify([s.usuario,s.senhaHash,s.papel]) : '';
- function restart(){
+ function restart(force=false){
   const next=key(sessao());
-  if(next===identity && controller)return;
+  if(!force && next===identity && controller)return;
   identity=next;controller?.abort();controller=null;clearTimeout(timer);
   if(!stopped && next)connect(next);
  }
