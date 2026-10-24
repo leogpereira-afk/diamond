@@ -4225,6 +4225,22 @@
     vHome();
   }
 
+  // A mudança de disponibilidade tem prioridade sobre foco, edição e diálogos.
+  function bloquearSimuladorIndisponivel() {
+    if (STORE.isAdmin()) return false;
+    const rota = location.hash.match(/^#\/sim\/([^?]+)/);
+    if (!rota) return false;
+    let id; try { id = decodeURIComponent(rota[1]); } catch (_) { return false; }
+    const unidade = STORE.unidadePorId(id);
+    if (!unidade || unidade.status === 'Disponível') return false;
+    sim = null;
+    delete _uniDraft[id];
+    _sujo = false;
+    document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+    app().innerHTML = '<div class="vazio" role="alert">Unidade indisponível. <a href="#/home">voltar ao espelho</a></div>';
+    return true;
+  }
+
   window.addEventListener('hashchange', () => { sim=null; render(); window.scrollTo(0, 0); });
   document.addEventListener('click', (e) => {
     if (!_sujo || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -4234,10 +4250,11 @@
   });
   window.addEventListener('beforeunload', (e) => { if (_sujo) { e.preventDefault(); e.returnValue = ''; } }); // fechar/recarregar com edição pendente
   STORE.on('sync', atualizaSync);
-  STORE.on('sync',()=>{if(location.hash.startsWith('#/sim/'))sim?.atualizarSalvamento?.();});
+  STORE.on('sync',()=>{if(bloquearSimuladorIndisponivel())return;if(location.hash.startsWith('#/sim/'))sim?.atualizarSalvamento?.();});
   // leads mudaram (pull/sync trouxe novidade) → repinta só a lista do CRM, sem re-render da rota
   STORE.on('dados', (d) => { if (d && d.tipo === 'leads' && !_sujo && _crm.lista && $(_crm.lista)) crmPinta(); });
   STORE.iniciar(() => {
+    if (bloquearSimuladorIndisponivel()) return;
     const h = location.hash;
     if (_sujo) return; // há edição não salva na tela (ex.: vendedor/preço escolhidos, card do CRM em digitação) — não re-renderiza
     if (h.startsWith('#/admin/painel') || document.querySelector('dialog[open]')) return;
