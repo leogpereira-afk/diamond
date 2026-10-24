@@ -221,6 +221,10 @@ export const handler = async (event) => {
   };
 
   try {
+    if (action === 'disponibilidadeAoVivo') {
+      const usr = await validarUsuario(stores.cfg, body.auth, false, true);
+      return usr ? json(200, {ok:true}) : json(403, {erro:'sessão inválida'});
+    }
     if (action === 'vendasCondicoes') {
       const usr=await validarUsuario(stores.cfg,body.auth,false);
       const r=await executarCondicoes(body,usr,{getStore,sb});

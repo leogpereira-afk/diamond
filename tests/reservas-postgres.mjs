@@ -64,6 +64,26 @@ try{
  const pendingPrice=b.query('select public.dmd_precos_aplicar($1,$2,$3,$4,$5,$6)',priceParams).then(()=>null,e=>e);await blocked(b.processID);await a.query('commit');assert.match((await pendingPrice).message,/UNIDADES_CONFLITO/);check('concurrent repricing waits for release and rejects stale snapshot without deadlock');
  await seed();const results=await Promise.all([a,b].map((client,i)=>client.query(releaseSql,args({3:{...event,id:'simultaneous-'+i}})).then(()=>true,()=>false)));assert.equal(results.filter(Boolean).length,1);
  assert.equal((await c.query("select count(*)::int n from public.dmd_kv where store='reservas_historico'")).rows[0].n,1);check('two concurrent releases produce exactly one history record');
+ await c.query('create publication supabase_realtime');
+ const initial=await snapshot();
+ await c.query(await sql('20261024020458_unidades_tempo_real.sql'));
+ assert.deepEqual(await snapshot(),initial);check('live migration preserves existing data');
+ for(const role of ['anon','authenticated']){
+  await a.query('set role '+role);
+  await assert.rejects(a.query('select * from public.dmd_disponibilidade'),{code:'42501'});
+  await a.query('reset role');
+ }
+ check('live status table inaccessible to public roles');
+ await a.query('begin');await a.query('set local role service_role');
+ await a.query("update public.dmd_kv set valor=jsonb_set(valor,'{status}','\"Reservado\"') where store='unidades'");
+ assert.equal((await c.query('select count(*)::int n from public.dmd_disponibilidade')).rows[0].n,0);
+ await a.query('rollback');
+ assert.equal((await c.query('select count(*)::int n from public.dmd_disponibilidade')).rows[0].n,0);
+ check('uncommitted and rolled-back reservation emits no visible status');
+ await c.query("update public.dmd_kv set valor=jsonb_set(valor,'{status}','\"Reservado\"') where store='unidades'");
+ const live=(await c.query('select * from public.dmd_disponibilidade')).rows;
+ assert.deepEqual(live,[{id:before.id,status:'Reservado'}]);
+ check('committed reservation publishes only id and status');
  console.log(JSON.stringify({checks,passed:true,isolated:true}));
 }finally{
  for(const c of clients){await c.query('rollback').catch(()=>{});await c.end().catch(()=>{});}

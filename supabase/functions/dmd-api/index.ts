@@ -1,6 +1,8 @@
 // dmd-api — adaptador Deno para o handler portado do Netlify (api-core.mjs).
 // CORS liberado (o app roda no GitHub Pages, origem diferente); OPTIONS responde antes do gate.
 import { handler } from './api-core.mjs';
+import { sb } from '../_shared/blobs-shim.mjs';
+import { disponibilidadeStream } from './disponibilidade-stream.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +26,9 @@ Deno.serve(async (req: Request) => {
     res = await handler(event);
   } catch (e) {
     res = { statusCode: 500, body: JSON.stringify({ erro: 'erro interno: ' + ((e as Error)?.message || e) }) };
+  }
+  if (res.statusCode === 200 && JSON.parse(event.body || '{}').action === 'disponibilidadeAoVivo') {
+    return new Response(disponibilidadeStream(sb, req.signal), {headers: {...CORS, 'Content-Type':'application/x-ndjson', 'Cache-Control':'no-store', 'X-Accel-Buffering':'no'}});
   }
   const headers = { 'Content-Type': 'application/json; charset=utf-8', ...(res.headers || {}), ...CORS };
   if (res.isBase64Encoded) {

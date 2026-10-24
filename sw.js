@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v54';
-const SHELL = ['visual.js?v=54','visual.css?v=54','negociacoes.js?v=54','negociacoes.css?v=54','proposta-domain.js?v=54','precos.js?v=54','precos.css?v=54','clientes-editor.js?v=54','clientes-painel.js?v=54','gestao-domain.js?v=54','gestao.js?v=54','gestao-insights.js?v=54','gestao-painel.js?v=54','gestao-painel.css?v=54','gestao.css?v=54','navegacao.js?v=54','navegacao.css?v=54','vendor/jspdf.umd.min.js?v=54','envios-domain.js?v=54','envios.js?v=54','envios.css?v=54','vagas-disponiveis.js?v=54','./', 'index.html', 'styles.css?v=54', 'config.js?v=54', 'plano.js?v=54', 'store.js?v=54', 'app.js?v=54','reservas.js?v=54','reservas.css?v=54',
-  'vagas-vinculo.js?v=54','vagas-domain.js?v=54','vagas-pdf.js?v=54','vagas.js?v=54','vagas.css?v=54','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v55';
+const SHELL = ['visual.js?v=55','visual.css?v=55','negociacoes.js?v=55','negociacoes.css?v=55','proposta-domain.js?v=55','precos.js?v=55','precos.css?v=55','clientes-editor.js?v=55','clientes-painel.js?v=55','gestao-domain.js?v=55','gestao.js?v=55','gestao-insights.js?v=55','gestao-painel.js?v=55','gestao-painel.css?v=55','gestao.css?v=55','navegacao.js?v=55','navegacao.css?v=55','vendor/jspdf.umd.min.js?v=55','envios-domain.js?v=55','envios.js?v=55','envios.css?v=55','vagas-disponiveis.js?v=55','./', 'index.html', 'styles.css?v=55', 'config.js?v=55', 'plano.js?v=55', 'disponibilidade-live.js?v=55', 'store.js?v=55', 'app.js?v=55','reservas.js?v=55','reservas.css?v=55',
+  'vagas-vinculo.js?v=55','vagas-domain.js?v=55','vagas-pdf.js?v=55','vagas.js?v=55','vagas.css?v=55','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = [];
 
 self.addEventListener('install', (e) => {

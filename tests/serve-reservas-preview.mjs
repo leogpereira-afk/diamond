@@ -1,5 +1,8 @@
 // Preview local com registros fictícios e transporte restrito ao próprio servidor.
 import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {backend,source} from './helpers.mjs';
+import {disponibilidadeStream} from '../supabase/functions/dmd-api/disponibilidade-stream.mjs';
+const subscribers=new Set();
+const liveSb={channel(){let callback;return {on(_kind,_filter,fn){callback=fn;return this;},subscribe(fn){subscribers.add(callback);this.callback=callback;queueMicrotask(()=>fn('SUBSCRIBED'));}};},removeChannel(ch){subscribers.delete(ch.callback);}};
 const root=fileURLToPath(new URL('../',import.meta.url));const b=backend();
 b.table('unidades').set('u-1',{id:'u-1',unidade:'1',status:'Disponível',precoBase:300000,area:40,andar:4,desconto:0,atualizadoEm:'2026-09-09T20:00:00Z'});
 b.table('unidades').set('u-2',{id:'u-2',unidade:'2',status:'Vendido',compradorNome:'Cliente de teste',vendedorNome:'Teste',vendedorEmpresa:'Domo',precoBase:350000,area:45,andar:4,desconto:0,atualizadoEm:'2026-09-09T20:00:00Z'});
@@ -22,7 +25,14 @@ const priceApply=await b.request('precosAplicar',{...priceArgs,token:pricePrevie
 if(priceApply.status!==200)throw Error(priceApply.erro);
 const port=Number(process.env.PORT)||5524;const base='http://127.0.0.1:'+port;const events=[];
 http.createServer(async(req,res)=>{try{const u=new URL(req.url,base);let text='',type='application/json';
- if(u.pathname==='/api/dmd-api'){let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');if(!['list','getCfg','listLeads','listReservas','listPropostas','listEnvios','getFoto'].includes(data.action))events.push({action:data.action,body:data});const r=data.action==='vagas'&&data.operacao==='carregar'?{status:200,ok:true,estado:estadoVagas,revisao:1}:data.action==='vagas'&&data.operacao==='paraProposta'?{status:200,ok:true,vagas:[{codigo:'V01',pavimento:'Térreo'},{codigo:'V26',pavimento:'2º pavimento'}]}:await b.request(data.action,data,data.auth?.usuario||null);res.statusCode=r.status;text=JSON.stringify(r);}
+ if(u.pathname==='/api/dmd-api'){let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body||'{}');if(!['list','getCfg','listLeads','listReservas','listPropostas','listEnvios','getFoto'].includes(data.action))events.push({action:data.action,body:data});const r=data.action==='vagas'&&data.operacao==='carregar'?{status:200,ok:true,estado:estadoVagas,revisao:1}:data.action==='vagas'&&data.operacao==='paraProposta'?{status:200,ok:true,vagas:[{codigo:'V01',pavimento:'Térreo'},{codigo:'V26',pavimento:'2º pavimento'}]}:await b.request(data.action,data,data.auth?.usuario||null);if(data.action==='disponibilidadeAoVivo'&&r.status===200){
+ const abort=new AbortController();res.on('close',()=>abort.abort());
+ res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-store'});
+ const reader=disponibilidadeStream(liveSb,abort.signal).getReader();
+ while(true){const {done,value}=await reader.read();if(done)break;res.write(value);}res.end();return;
+ }
+ if(r.status===200&&r.unidade){for(const fn of subscribers)fn({new:{id:r.unidade.id,status:r.unidade.status}});}
+ res.statusCode=r.status;text=JSON.stringify(r);}
  else if(u.pathname.startsWith('/api/dmd-p/')){text=JSON.stringify({cliente:'Cliente de teste',corretor:'Corretor de teste',valor:300000,unidade:'1',area:40,andar:4,em:'2026-09-09T20:00:00Z',whats:'5511999999999',ok:true,resumo:{modalidade:'Personalizado',validade:'2026-10-08',vaga:'V01 · Térreo',itens:[{rotulo:'Entrada',valor:'R$ 30.000,00'},{rotulo:'Parcelas mensais',valor:'36 × R$ 3.333,33 (valores nominais)'},{rotulo:'Parcela final',valor:'R$ 150.000,00 · mês 36'},{rotulo:'Correção',valor:'INCC'}]}});}
  else if(u.pathname==='/audit-state'){text=JSON.stringify({events,propostas:[...b.table('propostas').values()],reservas:[...b.table('reservas').values()]});}
  else if(u.pathname==='/fixture.js'){const broker=u.searchParams.get('perfil')==='corretor';const demoSession=broker?{...session,usuario:'externo',nome:'Corretor de teste',empresa:'Imobiliária de teste'}:session;type='application/javascript';text=`localStorage.setItem('dv_user',${JSON.stringify(JSON.stringify(demoSession))});localStorage.setItem('dv_owner',${JSON.stringify(demoSession.usuario)});localStorage.setItem('dv_fila','[]');`;}

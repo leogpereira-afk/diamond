@@ -64,10 +64,12 @@ const STORE = (() => {
     try { const s = sessionStorage.getItem(K.user); if (s) return JSON.parse(s); } catch (e) {}
     return lsGet(K.user, null);
   }
+  let disponibilidadeLive;
   function setUser(sess, lembrar) {
     localStorage.removeItem(K.user); sessionStorage.removeItem(K.user);
     if (lembrar) lsSet(K.user, sess);
     else { try { sessionStorage.setItem(K.user, JSON.stringify(sess)); } catch (e) { lsSet(K.user, sess); } }
+    disponibilidadeLive?.restart();
   }
   // ao trocar de usuário no MESMO aparelho, descarta caches/fila do dono anterior
   // (evita vazar dados de A para B e enviar a fila de A sob a credencial de B)
@@ -256,7 +258,7 @@ const STORE = (() => {
     setUser(s, !!localStorage.getItem(K.user));
     return true;
   }
-  function logout() { localStorage.removeItem(K.user); sessionStorage.removeItem(K.user); }
+  function logout() { localStorage.removeItem(K.user); sessionStorage.removeItem(K.user); disponibilidadeLive?.restart(); }
   const isAdmin = () => { const u = getUser(); return !!u && u.papel === 'admin'; };
   const ehDomo = () => { const u = getUser(); return !!u && u.usuario === 'domo'; };       // login da construtora
   const podeVerPainel = () => isAdmin() || ehDomo();                                          // vê tudo (admin OU domo)
@@ -817,9 +819,25 @@ const STORE = (() => {
 
   // ---------- ciclo ----------
   function iniciar(onRefresh) {
+    disponibilidadeLive = window.criarDisponibilidadeLive?.({url:API_URL,token:window.APP_TOKEN,sessao:getUser,
+      sincronizar:()=>{versaoLeitura++;pull(onRefresh);},
+      receber:event=>{
+        if(typeof event.id!=='string'||typeof event.status!=='string')return;
+        versaoLeitura++; // discard reads started before the committed status notification
+        if(event.status!=='Disponível'&&!isAdmin()){
+          const units=getUnidades().map(u=>u.id===event.id
+            ? {id:u.id,unidade:u.unidade,status:event.status,precoRestrito:true}:u);
+          lsSet(K.un,units);
+          onRefresh?.();emit('sync',status());
+        }
+        pull(onRefresh);
+      }
+    });
+    disponibilidadeLive?.restart();
+    window.addEventListener('storage',()=>disponibilidadeLive?.restart());
     setInterval(() => { trySync(); }, 8000);
     setInterval(() => { if (!document.hidden) pull(onRefresh); }, 30000);
-    window.addEventListener('online', () => { trySync(); pull(onRefresh); });
+    window.addEventListener('online', () => { disponibilidadeLive?.restart(); trySync(); pull(onRefresh); });
     document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(onRefresh); });
     trySync(); pull(onRefresh);
   }
