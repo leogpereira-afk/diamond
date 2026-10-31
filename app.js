@@ -2635,16 +2635,8 @@
     const uns = STORE.getUnidades().slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1);
     // lista de possíveis vendedores (para marcar quem vendeu cada unidade → alimenta o ranking de vendas)
     // só corretores de empresa (quem de fato vende); admins ficam de fora p/ não duplicar (o time Domo já está na empresa Domo)
-    const vseen = new Set(); const vendedores = [];
-    STORE.getUsuarios().forEach((us) => {
-      if (us.papel === 'admin') return;
-      (us.corretores || []).forEach((c) => { const n = (c.nome || '').trim(); if (!n) return; const k = (us.nome || '') + '|' + n; if (vseen.has(k)) return; vseen.add(k); vendedores.push({ nome: n, empresa: us.nome || '' }); });
-    });
-    const vendSelect = (u) => {
-      const cur = (u.vendedorEmpresa || '') + '|' + (u.vendedorNome || '');
-      const conhecido = vendedores.some((v) => (v.empresa + '|' + v.nome) === cur);
-      return `<select class="e-vendedor"><option value="|">— quem vendeu?</option>${vendedores.map((v) => { const k = v.empresa + '|' + v.nome; return `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(v.nome)}${v.empresa ? ' · ' + esc(v.empresa) : ' · Domo'}</option>`; }).join('')}${(u.vendedorNome && !conhecido) ? `<option value="${esc(cur)}" selected>${esc(u.vendedorNome)}${u.vendedorEmpresa ? ' · ' + esc(u.vendedorEmpresa) : ''} (antigo)</option>` : ''}</select>`;
-    };
+    const catalogo=window.DiamondCorretores.catalogo({usuarios:STORE.getUsuarios(),unidades:uns,empresaPadrao:'Domo'});
+    const vendSelect=u=>{const atual=catalogo.chave(u.vendedorNome,u.vendedorEmpresa,u.vendedorUsuario);return `<select class="e-vendedor"><option value="|">— quem vendeu?</option>${catalogo.lista.map(v=>`<option value="${esc(v.chave)}" ${atual===v.chave?'selected':''}>${esc(v.nome)} · ${esc(v.empresa||'Domo')}</option>`).join('')}</select>`;};
     $('#aba-corpo').innerHTML = `
       <section id="precos-tabela"></section>
       <details class="bloco-fotos"><summary>Fotos por tipo de planta <span class="nota" style="font-weight:400">— configura uma vez; valem para todas as unidades do final</span></summary>
@@ -2691,10 +2683,10 @@
       $('.e-salvar', tr).onclick = () => {
         const status = statusSel.value;
         if(tr.dataset.status==='Vendido'&&status==='Disponível'){window.DiamondReservas.abrir(id,'reabrir');return;}
-        const vv = $('.e-vendedor', tr).value || '|';
-        const corte = vv.indexOf('|');
-        const vendedorEmpresa = status === 'Disponível' ? '' : vv.slice(0, corte);
-        const vendedorNome = status === 'Disponível' ? '' : vv.slice(corte + 1);
+        const vendedor=catalogo.lista.find(v=>v.chave===$('.e-vendedor',tr).value);
+        const vendedorEmpresa=status==='Disponível'?'':vendedor?.empresa||'';
+        const vendedorNome=status==='Disponível'?'':vendedor?.nome||'';
+        const vendedorUsuario=status==='Disponível'||!vendedor?'':vendedor.cadastrado?vendedor.empresaUsuario:undefined;
         STORE.salvarUnidade({
           id,
           precoBase: parseFloat($('.e-preco', tr).value) || 0,
@@ -2702,6 +2694,7 @@
           status,
           vendedorNome,
           vendedorEmpresa,
+          ...(vendedorUsuario!==undefined?{vendedorUsuario}:{}),
         });
         tr.dataset.status = status; // mantém o filtro de status coerente sem re-render
         recalcSujo(); // salvou esta linha; só libera o re-render se NENHUMA outra linha estiver com edição pendente
@@ -2715,14 +2708,14 @@
     const linhaDifere = (tr) => {
       const u = STORE.unidadePorId(tr.dataset.id); if (!u) return false;
       const status = $('.e-status', tr).value;
-      const vv = $('.e-vendedor', tr).value || '|'; const corte = vv.indexOf('|');
-      const vEmp = status === 'Disponível' ? '' : vv.slice(0, corte);
-      const vNome = status === 'Disponível' ? '' : vv.slice(corte + 1);
+      const vendedor=catalogo.lista.find(v=>v.chave===$('.e-vendedor',tr).value);
+      const vEmp=status==='Disponível'?'':vendedor?.empresa||'';
+      const vNome=status==='Disponível'?'':vendedor?.nome||'';
       const desc10 = (frac) => Math.round((frac || 0) * 1000); // desconto → décimos de %, a MESMA granularidade do input (toFixed(1))
       return (parseFloat($('.e-preco', tr).value) || 0) !== (u.precoBase || 0)
         || desc10((parseFloat($('.e-desc', tr).value) || 0) / 100) !== desc10(u.desconto || 0) // compara arredondado (senão dado antigo com mais casas trava _sujo p/ sempre)
         || status !== (u.status || 'Disponível')
-        || vEmp !== (u.vendedorEmpresa || '') || vNome !== (u.vendedorNome || '');
+        || catalogo.chave(vNome,vEmp,vNome?vendedor?.empresaUsuario:'') !== catalogo.chave(u.vendedorNome,u.vendedorEmpresa,u.vendedorUsuario);
     };
     const recalcSujo = () => { _sujo = linhas.some(linhaDifere); }; // mantém _sujo=true se OUTRA linha ainda tem edição
     const contarUn = () => { const vis = linhas.filter((t) => t.style.display !== 'none').length; const c = $('#un-cont'); if (c) c.textContent = vis + ' de ' + linhas.length + ' unidades'; };
@@ -2819,7 +2812,7 @@
     return `<div class="v-cliente"><strong>${esc(nome)}</strong>${u.clienteId?`<small>${u.status==='Vendido'?'Comprador vinculado':'Cliente vinculado'}</small>`:''}<div class="v-cliente-actions"><button type="button" class="btn-mini v-cliente-editar" aria-label="${temNome?'Editar':'Incluir'} cliente da unidade ${esc(u.unidade)}">${temNome?'Editar dados':'+ Incluir cliente'}</button>${u.clienteId?`<a class="btn-mini" href="${esc(rotaRegistro('cliente',u.clienteId))}">Ver ficha</a>`:''}</div></div>`;
   }
 
-  // VENDAS (domo): muda só o STATUS + VENDEDOR das unidades (não mexe em preço). Salva direto via setVendedor.
+  // Vendas: situação/vendedor preservam seus fluxos; valor e tabela usam o contrato separado da unidade.
   function aVendas() {
     // Puxa os pedidos de reserva ao abrir (uma vez), senão a fila mostrada seria a
     // do último carregamento e um pedido recém-feito não apareceria.
@@ -2829,17 +2822,9 @@
     }
     const cfg = STORE.getCfg() || {};
     const uns = STORE.getUnidades().slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1);
-    // vendedores conhecidos: o domo não recebe o cadastro de corretores (getCfg só manda p/ admin),
-    // então junta todos os corretores que aparecem nos dados que o domo JÁ vê — propostas, leads do CRM
-    // e vendedores já marcados em unidades. Assim dá p/ atribuir venda a quem ainda não enviou proposta.
-    const vseen = new Set(); const vendedores = [];
-    const addVend = (nome, empresa) => { const n = (nome || '').trim(); if (!n) return; const e = (empresa || '').trim(); const k = e + '|' + n; if (vseen.has(k)) return; vseen.add(k); vendedores.push({ nome: n, empresa: e }); };
-    STORE.getPropostas().forEach((p) => addVend(p.corretor, p.corretorEmpresa));
-    STORE.getLeads().forEach((l) => addVend(l.corretorNome, l.empresaNome));
-    uns.forEach((u) => addVend(u.vendedorNome, u.vendedorEmpresa));
-    vendedores.sort((a, b) => a.nome.localeCompare(b.nome));
-    const vendSel = (u) => { const cur = (u.vendedorEmpresa || '') + '|' + (u.vendedorNome || ''); const conhecido = vendedores.some((v) => (v.empresa + '|' + v.nome) === cur);
-      return `<select class="v-vend" aria-label="Vendedor da unidade ${esc(u.unidade)}"><option value="|">— quem vendeu?</option>${vendedores.map((v) => { const k = v.empresa + '|' + v.nome; return `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(v.nome)}${v.empresa ? ' · ' + esc(v.empresa) : ' · Domo'}</option>`; }).join('')}${(u.vendedorNome && !conhecido) ? `<option value="${esc(cur)}" selected>${esc(u.vendedorNome)}${u.vendedorEmpresa ? ' · ' + esc(u.vendedorEmpresa) : ''}</option>` : ''}</select>`; };
+    const catalogo=window.DiamondCorretores.catalogo({usuarios:STORE.getUsuarios(),propostas:STORE.getPropostas(),leads:STORE.getLeads(),unidades:uns,empresaPadrao:'Domo'});
+    const vendedores=catalogo.lista;
+    const vendSel=u=>{const atual=catalogo.chave(u.vendedorNome,u.vendedorEmpresa,u.vendedorUsuario);return `<select class="v-vend" aria-label="Vendedor da unidade ${esc(u.unidade)}"><option value="|">— quem vendeu?</option>${vendedores.map(v=>`<option value="${esc(v.chave)}" ${atual===v.chave?'selected':''}>${esc(v.nome)} · ${esc(v.empresa||'Domo')}</option>`).join('')}</select>`;};
     const nDisp = uns.filter((u) => u.status === 'Disponível').length;
     const nRes = uns.filter((u) => u.status === 'Reservado').length;
     const nVend = uns.filter((u) => u.status === 'Vendido').length;
@@ -2874,23 +2859,32 @@
           </tr>`).join('')}</tbody></table></div>
         <div class="nota">“Reservar” marca a unidade como <b>Reservada</b> e tira o pedido da fila. “Recusar” só tira o pedido — a unidade continua disponível.</div>
       </div>` : ''}
-      <div class="nota">Edite o <b>cliente</b>, o <b>status</b> e <b>quem vendeu</b> na própria linha. Incluir um cliente não altera a situação da unidade.</div>
+      <div class="nota">Edite o <b>valor vendido e a tabela</b>, acesse o <b>cliente</b> e acompanhe a situação de cada apartamento. O valor vendido é independente do preço de tabela.</div>
       <div class="filtros"><input id="v-busca" aria-label="Buscar unidade ou comprador" placeholder="🔎 buscar unidade ou comprador…" autocomplete="off"><select id="v-status" aria-label="Situação da unidade"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select></div>
       <div class="tabela-wrap dv-sales-wrap"><table class="tabela adm-un dv-sales-table" aria-label="Unidades e vendas">
-        <thead><tr><th>Unid.</th><th>Andar</th><th>Valor de tabela</th><th>Status</th><th>Cliente / comprador</th><th>Vaga vinculada</th><th>Vendedor</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Unid.</th><th>Andar</th><th>Venda / tabela</th><th>Status</th><th>Cliente / comprador</th><th>Vaga vinculada</th><th>Vendedor</th><th>Ações</th></tr></thead>
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
           <td data-lab="Unidade" class="dv-sale-unit"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${uiIcon('building')}<span>${esc(u.unidade)}</span></a></td>
           <td data-lab="Andar" class="dv-sale-floor">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
-          <td data-lab="Valor de tabela" class="dv-sale-price">${u.precoBase ? fmt(valorNegociadoTabela(u, cfg)) : '—'}</td>
+          <td data-lab="Venda / tabela" class="dv-sale-price"><div class="v-valor-venda">${u.status==='Vendido'?'Consultando venda…':'<small>Tabela atual</small><strong>'+ (u.precoBase?fmt(valorNegociadoTabela(u,cfg)):'—')+'</strong>'}</div>${u.status==='Vendido'?'<button type="button" class="btn-mini v-editar-valor" aria-label="Editar valor e tabela da unidade '+esc(u.unidade)+'">Editar venda</button>':''}</td>
           <td data-lab="Status" class="dv-sale-status"><select class="v-status" aria-label="Status da unidade ${esc(u.unidade)}">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
           <td data-lab="Cliente / comprador" class="td-comprador">${clienteVendaHTML(u)}</td>
           <td data-lab="Vaga vinculada" class="td-vaga"><span class="nota">Consultando…</span></td>
           <td data-lab="Vendedor" class="td-vendedor">${vendSel(u)}</td>
           <td class="td-salvar"><button class="btn-mini v-salvar" aria-label="Salvar unidade ${esc(u.unidade)}">salvar</button></td>
         </tr>`).join('')}</tbody></table></div>`;
-    const wireCliente=tr=>{const btn=$('.v-cliente-editar',tr);if(btn)btn.onclick=()=>{if(_sujo){toast('Salve as alterações de status e vendedor antes de editar o cliente.',true);return;}const busca=$('#v-busca').value,status=$('#v-status').value;window.DiamondClienteEditor.abrir({unidadeId:tr.dataset.id,onSaved:()=>{toast('Cliente salvo e vinculado ✓');aVendas();$('#v-busca').value=busca;$('#v-status').value=status;$('#v-busca').dispatchEvent(new Event('input'));$('#v-status').dispatchEvent(new Event('change'));}});};};
+    const wireCliente=tr=>{const btn=$('.v-cliente-editar',tr);if(btn)btn.onclick=()=>{if(_sujo){toast('Salve as alterações de status e vendedor antes de editar o cliente.',true);return;}const retorno=new URLSearchParams();if($('#v-busca').value)retorno.set('busca',$('#v-busca').value);if($('#v-status').value)retorno.set('status',$('#v-status').value);const voltar='#/admin/vendas'+(retorno.size?'?'+retorno:'');window.DiamondClienteEditor.abrir({unidadeId:tr.dataset.id,abrirFicha:true,onSaved:saved=>{toast('Cliente salvo e vinculado ✓');location.hash='#/cliente/'+encodeURIComponent(saved.lead.id)+'?voltar='+encodeURIComponent(voltar);}});};};
     const linhas = $$('.adm-un tbody tr');
     linhas.forEach(wireCliente);
+    const carregarValores=async()=>{
+      try{const r=await STORE.api('vendasCondicoes',{operacao:'listar'});if(!r.ok)throw Error(r.erro||'Consulta indisponível');
+        linhas.forEach(tr=>{if(!tr.isConnected)return;const u=STORE.getUnidades().find(u=>String(u.id)===tr.dataset.id);if(!u||u.status!=='Vendido')return;const c=(r.condicoes||[]).find(c=>c.unidadeId===u.id),res=window.DiamondVendaEditor.resumo(u,c),el=$('.v-valor-venda',tr);if(!el)return;
+          el.innerHTML='<small>Valor vendido'+(c&&!res.validada?' · revisar':'')+'</small><strong>'+(res.valor==null?'Não informado':fmt(res.valor/100,2))+'</strong><small>'+esc(window.DiamondVendaEditor.tabelaNome(res.tabela))+'</small>'+(res.composicaoPendente?'<small class="v-pagamento-pendente">Pagamento a completar</small>':'')+'<small class="v-tabela-atual">Tabela atual: '+(u.precoBase?fmt(valorNegociadoTabela(u,STORE.getCfg())):'—')+'</small>';
+        });
+      }catch(err){linhas.forEach(tr=>{const el=$('.v-valor-venda',tr);if(tr.dataset.status==='Vendido'&&el)el.textContent='Valor não consultado';});toast('Não foi possível consultar os valores vendidos. Abra a edição para tentar novamente.',true);}
+    };
+    linhas.forEach(tr=>{const button=$('.v-editar-valor',tr);if(button)button.onclick=()=>{if(_sujo){toast('Salve as alterações das linhas antes de editar o valor.',true);return;}window.DiamondVendaEditor.abrir(tr.dataset.id,{onSaved:()=>{toast('Valor e tabela salvos ✓');carregarValores();}});};});
+    carregarValores();
     consultarVagasVendas(linhas);
     const filtrarV = () => {
       const q = ($('#v-busca').value || '').trim().toLowerCase();
@@ -2920,10 +2914,10 @@
     const vLinhaDifere = (tr, salvo) => {
       const u = salvo.get(String(tr.dataset.id)); if (!u) return false;
       const st = $('.v-status', tr).value;
-      const vv = ($('.v-vend', tr) || {}).value || '|'; const c = vv.indexOf('|');
-      const vEmp = st === 'Disponível' ? '' : vv.slice(0, c);
-      const vNome = st === 'Disponível' ? '' : vv.slice(c + 1);
-      return st !== (u.status || 'Disponível') || vEmp !== (u.vendedorEmpresa || '') || vNome !== (u.vendedorNome || '');
+      const vendedor=catalogo.lista.find(v=>v.chave===$('.v-vend',tr).value);
+      const vEmp=st==='Disponível'?'':vendedor?.empresa||'';
+      const vNome=st==='Disponível'?'':vendedor?.nome||'';
+      return st !== (u.status || 'Disponível') || catalogo.chave(vNome,vEmp,vNome?vendedor?.empresaUsuario:'') !== catalogo.chave(u.vendedorNome,u.vendedorEmpresa,u.vendedorUsuario);
     };
     // salvar UMA linha não pode zerar o aviso das OUTRAS que ainda têm edição aberta
     const vRecalcSujo = () => {
@@ -2940,15 +2934,17 @@
       stSel.onchange = () => { _sujo = true; toggle(); corSel(); };
       $('.v-vend', tr).onchange = () => { _sujo = true; };
       $('.v-salvar', tr).onclick = async (e) => {
+        if(!vLinhaDifere(tr,new Map(STORE.getUnidades().map(u=>[String(u.id),u])))){toast('Nenhuma alteração nesta linha.');return;}
         const btn = e.currentTarget; if (btn.disabled) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '…';
-        const vv = ($('.v-vend', tr).value) || '|'; const corte = vv.indexOf('|'); const st = stSel.value;
-        const vEmp = st === 'Disponível' ? '' : vv.slice(0, corte); const vNome = st === 'Disponível' ? '' : vv.slice(corte + 1);
+        const vendedor=catalogo.lista.find(v=>v.chave===$('.v-vend',tr).value),st=stSel.value;
+        const vEmp=st==='Disponível'?'':vendedor?.empresa||'',vNome=st==='Disponível'?'':vendedor?.nome||'';
+        const vendedorUsuario=st==='Disponível'||!vendedor?'':vendedor.cadastrado?vendedor.empresaUsuario:undefined;
         if(tr.dataset.status==='Vendido'&&st==='Disponível'){btn.disabled=false;btn.textContent=t;window.DiamondReservas.abrir(tr.dataset.id,'reabrir');return;}
         if(st==='Reservado'||tr.dataset.status==='Reservado') {
           btn.disabled=false;btn.textContent=t;
           window.DiamondReservas.abrir(tr.dataset.id,tr.dataset.status==='Reservado'?(st==='Vendido'?'vender':st==='Disponível'?'cancelar':'prorrogar'):'reservar',STORE.getReservas().find(r=>r.unidadeId===tr.dataset.id));return;
         }
-        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp); tr.dataset.status = st; $('.td-comprador', tr).innerHTML = clienteVendaHTML(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {id:tr.dataset.id,unidade:tr.dataset.un,status:st}); wireCliente(tr); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; }
+        try { await STORE.setVendedor(tr.dataset.un, st, vNome, vEmp, vendedorUsuario); tr.dataset.status = st; $('.td-comprador', tr).innerHTML = clienteVendaHTML(STORE.getUnidades().find(u => String(u.id) === tr.dataset.id) || {id:tr.dataset.id,unidade:tr.dataset.un,status:st}); wireCliente(tr); vRecalcSujo(); toast('Salvo ✓'); btn.textContent = '✓ salvo'; if(!_sujo){const q=$('#v-busca').value,f=$('#v-status').value;aVendas();$('#v-busca').value=q;$('#v-status').value=f;$('#v-busca').dispatchEvent(new Event('input'));$('#v-status').dispatchEvent(new Event('change'));} }
         catch (err) { toast(err.message, true); btn.textContent = t; }
         finally { btn.disabled = false; setTimeout(() => { if (btn.textContent === '✓ salvo') btn.textContent = 'salvar'; }, 1500); }
       };

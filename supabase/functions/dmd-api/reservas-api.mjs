@@ -53,10 +53,13 @@ export function prepararReserva(u,b,pedido,por,agora=new Date().toISOString()){
  if(acao==='reservar'||acao==='prorrogar'){depois.status='Reservado';depois.reserva=r;depois.vendedorNome=r.corretor;depois.vendedorEmpresa=r.empresa;}
  if(acao==='cancelar'){depois.status='Disponível';delete depois.reserva;depois.vendedorNome='';depois.vendedorEmpresa='';}
  if(acao==='vender'){const cliente=texto(b.cliente||r.cliente);if(!cliente)throw Error('Informe o comprador antes de converter em venda.');depois.status='Vendido';depois.compradorNome=cliente;delete depois.reserva;}
- const comerciais=['compradorNome','comprador','clienteNome','cliente','compradorFonte','clienteId','clienteVinculadoNome','vendedorNome','vendedorEmpresa'];
+ // Um novo negócio não pode herdar a identidade do vendedor da venda anterior.
+ const normVendedor=v=>String(v||'').trim().replace(/\s+/g,' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ if(acao==='reservar'||acao==='cancelar'||(acao==='prorrogar'&&(normVendedor(r.corretor)!==normVendedor(u.vendedorNome)||normVendedor(r.empresa)!==normVendedor(u.vendedorEmpresa))))delete depois.vendedorUsuario;
+ const comerciais=['compradorNome','comprador','clienteNome','cliente','compradorFonte','clienteId','clienteVinculadoNome','vendedorNome','vendedorEmpresa','vendedorUsuario'];
  const origemComercial=Object.fromEntries(comerciais.filter(k=>Object.hasOwn(u,k)).map(k=>[k,u[k]]));
  if(acao==='reabrir'){depois.status='Disponível';delete depois.reserva;for(const k of comerciais)delete depois[k];}
- return {depois,event:{id:crypto.randomUUID(),unidadeId:u.id,unidade:u.unidade,acao,em:agora,por,motivo,antes:{status:u.status,reserva:u.reserva||null,pedido:pedido||null,...(acao==='reabrir'?origemComercial:{})},depois:{status:depois.status,reserva:depois.reserva||null,compradorNome:depois.compradorNome||''}}};
+ return {depois,event:{id:crypto.randomUUID(),unidadeId:u.id,unidade:u.unidade,acao,em:agora,por,motivo,antes:{status:u.status,reserva:u.reserva||null,pedido:pedido||null,...(u.vendedorUsuario?{vendedorUsuario:u.vendedorUsuario}:{}),...(acao==='reabrir'?origemComercial:{})},depois:{status:depois.status,reserva:depois.reserva||null,compradorNome:depois.compradorNome||''}}};
 }
 export async function executarReservas(b,usr,json){
  try{

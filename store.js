@@ -275,9 +275,9 @@ const STORE = (() => {
     aplicaLead(r.lead);if(r.unidade)aplicaUnidade(r.unidade);for(const u of r.unidades||[])aplicaUnidade(u);
     emit('dados',{tipo:'leads'});return r;
   }
-  async function setVendedor(unidade, status, vendedorNome, vendedorEmpresa) {
+  async function setVendedor(unidade, status, vendedorNome, vendedorEmpresa, vendedorUsuario) {
     const s = getUser(); if (!s) throw new Error('sessão inválida');
-    const r = await api('setVendedor', { unidade, status, vendedorNome, vendedorEmpresa, auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
+    const r = await api('setVendedor', { unidade, status, vendedorNome, vendedorEmpresa, ...(vendedorUsuario!==undefined?{vendedorUsuario}:{}), auth: { usuario: s.usuario, senhaHash: s.senhaHash } });
     if (r && r.unidade) { const arr = getUnidades(); const i = arr.findIndex((u) => u.id === r.unidade.id); if (i >= 0) { arr[i] = r.unidade; localStorage.setItem(K.un, JSON.stringify(arr)); } }
     return r;
   }

@@ -39,6 +39,26 @@ function confereSenha(clientHash, guardado) {
 const now = () => new Date().toISOString();
 const PAGE = 100;
 
+// Um nome de empresa pode se repetir. O login identifica a equipe; nome e
+// empresa do vendedor vêm do cadastro validado, nunca do texto enviado pela tela.
+function identidadeVendedor(unidade, anterior, solicitacao, usuarios) {
+  const norm=v=>String(v||'').trim().replace(/\s+/g,' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const informado=Object.hasOwn(solicitacao,'vendedorUsuario');
+  if(unidade.status==='Disponível')return informado||anterior?.vendedorUsuario?{vendedorUsuario:''}:{};
+  if(informado){
+    if(typeof solicitacao.vendedorUsuario!=='string')return {erro:'Escolha uma equipe válida para o vendedor.'};
+    const login=solicitacao.vendedorUsuario.trim().toLowerCase();
+    if(!login)return {vendedorUsuario:''};
+    const equipe=usuarios.find(u=>String(u?.usuario||'').trim().toLowerCase()===login&&u.papel!=='admin'&&u.papel!=='cliente');
+    const corretor=equipe?.corretores?.find(c=>norm(c.nome)===norm(unidade.vendedorNome)&&norm(c.nome));
+    if(!equipe||!corretor)return {erro:'O vendedor escolhido não pertence a uma equipe cadastrada. Confira a seleção.'};
+    return {vendedorUsuario:equipe.usuario,vendedorNome:corretor.nome,vendedorEmpresa:equipe.nome||''};
+  }
+  const mudou=norm(unidade.vendedorNome)!==norm(anterior?.vendedorNome)||norm(unidade.vendedorEmpresa)!==norm(anterior?.vendedorEmpresa);
+  return anterior?.vendedorUsuario?(mudou?{vendedorUsuario:''}:{vendedorUsuario:anterior.vendedorUsuario}):{};
+}
+
+
 const DEFAULT_CFG = {
   dataTabela: '01/07/2026',
   versao: 'v1',
@@ -377,6 +397,9 @@ export const handler = async (event) => {
       }
       if(u.status!==existente?.status&&(u.status==='Reservado'||existente?.status==='Reservado'))return json(409,{erro:'Use a aba Reservas para alterar esta situação.'});
       const grava = { ...existente, ...u, id, atualizadoPor: adm.usuario };
+      const vendedor=identidadeVendedor(grava,existente,u,(await getUsuarios(stores.cfg))||[]);
+      if(vendedor.erro)return json(400,{erro:vendedor.erro});
+      Object.assign(grava,vendedor);
       // Only the reservation transition owns this baseline. An offline form
       // must not overwrite it or restore a snapshot after release.
       if(existente?.precoTabelaOrigem)grava.precoTabelaOrigem=existente.precoTabelaOrigem;
@@ -422,6 +445,9 @@ export const handler = async (event) => {
         vendedorNome: disp ? '' : String(body.vendedorNome || '').slice(0, 60),
         vendedorEmpresa: disp ? '' : String(body.vendedorEmpresa || '').slice(0, 60),
         atualizadoEm: now(), atualizadoPor: usr.usuario };
+      const vendedor=identidadeVendedor(grava,existente,body,(await getUsuarios(stores.cfg))||[]);
+      if(vendedor.erro)return json(400,{erro:vendedor.erro});
+      Object.assign(grava,vendedor);
       if(existente){
         const {error}=await sb.rpc('dmd_reserva_confirmar',{p_id:id,p_antes:existente,p_depois:grava,p_evento:{id:crypto.randomUUID(),unidadeId:id,unidade:grava.unidade,acao:'atualizar',em:now(),por:grava.atualizadoPor,motivo:'Atualização da unidade',antes:{status:existente.status},depois:{status:grava.status}},p_pedido_em:null,p_vagas_revisao:null,p_vagas_estado:null,p_resolver_pedido:grava.status==='Reservado'||grava.status==='Vendido'});
         if(error)return json(409,{erro:'A unidade mudou durante a gravação. Atualize e tente novamente.'});

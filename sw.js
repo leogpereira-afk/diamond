@@ -1,7 +1,7 @@
 // sw.js — service worker versionado (padrão blueprint: bump a cada deploy)
-const CACHE = 'diamond-pages-v56';
-const SHELL = ['visual.js?v=56','visual.css?v=56','negociacoes.js?v=56','negociacoes.css?v=56','proposta-domain.js?v=56','precos.js?v=56','precos.css?v=56','clientes-editor.js?v=56','clientes-painel.js?v=56','gestao-domain.js?v=56','gestao.js?v=56','gestao-insights.js?v=56','gestao-painel.js?v=56','gestao-painel.css?v=56','gestao.css?v=56','navegacao.js?v=56','navegacao.css?v=56','vendor/jspdf.umd.min.js?v=56','envios-domain.js?v=56','envios.js?v=56','envios.css?v=56','vagas-disponiveis.js?v=56','./', 'index.html', 'styles.css?v=56', 'config.js?v=56', 'plano.js?v=56', 'disponibilidade-live.js?v=56', 'store.js?v=56', 'app.js?v=56','reservas.js?v=56','reservas.css?v=56',
-  'vagas-vinculo.js?v=56','vagas-domain.js?v=56','vagas-pdf.js?v=56','vagas.js?v=56','vagas.css?v=56','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+const CACHE = 'diamond-pages-v57';
+const SHELL = ['corretores-domain.js?v=57','vendas-editor.js?v=57','vendas-editor.css?v=57','visual.js?v=57','visual.css?v=57','negociacoes.js?v=57','negociacoes.css?v=57','proposta-domain.js?v=57','precos.js?v=57','precos.css?v=57','clientes-editor.js?v=57','clientes-painel.js?v=57','gestao-domain.js?v=57','gestao.js?v=57','gestao-insights.js?v=57','gestao-painel.js?v=57','gestao-painel.css?v=57','gestao.css?v=57','navegacao.js?v=57','navegacao.css?v=57','vendor/jspdf.umd.min.js?v=57','envios-domain.js?v=57','envios.js?v=57','envios.css?v=57','vagas-disponiveis.js?v=57','./', 'index.html', 'styles.css?v=57', 'config.js?v=57', 'plano.js?v=57', 'disponibilidade-live.js?v=57', 'store.js?v=57', 'app.js?v=57','reservas.js?v=57','reservas.css?v=57',
+  'vagas-vinculo.js?v=57','vagas-domain.js?v=57','vagas-pdf.js?v=57','vagas.js?v=57','vagas.css?v=57','logo-diamond.png','selo.png', 'wordmark.png', 'pdf-diamond.jpg', 'pdf-domo.jpg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 const CDN = [];
 
 self.addEventListener('install', (e) => {
