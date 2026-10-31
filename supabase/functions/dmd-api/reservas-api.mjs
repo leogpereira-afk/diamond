@@ -1,10 +1,12 @@
 import {sb,getStore} from '../_shared/blobs-shim.mjs';
 import './vagas-domain.js';
+import './proposta-domain.js';
 const texto=(s,n=160)=>String(s||'').trim().slice(0,n);
 
 // Reserved/sold prices are frozen by a table update. Walk the linked table
 // history, never the version marker alone (that marker is set on ALL units).
 export function precoParaLiberacao(u,cfg,historico){
+ if(u.precoTabelaReferencia!==undefined&&!globalThis.DiamondProposta.origemConferida(u))return globalThis.DiamondProposta.precoReferencia(u,cfg,historico);
  const conferir=()=>{throw Error('Não foi possível conferir o preço da tabela vigente. Confira o histórico da tabela antes de liberar.');};
  const validar=n=>{if(!Number.isFinite(n)||n<0||!Number.isSafeInteger(Math.round(n*100)))conferir();return n;};
  const origem=u.precoTabelaOrigem;
@@ -49,7 +51,10 @@ export function prepararReserva(u,b,pedido,por,agora=new Date().toISOString()){
   if(acao==='prorrogar'&&anterior.prazo&&Date.parse(r.prazo)<=Date.parse(anterior.prazo))throw Error('O novo prazo deve ser posterior ao prazo atual.');
  }
  const depois={...u,atualizadoEm:agora,atualizadoPor:por};
- if(acao==='reservar')depois.precoTabelaOrigem={precoBase:Number(u.precoBase||0),tabelaId:u.precoVersao||null};
+ if(acao==='reservar'){
+  depois.precoTabelaOrigem={precoBase:Number(u.precoBase||0),tabelaId:u.precoVersao||null};
+  if(u.precoTabelaReferencia!==undefined)depois.precoTabelaOrigem.referenciaConferidaEm=globalThis.DiamondProposta.referencia(u).conferidoEm;
+ }
  if(acao==='reservar'||acao==='prorrogar'){depois.status='Reservado';depois.reserva=r;depois.vendedorNome=r.corretor;depois.vendedorEmpresa=r.empresa;}
  if(acao==='cancelar'){depois.status='Disponível';delete depois.reserva;depois.vendedorNome='';depois.vendedorEmpresa='';}
  if(acao==='vender'){const cliente=texto(b.cliente||r.cliente);if(!cliente)throw Error('Informe o comprador antes de converter em venda.');depois.status='Vendido';depois.compradorNome=cliente;delete depois.reserva;}

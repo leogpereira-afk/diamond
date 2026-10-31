@@ -24,6 +24,72 @@
     return !!(a.versao || a.dataTabela) && a.versao === b.versao && a.dataTabela === b.dataTabela;
   }
 
+  // A conferência corrige uma referência bruta, nunca o preço de um contrato.
+  // Não se pode inferir essa referência dividindo a base pelo desconto: no legado
+  // existem tanto bases brutas quanto bases que já embutem uma negociação.
+  function referencia(u) {
+    const r = u?.precoTabelaReferencia;
+    if (r === undefined) return null;
+    const falha = () => { throw Error('A referência conferida da tabela precisa de revisão.'); };
+    if (!r || r.modelo !== 1 || typeof r.precoBase !== 'number' || !Number.isFinite(r.precoBase) || r.precoBase < 0 ||
+        !Number.isSafeInteger(Math.round(r.precoBase * 100)) || Math.abs(r.precoBase * 100 - Math.round(r.precoBase * 100)) > .00001 ||
+        !texto(r.versao) || !texto(r.fonte) || texto(r.fonte).length > 600 ||
+        (r.tabelaId !== null && (typeof r.tabelaId !== 'string' || !texto(r.tabelaId))) ||
+        typeof r.conferidoEm !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(r.conferidoEm) || !Number.isFinite(Date.parse(r.conferidoEm))) falha();
+    const p = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(r.dataTabela || '');
+    if (!p) falha();
+    const iso = `${p[3]}-${p[2]}-${p[1]}`, d = new Date(iso + 'T12:00:00Z');
+    if (!Number.isFinite(d.getTime()) || d.toISOString().slice(0,10) !== iso) falha();
+    return r;
+  }
+
+  function precoAncorado(r, alvo, historico) {
+    const conferir = () => { throw Error('Não foi possível conferir a referência e o histórico da tabela vigente.'); };
+    const porId = new Map(historico.map(h => [h.id, h])), vistos = new Set(), fatores = [];
+    let atual = alvo || {};
+    while (!(r.tabelaId ? r.tabelaId === atual.tabelaId : mesmaTabela(r, atual))) {
+      const id = texto(atual.tabelaId);
+      if (!id || vistos.has(id)) conferir();
+      vistos.add(id);
+      const h = porId.get(id), pct = Number(h?.percentual);
+      if (!h || !h.cfgAntes || !Number.isFinite(pct) || pct <= 0 || pct > 1000) conferir();
+      fatores.unshift(1 + pct / 100); atual = h.cfgAntes;
+    }
+    let valor = r.precoBase;
+    for (const fator of fatores) {
+      valor = Math.round((valor * fator + Number.EPSILON) * 100) / 100;
+      if (!Number.isFinite(valor) || !Number.isSafeInteger(Math.round(valor * 100))) conferir();
+    }
+    return valor;
+  }
+
+  function precoReferencia(u, alvo, historico = []) {
+    const r = referencia(u); return r ? precoAncorado(r,alvo,historico) : null;
+  }
+
+  function origemConferida(u) {
+    const r = referencia(u), origem = u?.precoTabelaOrigem;
+    if (!r || !origem || origem.referenciaConferidaEm !== r.conferidoEm) return null;
+    if (typeof origem.precoBase !== 'number' || !Number.isFinite(origem.precoBase) || origem.precoBase < 0 ||
+        !Number.isSafeInteger(Math.round(origem.precoBase * 100)) ||
+        (origem.tabelaId !== null && (typeof origem.tabelaId !== 'string' || !texto(origem.tabelaId))))
+      throw Error('A origem conferida da reserva precisa de revisão.');
+    return origem;
+  }
+
+  function precoAtualConferido(u, cfg, historico = []) {
+    const r = referencia(u); if (!r) return null;
+    const origem = origemConferida(u);
+    // A price deliberately edited while available remains the current price.
+    // Its reservation snapshot is trusted only when captured after this audit.
+    if (u.status === 'Disponível' && u.precoVersao && u.precoVersao === cfg.tabelaId) {
+      const n = numero(u.precoBase);
+      if (n == null || n < 0 || !Number.isSafeInteger(Math.round(n * 100))) throw Error('Confira o preço atual da unidade.');
+      return n;
+    }
+    return precoAncorado(origem ? {...r,precoBase:origem.precoBase,tabelaId:origem.tabelaId} : r,cfg,historico);
+  }
+
   function tabelas(u, cfg = {}, historico = []) {
     if (!u || typeof u !== 'object') return [];
     cfg = cfg || {};
@@ -31,16 +97,20 @@
     const adicionar = item => {
       if (item && !result.some(anterior => mesmaTabela(anterior, item))) result.push(item);
     };
-    const base = numero(u.precoBase);
+    const registros = (Array.isArray(historico) ? historico : []).filter(h => h && typeof h === 'object');
+    const ref = referencia(u);
+    // On first render the chain may still be loading. Never show/save the old
+    // negotiated base as the current table while the reference is unresolved.
+    let base = ref ? null : numero(u.precoBase);
+    if(ref){try{base=precoAtualConferido(u,cfg,registros);}catch(e){if(registros.length)throw e;}}
     const reajuste = u.precoVersao ? 0 : opcional(cfg.reajuste, 0);
     if (base != null && reajuste != null && reajuste >= 0) {
       adicionar(tabela({
         key: 'atual', tabelaId: texto(cfg.tabelaId) || texto(u.precoVersao) || null,
-        versao: texto(cfg.versao), dataTabela: texto(cfg.dataTabela), origem: 'atual', observacao: '',
+        versao: texto(cfg.versao), dataTabela: texto(cfg.dataTabela), origem: 'atual', observacao: ref ? 'Preço bruto conferido; reajustes aplicados por versão.' : '',
       }, base * (1 + reajuste), u.desconto));
     }
 
-    const registros = (Array.isArray(historico) ? historico : []).filter(h => h && typeof h === 'object');
     const itemDaUnidade = h => (Array.isArray(h.itens) ? h.itens : []).find(item => item &&
       (u.id != null ? item.id != null && String(item.id) === String(u.id)
         : u.unidade != null && item.id == null && String(item.unidade) === String(u.unidade)));
@@ -55,11 +125,11 @@
       const reconstruida = antes && !tabelaId;
       return tabela({
         key: tabelaId ? 'tabela:' + tabelaId : 'versao:' + JSON.stringify([versao, dataTabela]),
-        tabelaId, versao, dataTabela, origem: reconstruida ? 'reconstruida' : 'historico',
-        observacao: reconstruida
+        tabelaId, versao, dataTabela, origem: ref ? 'conferida' : reconstruida ? 'reconstruida' : 'historico',
+        observacao: ref ? 'Preço bruto conferido; reajustes aplicados por versão.' : reconstruida
           ? 'Tabela anterior reconstruída a partir dos preços base registrados no histórico.'
           : texto(h.observacao),
-      }, antes ? item.anterior : item.novo, item.desconto);
+      }, ref ? precoReferencia(u,{tabelaId,versao,dataTabela},registros) : antes ? item.anterior : item.novo, item.desconto);
     };
     // A tabela criada é a referência da versão. O "antes" de outro reajuste
     // pode já incluir edições individuais posteriores, por isso entra só depois.
@@ -89,5 +159,5 @@
     return { percentual, valor, quemPaga, liquido };
   }
 
-  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao });
+  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao, referencia, precoReferencia, origemConferida, precoAtualConferido });
 })(typeof window !== 'undefined' ? window : globalThis);

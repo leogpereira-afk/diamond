@@ -374,7 +374,7 @@ export const handler = async (event) => {
       const { blobs } = await stores.unidades.list();
       const { fatia, nextAfter, total } = keyset(blobs.map((b) => b.key), body.after);
       const unidades = await stores.unidades.getMany(fatia);
-      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,...publica})=>publica.status==='Reservado'
+      return json(200, { unidades: ehSuper(usr)?unidades:unidades.map(({compradorNome,comprador,clienteNome,cliente,compradorFonte,clienteId,clienteVinculadoNome,reserva,precoTabelaReferencia,...publica})=>publica.status==='Reservado'
         ? {...Object.fromEntries(['id','unidade','status','andar','area','tipo','fotoId','atualizadoEm','precoVersao'].filter(k=>Object.hasOwn(publica,k)).map(k=>[k,publica[k]])),precoRestrito:true}
         : publica), total, nextAfter });
     }
@@ -404,6 +404,10 @@ export const handler = async (event) => {
       // must not overwrite it or restore a snapshot after release.
       if(existente?.precoTabelaOrigem)grava.precoTabelaOrigem=existente.precoTabelaOrigem;
       else delete grava.precoTabelaOrigem;
+      // This audited reference is supplied only by a server-side reconciliation.
+      // Neither an offline editor nor creation of a unit may forge or erase it.
+      if(existente&&Object.hasOwn(existente,'precoTabelaReferencia'))grava.precoTabelaReferencia=existente.precoTabelaReferencia;
+      else delete grava.precoTabelaReferencia;
       // Price revision is owned by the versioning operation, never by an offline edit.
       if (existente?.precoVersao) grava.precoVersao = existente.precoVersao;
       else delete grava.precoVersao;

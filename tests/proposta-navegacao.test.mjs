@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { source, copy } from './helpers.mjs';
 
-function simulador() {
+function simulador(options = {}) {
   let html = '', clock = 1800000000000;
-  const nodes = new Map(), listeners = new Map(), propostas = [];
+  const nodes = new Map(), listeners = new Map(), propostas = copy(options.propostas || []);
   const element = () => ({
     innerHTML: '', textContent: '', value: '', disabled: false, isConnected: true,
     parentElement: { querySelector: () => ({ textContent: '' }) },
@@ -31,17 +31,17 @@ function simulador() {
     },
     querySelectorAll: () => [],
   };
-  const unidade = { id: 'u-403', unidade: '403', area: 45, andar: 4, status: 'Disponível', precoBase: 300000 };
+  const unidade = { id: 'u-403', unidade: '403', area: 45, andar: 4, status: 'Disponível', precoBase: 300000, ...options.unidade };
   const ctx = vm.createContext({
     document, location: { hash: '#/sim/u-403' }, Math, URLSearchParams,
     Date: class extends Date { static now() { return clock++; } },
     window: { addEventListener: (name, callback) => listeners.set(name, callback), scrollTo() {} },
     STORE: {
-      getCfg: () => ({ versao: 'v1', dataTabela: '01/07/2026', corretagem: 0.05, quemPaga: 'Construtora' }),
+      getCfg: () => ({ versao: 'v1', dataTabela: '01/07/2026', corretagem: 0.05, quemPaga: 'Construtora', ...options.cfg }),
       unidadePorId: () => unidade,
       getUser: () => ({ papel: 'admin', nome: 'Administrador', usuario: 'admin' }),
       getUsuarios: () => [], isAdmin: () => true, getPropostas: () => propostas,
-      api: async () => ({ historico: [] }), filaGet: () => [], trySync: async () => {}, status: () => ({ estado: 'ok' }),
+      api: options.api || (async () => ({ historico: [] })), filaGet: () => [], trySync: async () => {}, status: () => ({ estado: 'ok' }),
       salvarProposta: p => {
         const saved = copy(p), index = propostas.findIndex(x => x.id === p.id);
         if (index >= 0) propostas[index] = saved; else propostas.push(saved);
@@ -71,7 +71,7 @@ function simulador() {
   ctx.testSim.abrir();
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   return {
-    propostas, estado: () => ctx.testSim.estado(), temSalvar: () => !!document.querySelector('#s-salvar'),
+    propostas, settle, estado: () => ctx.testSim.estado(), temSalvar: () => !!document.querySelector('#s-salvar'),
     input(selector, value) {
       const node = document.querySelector(selector);
       assert.ok(node, selector + ' deve existir');
@@ -141,4 +141,25 @@ test('edição de proposta ausente não abre formulário novo com o ID antigo', 
   assert.equal(s.temSalvar(), false);
   assert.equal(s.estado(), null);
   assert.equal(s.propostas.length, 0);
+});
+
+test('nova proposta espera a referência conferida e só então permite salvar o preço correto', async () => {
+  let responder; const chamadas=[];
+  const s=simulador({cfg:{tabelaId:'tb2',versao:'v2',dataTabela:'01/10/2026'},
+    unidade:{precoBase:93000,desconto:.07,precoVersao:'tb2',precoTabelaReferencia:{modelo:1,tabelaId:null,versao:'v1',dataTabela:'01/09/2026',precoBase:100000,fonte:'Fonte sintética',conferidoEm:'2026-10-01T12:00:00.000Z'}},
+    api:(action,dados)=>{chamadas.push({action,dados});return new Promise(resolve=>{responder=resolve;});}});
+  assert.equal(s.estado().tabela,undefined);
+  s.input('#s-cliente','Cliente de teste');await s.salvar();assert.equal(s.propostas.length,0);
+  assert.equal(chamadas[0].action,'vendasCondicoes');assert.equal(chamadas[0].dados.unidadeId,'u-403');
+  responder({tabelas:[{key:'atual',tabelaId:'tb2',versao:'v2',dataTabela:'01/10/2026',valorTabela:104000,desconto:.07,neg:96720}]});await s.settle();
+  assert.equal(s.estado().tabela.valorTabela,104000);assert.equal(s.estado().inp.cliente,'Cliente de teste');
+  await s.forma('24x');await s.salvar();assert.equal(s.propostas.length,1);assert.equal(s.propostas[0].neg,96720);
+});
+
+test('carregar referência nova não reescreve preço de proposta salva', async () => {
+  const s=simulador({cfg:{tabelaId:'tb2',versao:'v2',dataTabela:'01/10/2026'},
+    unidade:{precoBase:93000,precoVersao:'tb2',precoTabelaReferencia:{modelo:1,tabelaId:null,versao:'v1',dataTabela:'01/09/2026',precoBase:100000,fonte:'Fonte sintética',conferidoEm:'2026-10-01T12:00:00.000Z'}},
+    propostas:[{id:'p-anterior',cliente:'Cliente anterior',neg:90000,inp:{forma:'24x'},tabela:{versao:'v0',dataTabela:'01/08/2026',neg:90000}}],
+    api:async()=>({tabelas:[{key:'atual',versao:'v2',neg:104000,valorTabela:104000}]})});
+  await s.navegar('#/sim/u-403?editar=p-anterior');await s.settle();assert.equal(s.estado().tabela.neg,90000);await s.salvar();assert.equal(s.propostas[0].neg,90000);assert.equal(s.propostas[0].tabela.versao,'v0');
 });

@@ -1077,7 +1077,9 @@
       return;
     }
     if (!sim || sim.unidadeId !== unidadeId || sim.rotaPropostaId !== propostaId) {
-      sim = { unidadeId, propostaId, rotaPropostaId: propostaId, inp: inputsPadrao(u, cfg), tabela: window.DiamondProposta.tabelas(u,cfg,[])[0], tabelas: [], historicoEstado: 'inicial' };
+      let tabelaInicial;
+      try{if(u.precoTabelaReferencia===undefined)tabelaInicial=window.DiamondProposta.tabelas(u,cfg,[])[0];}catch(e){/* a conferência será repetida no servidor antes de habilitar o valor */}
+      sim = { unidadeId, propostaId, rotaPropostaId: propostaId, inp: inputsPadrao(u, cfg), tabela: tabelaInicial, tabelas: [], historicoEstado: 'inicial' };
       if (propostaId) {
         const p = STORE.getPropostas().find((x) => x.id === propostaId);
         if (p) {
@@ -1122,7 +1124,7 @@
     // se o corretor da proposta reaberta não está na lista (ex.: renomeado), inclui como 1ª opção p/ não sumir
     if (!rosterCorr.some((r) => (r.usuario + '|' + r.nome) === sim.corretorKey)) rosterCorr.unshift(resolveCorr());
     const perso = inp.forma === 'perso';
-    const resumoHTML = () => `<h3>Resumo</h3><p class="sim-referencia">${sim.tabela?.versao ? 'Tabela '+esc(sim.tabela.versao)+' · '+esc(sim.tabela.dataTabela || 'Data não registrada') : 'Valor da proposta salva · tabela não registrada'}</p><div class="linhas">
+    const resumoHTML = () => `<h3>Resumo</h3><p class="sim-referencia">${!sim.tabela ? 'Consultando a referência da tabela…' : sim.tabela?.versao ? 'Tabela '+esc(sim.tabela.versao)+' · '+esc(sim.tabela.dataTabela || 'Data não registrada') : 'Valor da proposta salva · tabela não registrada'}</p><div class="linhas">
       <div><span>Entrada${perso ? ' ('+pctStr(inp.entradaPct)+')' : ''} · ${fmtData(plano.cronograma[0]?.data)}</span><b>${fmt(plano.ent,2)}</b></div>
       ${plano.nParc ? `<div><span>Parcelas mensais (${plano.nParc}x)</span><b>${fmt(plano.vParc,2)}</b></div>` : ''}
       ${plano.balQtde ? `<div><span>Balões (${plano.balQtde}x)</span><b>${fmt(plano.balValor,2)}</b></div>` : ''}
@@ -1246,7 +1248,16 @@
     };
     const carregarTabelas=async()=>{
       if(sim.historicoEstado==='carregando')return;sim.historicoEstado='carregando';pintarTabelas();
-      try{const r=await STORE.api('precosHistorico');if(sim!==contexto)return;if(!Array.isArray(r.historico))throw Error('Histórico incompleto');sim.tabelas=window.DiamondProposta.tabelas(u,cfg,r.historico);sim.historicoEstado='pronto';}
+      try{
+        if(u.precoTabelaReferencia!==undefined){
+          const r=await STORE.api('vendasCondicoes',{operacao:'carregar',unidadeId:u.id});if(sim!==contexto)return;
+          if(!Array.isArray(r.tabelas))throw Error('Referência incompleta');sim.tabelas=r.tabelas;
+        }else{
+          const r=await STORE.api('precosHistorico');if(sim!==contexto)return;if(!Array.isArray(r.historico))throw Error('Histórico incompleto');sim.tabelas=window.DiamondProposta.tabelas(u,cfg,r.historico);
+        }
+        if(!sim.tabela&&sim.tabelas[0]){sim.tabela={...sim.tabelas[0]};atualizarResultados();}
+        sim.historicoEstado='pronto';
+      }
       catch(e){if(sim!==contexto)return;sim.historicoEstado='erro';}
       sim.pintarTabelas?.();
     };
@@ -2866,7 +2877,7 @@
         <tbody>${uns.map((u) => `<tr data-id="${esc(u.id)}" data-un="${esc(String(u.unidade))}" data-status="${esc(u.status || 'Disponível')}">
           <td data-lab="Unidade" class="dv-sale-unit"><a class="unidade-link" href="${esc(rotaRegistro('conexoes',u.id))}" aria-label="Abrir unidade ${esc(u.unidade)} e suas propostas">${uiIcon('building')}<span>${esc(u.unidade)}</span></a></td>
           <td data-lab="Andar" class="dv-sale-floor">${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</td>
-          <td data-lab="Venda / tabela" class="dv-sale-price"><div class="v-valor-venda">${u.status==='Vendido'?'Consultando venda…':'<small>Tabela atual</small><strong>'+ (u.precoBase?fmt(valorNegociadoTabela(u,cfg)):'—')+'</strong>'}</div>${u.status==='Vendido'?'<button type="button" class="btn-mini v-editar-valor" aria-label="Editar valor e tabela da unidade '+esc(u.unidade)+'">Editar venda</button>':''}</td>
+          <td data-lab="Venda / tabela" class="dv-sale-price"><div class="v-valor-venda">${u.status==='Vendido'?'Consultando venda…':'<small>'+(u.status==='Reservado'?'Preço da reserva':'Tabela atual')+'</small><strong>'+ (u.precoBase?fmt(valorNegociadoTabela(u,cfg)):'—')+'</strong>'}</div>${u.status==='Vendido'?'<button type="button" class="btn-mini v-editar-valor" aria-label="Editar valor e tabela da unidade '+esc(u.unidade)+'">Editar venda</button>':''}</td>
           <td data-lab="Status" class="dv-sale-status"><select class="v-status" aria-label="Status da unidade ${esc(u.unidade)}">${['Disponível', 'Reservado', 'Vendido'].map((s) => `<option ${u.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td>
           <td data-lab="Cliente / comprador" class="td-comprador">${clienteVendaHTML(u)}</td>
           <td data-lab="Vaga vinculada" class="td-vaga"><span class="nota">Consultando…</span></td>
@@ -2879,7 +2890,7 @@
     const carregarValores=async()=>{
       try{const r=await STORE.api('vendasCondicoes',{operacao:'listar'});if(!r.ok)throw Error(r.erro||'Consulta indisponível');
         linhas.forEach(tr=>{if(!tr.isConnected)return;const u=STORE.getUnidades().find(u=>String(u.id)===tr.dataset.id);if(!u||u.status!=='Vendido')return;const c=(r.condicoes||[]).find(c=>c.unidadeId===u.id),res=window.DiamondVendaEditor.resumo(u,c),el=$('.v-valor-venda',tr);if(!el)return;
-          el.innerHTML='<small>Valor vendido'+(c&&!res.validada?' · revisar':'')+'</small><strong>'+(res.valor==null?'Não informado':fmt(res.valor/100,2))+'</strong><small>'+esc(window.DiamondVendaEditor.tabelaNome(res.tabela))+'</small>'+(res.composicaoPendente?'<small class="v-pagamento-pendente">Pagamento a completar</small>':'')+'<small class="v-tabela-atual">Tabela atual: '+(u.precoBase?fmt(valorNegociadoTabela(u,STORE.getCfg())):'—')+'</small>';
+          el.innerHTML='<small>Valor vendido'+(c&&!res.validada?' · revisar':'')+'</small><strong>'+(res.valor==null?'Não informado':fmt(res.valor/100,2))+'</strong><small>'+esc(window.DiamondVendaEditor.tabelaNome(res.tabela))+'</small>'+(res.composicaoPendente?'<small class="v-pagamento-pendente">Pagamento a completar</small>':'')+'<small class="v-tabela-atual">Base cadastrada: '+(u.precoBase?fmt(Number(u.precoBase),2):'—')+'</small>';
         });
       }catch(err){linhas.forEach(tr=>{const el=$('.v-valor-venda',tr);if(tr.dataset.status==='Vendido'&&el)el.textContent='Valor não consultado';});toast('Não foi possível consultar os valores vendidos. Abra a edição para tentar novamente.',true);}
     };

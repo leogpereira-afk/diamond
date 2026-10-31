@@ -24,6 +24,10 @@
   const faixa=r=>(!filtros.de||r.data>=filtros.de)&&(!filtros.ate||r.data<=filtros.ate);
   const noPeriodo=vendidas.filter(r=>r.contrato&&faixa(r));
   const temPeriodo=!!(filtros.de||filtros.ate),vendas=temPeriodo?noPeriodo:vendidas,confirmadas=vendas.filter(r=>r.contrato);
+  // Estoque residencial tem denominador próprio. Listas e valores globais
+  // continuam com todas as unidades do recorte, inclusive a loja.
+  const segmento=tipo=>{const rows=filtered.filter(r=>r.tipo===tipo),disponiveis=rows.filter(r=>r.u.status==='Disponível'),vendidas=rows.filter(r=>r.u.status==='Vendido');return {rows,total:rows.length,vendidas,disponiveis,reservadas:rows.filter(r=>r.u.status==='Reservado'),vendas:vendas.filter(r=>r.tipo===tipo),percentualVendido:rows.length?vendidas.length*100/rows.length:null,potencial:disponiveis.some(r=>r.preco!==null)?disponiveis.reduce((n,r)=>n+(r.preco||0),0):disponiveis.length?null:0,semPreco:disponiveis.filter(r=>r.preco===null).length};};
+  const apartamentos=segmento('apartamento'),lojas=segmento('loja');
   const composicoesPendentes=confirmadas.filter(r=>r.composicaoPendente),composicoesCompletas=confirmadas.filter(r=>!r.composicaoPendente),saldoAInformar=confirmadas.reduce((n,r)=>n+r.saldoAInformar,0);
   const soma=k=>confirmadas.reduce((n,r)=>n+k(r.contrato),0);
   const total=confirmadas.length?soma(c=>c.total):vendas.length?null:0;
@@ -39,7 +43,7 @@
   for(const r of vendas){if(!r.corretorChave)continue;let grupo=porCorretor.get(r.corretorChave);if(!grupo){grupo={token:'grupo-'+porCorretor.size,rows:[]};porCorretor.set(r.corretorChave,grupo);porToken.set(grupo.token,grupo);}grupo.rows.push(r);}
   const ranking=D.rankingCorretores(vendas.map(r=>({...r.u,vendedorNome:r.corretor,vendedorEmpresa:porCorretor.get(r.corretorChave)?.token||''})));
   ranking.lista.forEach(g=>{const rr=porToken.get(g.empresa).rows;g.empresa=rr[0].empresa;g.empresaUsuario=rr[0].empresaUsuario;g.corretorChave=rr[0].corretorChave;g.total=rr.filter(r=>r.contrato).reduce((n,r)=>n+r.contrato.total,0);g.cobertura=rr.filter(r=>r.contrato).length;});
-  return {hoje,rows,filtered,duplicadas,vendas,vendidas,disponiveis,reservadas,confirmadas,composicoesCompletas,composicoesPendentes,saldoAInformar,total,temPeriodo,entrada:soma(c=>c.entrada),permuta:soma(c=>c.permutas.reduce((n,p)=>n+p.valor,0)),parcelado:soma(c=>c.parcelas.reduce((n,p)=>n+p.valor*p.quantidade,0)),potencial:disponiveis.some(r=>r.preco!==null)?disponiveis.reduce((n,r)=>n+(r.preco||0),0):disponiveis.length?null:0,semPreco:disponiveis.filter(r=>r.preco===null).length,compradores:[...grupos.values()],semComprador,semContrato,semCorretor,near,invalidas,vencidas,statusConflito,meses,ranking,ajustes:historico.filter(h=>['reabrir','cancelar'].includes(h.acao)&&filtered.some(r=>r.u.id===h.unidadeId))};
+  return {hoje,rows,filtered,apartamentos,lojas,duplicadas,vendas,vendidas,disponiveis,reservadas,confirmadas,composicoesCompletas,composicoesPendentes,saldoAInformar,total,temPeriodo,entrada:soma(c=>c.entrada),permuta:soma(c=>c.permutas.reduce((n,p)=>n+p.valor,0)),parcelado:soma(c=>c.parcelas.reduce((n,p)=>n+p.valor*p.quantidade,0)),potencial:disponiveis.some(r=>r.preco!==null)?disponiveis.reduce((n,r)=>n+(r.preco||0),0):disponiveis.length?null:0,semPreco:disponiveis.filter(r=>r.preco===null).length,compradores:[...grupos.values()],semComprador,semContrato,semCorretor,near,invalidas,vencidas,statusConflito,meses,ranking,ajustes:historico.filter(h=>['reabrir','cancelar'].includes(h.acao)&&filtered.some(r=>r.u.id===h.unidadeId))};
  }
  root.DiamondInsights={build,norm};
 })(typeof window!=='undefined'?window:globalThis);

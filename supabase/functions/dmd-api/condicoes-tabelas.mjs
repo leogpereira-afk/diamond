@@ -1,5 +1,6 @@
 // Referências de tabela da venda. O cliente envia somente a chave da escolha;
 // valores e metadados são lidos novamente no servidor e congelados no contrato.
+import './proposta-domain.js';
 const texto = value => typeof value === 'string' ? value.trim() : '';
 const numero = value => {
   if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
@@ -11,6 +12,8 @@ const mesma = (a, b) => a.tabelaId && b.tabelaId ? a.tabelaId === b.tabelaId
 export function tabelasDaVenda(unidade, cfg = {}, historico = []) {
   if (!unidade || typeof unidade !== 'object') return [];
   cfg ||= {};
+  const registros = historico.filter(r => r?.valor && typeof r.valor === 'object');
+  const ref = globalThis.DiamondProposta.referencia(unidade), fontes = registros.map(r=>r.valor);
   const escolhas = [];
   const adicionar = (dados, valor, desconto, fonte) => {
     const base = numero(valor), desc = opcional(desconto, 0);
@@ -19,12 +22,11 @@ export function tabelasDaVenda(unidade, cfg = {}, historico = []) {
     const tabela = { ...dados, valorTabela: base, desconto: desc, neg };
     if (!escolhas.some(e => mesma(e.tabela, tabela))) escolhas.push({ tabela, fonte });
   };
-  const base = numero(unidade.precoBase), reajuste = unidade.precoVersao ? 0 : opcional(cfg.reajuste, 0);
+  const base = ref ? globalThis.DiamondProposta.precoAtualConferido(unidade,cfg,fontes) : numero(unidade.precoBase), reajuste = unidade.precoVersao ? 0 : opcional(cfg.reajuste, 0);
   if (base != null && reajuste != null && reajuste >= 0) adicionar({
     key: 'atual', tabelaId: texto(cfg.tabelaId) || texto(unidade.precoVersao) || null,
-    versao: texto(cfg.versao), dataTabela: texto(cfg.dataTabela), origem: 'atual', observacao: '',
+    versao: texto(cfg.versao), dataTabela: texto(cfg.dataTabela), origem: 'atual', observacao: ref ? 'Preço bruto conferido; reajustes aplicados por versão.' : '',
   }, base * (1 + reajuste), unidade.desconto, { store: 'cfg', key: 'cfg', valor: cfg });
-  const registros = historico.filter(r => r?.valor && typeof r.valor === 'object');
   const historica = (row, antes) => {
     const h = row.valor;
     const item = (Array.isArray(h.itens) ? h.itens : []).find(item => item &&
@@ -39,9 +41,9 @@ export function tabelasDaVenda(unidade, cfg = {}, historico = []) {
     const reconstruida = antes && !tabelaId;
     adicionar({
       key: tabelaId ? 'tabela:' + tabelaId : 'versao:' + JSON.stringify([versao, dataTabela]),
-      tabelaId, versao, dataTabela, origem: reconstruida ? 'reconstruida' : 'historico',
-      observacao: reconstruida ? 'Tabela anterior reconstruída a partir dos preços base registrados no histórico.' : texto(h.observacao),
-    }, antes ? item.anterior : item.novo, item.desconto, { store: 'precos_historico', key: row.key, valor: h });
+      tabelaId, versao, dataTabela, origem: ref ? 'conferida' : reconstruida ? 'reconstruida' : 'historico',
+      observacao: ref ? 'Preço bruto conferido; reajustes aplicados por versão.' : reconstruida ? 'Tabela anterior reconstruída a partir dos preços base registrados no histórico.' : texto(h.observacao),
+    }, ref ? globalThis.DiamondProposta.precoReferencia(unidade,{tabelaId,versao,dataTabela},fontes) : antes ? item.anterior : item.novo, item.desconto, { store: 'precos_historico', key: row.key, valor: h });
   };
   registros.forEach(h => historica(h, false));
   registros.forEach(h => historica(h, true));

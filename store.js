@@ -287,7 +287,7 @@ const STORE = (() => {
     const unidades=lsGet(K.un, []);
     if(podeVerPainel())return unidades;
     // Sanitize older offline snapshots as well as current API responses.
-    const publicas=unidades.map(u=>u.status==='Reservado'
+    const publicas=unidades.map(({precoTabelaReferencia,...u})=>u.status==='Reservado'
       ? {...Object.fromEntries(['id','unidade','status','andar','area','tipo','fotoId','atualizadoEm','precoVersao'].filter(k=>Object.hasOwn(u,k)).map(k=>[k,u[k]])),precoRestrito:true}
       : u);
     if(JSON.stringify(publicas)!==JSON.stringify(unidades))localStorage.setItem(K.un,JSON.stringify(publicas));

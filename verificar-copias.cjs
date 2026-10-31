@@ -7,3 +7,6 @@ test('a cópia de vagas-domain.js da função é idêntica à da raiz',()=>{
   const raiz=fs.readFileSync('vagas-domain.js','utf8'),funcao=fs.readFileSync('supabase/functions/dmd-api/vagas-domain.js','utf8');
   assert.equal(funcao,raiz,'as cópias divergem: rode  cp vagas-domain.js supabase/functions/dmd-api/vagas-domain.js  e publique a função');
 });
+test('proposta e referência de preço usam as mesmas regras no navegador e servidor',()=>{
+  assert.equal(fs.readFileSync('supabase/functions/dmd-api/proposta-domain.js','utf8'),fs.readFileSync('proposta-domain.js','utf8'));
+});
