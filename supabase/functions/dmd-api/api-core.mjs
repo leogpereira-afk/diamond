@@ -1,4 +1,5 @@
 import { executarCondicoes } from './condicoes-api.mjs';
+import { executarPrevisaoCusto } from './previsao-custo-api.mjs';
 import { executarNegociacoes } from './negociacoes-api.mjs';
 // api-core.mjs — PORTE FIEL do netlify/functions/api.js para Deno/Supabase.
 // Mesmo contrato (36 actions, x-token), mesmo código; só o armazenamento mudou (blobs-shim → Postgres/Storage).
@@ -238,12 +239,19 @@ export const handler = async (event) => {
     reservas: getStore('reservas'), // pedidos de reserva pendentes (key = unidadeId) — evita 2 corretores pedirem o mesmo apto
     precos_historico: getStore('precos_historico'),
     vendas_condicoes: getStore('vendas_condicoes'),
+    previsao_custo: getStore('previsao_custo'),
+    previsao_custo_operacoes: getStore('previsao_custo_operacoes'),
   };
 
   try {
     if (action === 'disponibilidadeAoVivo') {
       const usr = await validarUsuario(stores.cfg, body.auth, false, true);
       return usr ? json(200, {ok:true}) : json(403, {erro:'sessão inválida'});
+    }
+    if (action === 'previsaoCusto') {
+      const usr=await validarUsuario(stores.cfg,body.auth,false);
+      const r=await executarPrevisaoCusto(body,usr,{getStore,sb});
+      return json(r.status,r.data);
     }
     if (action === 'vendasCondicoes') {
       const usr=await validarUsuario(stores.cfg,body.auth,false);
@@ -330,7 +338,7 @@ export const handler = async (event) => {
       // Backup completo: as stores de REGISTROS, achatadas com `_col`, numa
       // paginação única (cursor "store|key"). Binários (fotos, PDFs) ficam de
       // fora — como em todos os backups do hub.
-      const ORDEM = ['unidades', 'propostas', 'leads', 'reservas', 'envios', 'enviosEv', 'cfg', 'precos_historico', 'vendas_condicoes'];
+      const ORDEM = ['unidades', 'propostas', 'leads', 'reservas', 'envios', 'enviosEv', 'cfg', 'precos_historico', 'vendas_condicoes', 'previsao_custo', 'previsao_custo_operacoes'];
       const [aStore, aKey] = String(body.after || '').split('|');
       const registros = [];
       let nextAfter = null;

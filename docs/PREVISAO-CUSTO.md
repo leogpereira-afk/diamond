@@ -1,6 +1,6 @@
-# Previsão de custo — Diamond v59
+# Previsão de custo — Diamond v60
 
-Aba da gestão Diamond em `#/admin/painel?visao=previsao`. Versão aprovada para publicação em 01/11/2026 após revisão local. Os lançamentos financeiros desta aba permanecem no navegador; não há migração de servidor nem alteração dos contratos existentes durante a publicação.
+Aba da gestão Diamond em `#/admin/painel?visao=previsao`. Os lançamentos, conferências e premissas pertencem ao empreendimento e ficam no banco do sistema. Computador e celular consultam o mesmo registro. A sincronização não modifica os contratos de venda existentes.
 
 ## Funcionamento
 
@@ -16,9 +16,13 @@ Aba da gestão Diamond em `#/admin/painel?visao=previsao`. Versão aprovada para
 
 ## Conferência e persistência
 
-O sistema existente armazena condições contratuais, mas não um livro financeiro de aportes, comissões e baixas efetivas. Esta versão usa um registro local separado por origem e usuário. A tela identifica **Salvo neste navegador**, permite exportar JSON e importar com confirmação de substituição.
+O endpoint `previsaoCusto` de `dmd-api` aceita `carregar` e `salvar`, mediante autenticação da gestão (admin ou usuário domo). A tela identifica **Salvo no sistema** somente após resposta confirmada. Falta de conexão não é confirmação de gravação. Exportações incluem a última revisão confirmada; importar exige confirmação explícita de substituição do registro compartilhado.
 
-Não há sincronização entre dispositivos. A importação valida estrutura, datas, valores e versão. Conflitos de revisão, dados corrompidos e falhas de armazenamento preservam o registro anterior.
+Os stores `previsao_custo` e `previsao_custo_operacoes` são separados da configuração geral. A RPC `dmd_previsao_custo_salvar` é executável apenas por `service_role`, com `SECURITY INVOKER`. Um lock transacional serializa a primeira criação e as revisões seguintes. O identificador da operação, o hash do conteúdo e o ator permitem repetir uma tentativa cuja resposta se perdeu sem duplicar a gravação. Uma revisão desatualizada recebe HTTP 409; o usuário atualiza os dados mantendo o formulário antes de conferir e salvar novamente.
+
+O navegador consulta os lançamentos ao abrir a aba, a cada 30 segundos enquanto estiver visível e ao voltar à janela ou recuperar a conexão. Edições pendentes e diálogos pausam o ciclo para preservar o formulário. A API continua bloqueando sobrescritas por revisões antigas.
+
+A cópia v59 de cada navegador/usuário é preservada. No primeiro acesso, se o registro central estiver vazio, a transferência ocorre automaticamente. Se já existir conteúdo central, o botão de transferência só combina registros compatíveis, sem substituir configurações ou registros divergentes. A marca de migração só é gravada após confirmação do servidor. Conflitos permanecem visíveis e permitem exportar a cópia anterior para conferência.
 
 Ausência de informação não equivale a zero: aportes, comissão e classificação de finais exigem conferência explícita. O mesmo vale para afirmar que nenhuma parcela foi recebida. Alterações do contrato invalidam a conferência antiga; baixas antigas ficam preservadas, fora dos totais, até revisão de vínculo. Mudar a classificação das finais desmarca a conferência de recebimentos.
 
@@ -27,11 +31,14 @@ Valores e cálculos são em centavos inteiros. Recibos e aportes com datas futur
 ## Estrutura
 
 - `previsao-custo-domain.js`: cálculo puro e validações econômicas.
-- `previsao-custo-store.js`: livro local validado, revisão otimista, backup e importação.
+- `previsao-custo-schema.js`: validação compartilhada, também espelhada na função do servidor.
+- `previsao-custo-store.js`: cliente autenticado, migração da cópia anterior, revisão, backup e importação.
+- `supabase/functions/dmd-api/previsao-custo-api.mjs`: autorização, validação e chamada da RPC.
+- `supabase/migrations/20261101215154_previsao_custo_sincronizada.sql`: gravação atômica e permissões.
 - `previsao-custo.js` e `previsao-custo.css`: interação, conferências, indicadores e simulação.
 - `gestao.js`, `gestao-painel.js`, `index.html`: integração com a navegação existente.
 
-Não colocar este registro em `cfg`: a configuração geral é compartilhada por endpoints de outros perfis. Uma evolução para sincronização deve usar armazenamento e API específicos com controle de acesso e revisão; esta implementação não cria nem utiliza ações de servidor desconhecidas.
+Não colocar este registro em `cfg`: a configuração geral é compartilhada por endpoints de outros perfis. A rotina privilegiada de backup inclui os dois novos stores. Os dados financeiros reais e os backups nunca devem entrar no repositório público.
 
 ## Verificação e prévia
 
@@ -45,3 +52,9 @@ node tests/serve-previsao-preview.mjs
 A prévia usa API sintética em memória e fica em `http://127.0.0.1:8794/#/admin/painel?visao=previsao`. Não consulta nem altera o sistema real. Os dados financeiros manuais iniciam a conferir; o custo de 17 milhões é apenas a configuração solicitada.
 
 A auditoria de navegador em `tests/audit-previsao-ui.mjs` usa Playwright e Chrome, gera evidências em `output-previsao` e um servidor sintético próprio. `PLAYWRIGHT_MODULE`, `CHROME_PATH` e `PREVIEW_PORT` permitem adaptar os caminhos ao ambiente.
+
+`tests/audit-previsao-sync-ui.mjs` verifica contextos separados de computador/celular, conflitos, falhas de rede, repetição de gravação e migração. `tests/previsao-sync-postgres.mjs` verifica a RPC em PostgreSQL isolado, incluindo concorrência, permissões e rollback; suas dependências ficam fora do repositório em `DIAMOND_PG_DEPS`.
+
+## Publicação
+
+Aplicar a migração e publicar `dmd-api` antes da interface v60. A função mantém `verify_jwt=false` porque usa a autenticação própria já existente; isso não libera o endpoint financeiro. Conferir permissões, comportamento sem autenticação, testes e arquivos efetivamente servidos. Publicar GitHub Pages não publica a função do servidor.

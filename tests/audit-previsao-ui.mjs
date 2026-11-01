@@ -7,7 +7,7 @@ import {criarServidorVendas} from './serve-vendas-preview.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/Users/leonardopereira/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const port=Number(process.env.PREVIEW_PORT)||8795;
+const port=Number(process.env.PREVIEW_PORT)||8810;
 const {server,base,b}=criarServidorVendas(port);
 const stamp='2026-10-21T12:00:00.000Z';
 const units=b.table('unidades');
@@ -36,6 +36,7 @@ try{
  const value=key=>text('[data-pc-value="'+key+'"]');
  const metric=label=>page.locator('.pc-metric').filter({has:page.locator('span').filter({hasText:new RegExp('^'+label+'$')})}).locator('strong');
  const metricValue=async label=>(await metric(label).textContent()).replaceAll('\u00a0',' ').trim();
+ const saved=async action=>{const previous=await page.locator('#pc-settings').elementHandle();await action();await previous.waitForElementState('hidden',{timeout:15000});await page.locator('#pc-settings').waitFor();};
  const open=async name=>{const d=page.locator('[data-section="'+name+'"]');if(!await d.evaluate(n=>n.open))await d.locator('summary').click();};
  await page.goto(base+'/#/admin/painel?visao=previsao',{waitUntil:'networkidle'});
  await page.locator('#pc-settings').waitFor({timeout:15000});
@@ -47,24 +48,25 @@ try{
  report('initial unknown values stay unknown; default 17M and 50/50');
  await page.locator('#pc-settings [name=target]').fill('1.000.000,00');
  await page.locator('#pc-settings [name=commission]').fill('5');
- await page.locator('#pc-settings button').click();
+ await saved(()=>page.locator('#pc-settings button').click());
  await page.locator('#pc-settings [name=payment]').fill('60');
  await open('contributions');
  await page.locator('#pc-aporte [name=socio]').fill('Sócio de exemplo');
  await page.locator('#pc-aporte [name=data]').fill('2026-10-20');
  await page.locator('#pc-aporte [name=valor]').fill('200.000,00');
- await page.locator('#pc-aporte button').click();
+ await saved(()=>page.locator('#pc-aporte button').click());
  assert.equal(await value('coverage'),'A conferir');
  assert.equal((await page.evaluate(()=>DiamondPrevisaoStore.load())).data.contributions.length,1,'aporte form must persist (hidden name=id cannot shadow submit routing)');
  assert.equal(await page.locator('#pc-settings [name=payment]').inputValue(),'60','saving aporte must preserve another form draft');
  assert.equal((await page.evaluate(()=>DiamondPrevisaoStore.load())).data.settings.futurePaymentShare,.5,'saving aporte cannot silently save the settings draft');
  assert.match(await text('#pc-draft'),/não salva/);
  await page.locator('#pc-settings [name=payment]').fill('50');
- await page.locator('#pc-settings button').click();
+ await saved(()=>page.locator('#pc-settings button').click());
  report('saving a contribution preserves unsaved settings without silently persisting them');
  await open('contributions');
- await page.locator('#pc-aportes-reviewed').check();
+ await saved(()=>page.locator('#pc-aportes-reviewed').check());
  const confirmContract=async(id,commission)=>{
+  await open('contracts');
   await page.locator('[data-pc-contract="'+id+'"]').click();
   const form=page.locator('#pc-contract-form');
   await form.locator('[name=commission]').fill(commission);
@@ -80,18 +82,18 @@ try{
  await open('cash');assert.equal(await metricValue('Recebido durante a obra'),'A conferir');
  report('contract commissions, explicit finals and contributions produce correct coverage without duplicate barter');
  await open('receipts');
- const receipt=async(nature,amount)=>{
+ const receipt=async(nature,amount,valid=true)=>{
   await page.locator('#pc-receipt [name=unitId]').selectOption('u-101');
   await page.locator('#pc-receipt [name=data]').fill('2026-10-21');
   await page.locator('#pc-receipt [name=natureza]').selectOption(nature);
   await page.locator('#pc-receipt [name=valor]').fill(amount);
-  await page.locator('#pc-receipt button').click();
+  if(valid)await saved(()=>page.locator('#pc-receipt button').click());else await page.locator('#pc-receipt button').click();
  };
  await receipt('comum','40.000,00');await receipt('final','10.000,00');
  assert.equal(await value('coverage'),'R$ 650.000,00');
  const before=await page.evaluate(()=>DiamondPrevisaoStore.load());
  assert.equal(before.data.receipts.length,2);
- await receipt('comum','101.000,00');
+ await receipt('comum','101.000,00',false);
  assert.match(await text('#pc-message'),/superam o valor contratado/);
  assert.equal((await page.evaluate(()=>DiamondPrevisaoStore.load())).revision,before.revision);
  for(const id of ['u-101','u-102']){
@@ -106,18 +108,18 @@ try{
  report('actual common and final receipts stay separate; over-receipt is rejected without changing storage');
  await page.reload({waitUntil:'networkidle'});await page.locator('#pc-settings').waitFor();
  assert.equal(await value('coverage'),'R$ 650.000,00');assert.equal(await value('sales-goal'),'R$ 777.777,78');
- const saved=await page.evaluate(()=>DiamondPrevisaoStore.load());assert.equal(saved.data.receipts.length,2);
- assert.equal(saved.data.contributions.length,1);
+ const reloaded=await page.evaluate(()=>DiamondPrevisaoStore.load());assert.equal(reloaded.data.receipts.length,2);
+ assert.equal(reloaded.data.contributions.length,1);
  await page.locator('#pc-settings [name=payment]').fill('60');
  assert.equal(await page.locator('#pc-settings [name=final]').inputValue(),'40');
  assert.equal(await value('sales-goal'),'R$ 636.363,64');assert.equal(await value('coverage'),'R$ 650.000,00');
- await page.locator('#pc-settings button').click();
+ await saved(()=>page.locator('#pc-settings button').click());
  report('reload preserves ledger; live 60/40 changes only the future sales goal');
  await page.locator('#pc-settings [name=commission]').fill('60');assert.equal(await value('sales-goal'),'A conferir');
  await page.locator('#pc-settings button').click();assert.match(await text('#pc-message'),/comissão deve ser menor/);
  assert.equal((await page.evaluate(()=>DiamondPrevisaoStore.load())).data.settings.futureCommissionRate,.05);
  await page.locator('#pc-settings [name=commission]').fill('5');
- await page.locator('#pc-settings button').click();
+ await saved(()=>page.locator('#pc-settings button').click());
  report('invalid future net share cannot produce a sale goal or overwrite saved settings');
  await open('inventory');
  assert.equal(await page.locator('[data-pc-stock]').count(),3);
