@@ -82,7 +82,7 @@ export function criarServidorVendas(port=8791){
         }else{
           type={'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'}[path.extname(filename)]||'application/octet-stream';
           text=fs.readFileSync(filename);
-          if(name==='index.html')text=Buffer.from(text.toString().replace(/<script src="config.js\?v=[^"]+">/,tag=>'<script src="fixture.js"></script>'+tag).replace('<body>','<body><div style="padding:7px 12px;background:#fff3cd;color:#423600;text-align:center;font:600 12px/1.4 system-ui">PRÉVIA LOCAL · Vendas e tabelas · Dados fictícios · Nenhuma alteração no sistema real</div>'));
+          if(name==='index.html')text=Buffer.from(text.toString().replace(/<script src="config.js\?v=[^"]+">/,tag=>'<script src="fixture.js"></script>'+tag).replace('<body>','<body><div style="padding:7px 12px;background:#fff3cd;color:#423600;text-align:center;font:600 12px/1.4 system-ui">PRÉVIA LOCAL · Dados fictícios · Nenhuma alteração no sistema real</div>'));
         }
       }
       res.setHeader('Content-Type',type);res.setHeader('Cache-Control','no-store');

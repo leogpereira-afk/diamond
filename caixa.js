@@ -18,7 +18,12 @@
  }
  const inputMoney=v=>(v/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
  const opId=()=>root.crypto?.randomUUID?.()||'caixa-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
- function currentModel(s=state){return D.build({unidades:s.x.unidades,condicoes:s.x.condicoes,leads:s.x.leads,recebimentos:s.ledgers,hoje:today(),mes:s.filters.mes,busca:s.filters.busca,status:s.filters.status});}
+ function modelSource(s=state){return {unidades:s.x.unidades,condicoes:s.x.condicoes,leads:s.x.leads,recebimentos:s.ledgers,hoje:today(),mes:s.filters.mes,busca:s.filters.busca,status:s.filters.status};}
+ function currentModel(s=state){return D.build(modelSource(s));}
+ function dashboards(s,m){
+  if(!root.DiamondCaixaDashboard||!root.DiamondCaixaDashboardDomain)return msg('Os gráficos não foram carregados. Atualize a página para consultar os dashboards.','error');
+  return root.DiamondCaixaDashboard.render(m?root.DiamondCaixaDashboardDomain.build(modelSource(s),m):null);
+ }
  function usable(s=state){return !!s&&s.ready&&s.x.unitsOk&&s.x.conditionsOk&&s.x.leadsOk&&allowed();}
  const msg=(message,kind='info')=>`<p class="cx-message ${kind}" role="${kind==='error'?'alert':'status'}">${esc(message)}</p>`;
  function render(x){
@@ -40,7 +45,8 @@
    <div class="cx-kpis">${metric('previsto',month==='sem-data'?'Sem vencimento definido':'Previsto para o mês',r.previsto,'Valores nominais das parcelas no recorte.')}${metric('recebido-parcelas','Recebido dessas parcelas',r.recebidoParcelas,'Confirmações vinculadas aos vencimentos do recorte.')}${metric('a-receber','A receber dessas parcelas',r.aReceber,'Vencido sem confirmação: '+money(r.vencido)+'.','pending')}${metric('recebido-mes',month==='sem-data'?'Recebimentos sem recorte mensal':'Entrou no caixa no mês',month==='sem-data'?null:r.recebidoNoMes,month==='sem-data'?'Selecione um mês para ver o dinheiro recebido.':'Data real e busca; independe do filtro de parcelas.','received')}</div>
    <p class="cx-criteria">${month==='sem-data'?'Entradas sem data contratual ficam aqui. A data da venda não foi usada como vencimento.':'Vencimentos de <b>'+esc(monthLabel(month))+'</b>. “Entrou no caixa” usa a data efetiva do recebimento.'} Valores sem projeção de reajuste ou INCC; permutas não entram como dinheiro.</p><p class="cx-criteria">Este caixa considera confirmações por parcela. Confira os recebimentos gerais já salvos na <a href="#/admin/painel?visao=previsao">Previsão de custo</a> antes de confirmar aqui, para evitar repetir um recebimento.</p>
 
-   <section class="cx-card"><header class="cx-section-heading"><div><h2>Parcelas e recebimentos</h2><p>${m?m.filtradas.length+' parcela(s) no recorte':'Aguardando consulta confirmada'}</p></div>${m?`<span class="cx-tag">${esc(monthLabel(month))}</span>`:''}</header>${m?rows(m,s):'<p class="cx-empty">Os valores serão exibidos após consultar condições e recebimentos. Uma falha de consulta não será apresentada como saldo zero.</p>'}</section>
+   ${dashboards(s,m)}
+   <section class="cx-card cx-parcels" data-cx-parcels tabindex="-1" aria-label="Parcelas e recebimentos"><header class="cx-section-heading"><div><h2>Parcelas e recebimentos</h2><p>${m?m.filtradas.length+' parcela(s) no recorte':'Aguardando consulta confirmada'}</p></div>${m?`<span class="cx-tag">${esc(monthLabel(month))}</span>`:''}</header>${m?rows(m,s):'<p class="cx-empty">Os valores serão exibidos após consultar condições e recebimentos. Uma falha de consulta não será apresentada como saldo zero.</p>'}</section>
    ${m?coverage(m)+history(m,s):''}
    <details class="cx-card cx-notes"><summary>Critérios e origem das informações</summary><p>Previsão calculada pelas condições das unidades vendidas. Confirmar um recebimento não altera o valor da venda, o comprador, a tabela ou a permuta. Pagamentos parciais mantêm o saldo a receber.</p><p>Recebimentos confirmados no servidor permanecem no histórico. Se o cronograma mudar, os registros anteriores continuam preservados e exigem conferência antes de novas baixas.</p><p>A <a href="#/admin/painel?visao=previsao">Previsão de custo</a> já sincroniza os recebimentos gerais do empreendimento entre computador e celular. Esses registros identificam a unidade e a natureza comum ou final, mas não a parcela específica. Por isso, não são importados nem somados automaticamente neste caixa. A conciliação exige conferir o vínculo de cada recebimento com sua parcela, evitando duplicidade.</p>${s.ready?'<p>Recebimentos consultados: '+esc(s.loadedAt)+'.</p>':''}</details>`;
  }
@@ -91,6 +97,15 @@
   }
  }
  function findLine(id,s=state){return currentModel(s).linhas.find(l=>String(l.id||l.parcelaId)===id);}
+ function openDashboardClient(id,s){
+  if(!usable(s))return;
+  const m=currentModel(s),lines=m.filtradas.filter(l=>l.clienteId===id&&l.saldo>0);
+  if(!lines.length)return;
+  const total=lines.reduce((sum,l)=>sum+l.saldo,0);
+  const el=dialog('Parcelas do cliente',`<p class="cx-dialog-context"><b>${esc(lines[0].cliente)}</b><br>${esc(monthLabel(s.filters.mes))} · ${lines.length} parcela(s) · A receber: <b>${money(total)}</b></p><p class="cx-help">Mesmos filtros do Caixa. Esta lista reúne somente as parcelas com saldo do cadastro selecionado.</p>${rows({...m,filtradas:lines},s)}`);
+  el.classList.add('cx-client-dialog');
+  el.addEventListener('click',event=>{const b=event.target.closest('[data-cx-confirm],[data-cx-history]');if(b&&!b.disabled){el.close();onClick(event,s);}});
+ }
  function dialog(title,html){
   const el=document.createElement('dialog');el.className='cx-dialog';el.setAttribute('aria-label',title);el.innerHTML=`<header><h2>${esc(title)}</h2><button type="button" class="cx-button cx-close" aria-label="Fechar">×</button></header>${html}`;
   document.body.appendChild(el);el.querySelector('.cx-close').onclick=()=>el.close();el.addEventListener('close',()=>el.remove());el.showModal();return el;
@@ -135,6 +150,12 @@
  }
  function onClick(ev,s){
   const button=ev.target.closest('button');if(!button||button.disabled||s!==state)return;
+  if(button.dataset.cxdMonth){
+   if(!usable(s)||!D.dia(button.dataset.cxdMonth+'-01'))return;
+   s.filters.mes=button.dataset.cxdMonth;s.notice='';updateFilterRoute(s);repaint(s);
+   const list=s.root?.querySelector('[data-cx-parcels]');list?.focus?.({preventScroll:true});list?.scrollIntoView?.({block:'start'});return;
+  }
+  if(button.dataset.cxdClient)return openDashboardClient(button.dataset.cxdClient,s);
   if(button.dataset.cxAction==='refresh'){s.notice='';return s.reload?s.reload():load(s);}
   if(button.dataset.cxConditions)return root.DiamondVendaEditor.abrir(button.dataset.cxConditions,{onSaved:s.reload});
   if(button.dataset.cxConfirm)return openReceipt(findLine(button.dataset.cxConfirm,s),s);

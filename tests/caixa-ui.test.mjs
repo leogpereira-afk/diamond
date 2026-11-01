@@ -12,7 +12,9 @@ function fixture({user={usuario:'domo',papel:'corretor',ehMaster:true},hash='#/a
  const ctx=vm.createContext({Intl,Date,Math,URLSearchParams,location:{hash},STORE:{getUser:()=>user,api:async()=>{calls++;if(failure)throw failure;return {ok:true,recebimentos:receipts??[...b.table('vendas_recebimentos').values()]};}},console,crypto:{randomUUID:()=>Math.random().toString(36)}});ctx.window=ctx;
  vm.runInContext(source('caixa-domain.js'),ctx);
  ctx.DiamondCaixaDomain.hoje=()=> '2026-11-01';
- vm.runInContext(source('caixa.js').replace('root.DiamondCaixa={render,wire};','root.__cxTest={parseValue,eventActive,submitWire,currentModel,dialog,getState:()=>state};root.DiamondCaixa={render,wire};'),ctx);
+ vm.runInContext(source('caixa-dashboard-domain.js'),ctx);
+ vm.runInContext(source('caixa-dashboard.js'),ctx);
+ vm.runInContext(source('caixa.js').replace('root.DiamondCaixa={render,wire};','root.__cxTest={parseValue,eventActive,submitWire,currentModel,dialog,openDashboardClient,getState:()=>state};root.DiamondCaixa={render,wire};'),ctx);
  const x={unidades:[...b.table('unidades').values()],condicoes:[...b.table('vendas_condicoes').values()],leads:[...b.table('leads').values()],unitsOk:true,conditionsOk,leadsOk};
  const initial=ctx.DiamondCaixa.render(x);
  const load=async()=>{ctx.DiamondCaixa.wire({querySelector:()=>host,querySelectorAll:()=>headerLinks},()=>{});await new Promise(resolve=>setImmediate(resolve));return host.innerHTML;};
@@ -162,4 +164,30 @@ test('aba Caixa acompanha o mês atual sem reconsultar nem alterar links das out
 
 test('vencimento sem baixa é descrito como falta de confirmação, sem afirmar inadimplência',async()=>{
  const html=await fixture().load();assert.match(html,/Vencido sem confirmação:/);assert.match(html,/class="cx-warning-text">Vencida sem confirmação<\/small>/);assert.doesNotMatch(html,/>Vencida<\/small>/);
+});
+
+test('clique no gráfico mensal mantém busca e status, atualiza URL e não grava nem reconsulta',async()=>{
+ const t=fixture({hash:'#/admin/painel?visao=caixa&mes=2026-10&caixaBusca=Cliente+Exemplo+Um&caixaStatus=pendentes'});
+ let route,focused=0,scrolled=0;t.ctx.history={replaceState:(_s,_t,href)=>{route=href;}};
+ await t.load();const requests=t.calls();t.host.querySelector=()=>({focus:()=>focused++,scrollIntoView:()=>scrolled++});
+ const target={dataset:{cxdMonth:'2026-11'}};t.handlers.click({target:{closest:()=>target}});
+ assert.equal(route,'#/admin/painel?visao=caixa&mes=2026-11&caixaBusca=Cliente+Exemplo+Um&caixaStatus=pendentes');
+ assert.equal(value(t.host.innerHTML,'previsto'),'R$ 10.000,00');assert.equal(value(t.host.innerHTML,'a-receber'),'R$ 10.000,00');
+ assert.equal(focused,1);assert.equal(scrolled,1);assert.equal(t.calls(),requests);
+});
+
+test('detalhamento do gráfico usa o cadastro exato mesmo quando clientes têm o mesmo nome',async()=>{
+ const t=fixture();for(const id of ['preview-u-101','preview-u-102'])t.x.leads.find(l=>l.id===id).cliente='Cliente Homônimo';
+ let shown=0;const element={classList:{add(){}},setAttribute(){},querySelector:()=>({}),addEventListener(){},showModal(){shown++;}};
+ t.ctx.document={createElement:()=>element,body:{appendChild(){}}};await t.load();const requests=t.calls();
+ t.handlers.click({target:{closest:()=>({dataset:{cxdClient:'preview-u-102'}})}});
+ assert.equal(shown,1);assert.match(element.innerHTML,/Cliente Homônimo/);assert.match(element.innerHTML,/u-102\|parcela:0:1/);assert.doesNotMatch(element.innerHTML,/u-101\|/);
+ assert.match(element.innerHTML,/10\.000,00/);assert.equal(t.calls(),requests);
+});
+
+test('cliques nos gráficos sem consulta confirmada não navegam nem abrem detalhes',async()=>{
+ const t=fixture({failure:Error('Consulta indisponível')});await t.load();t.ctx.history={replaceState(){throw Error('Não deve navegar');}};
+ t.ctx.document={createElement(){throw Error('Não deve abrir cliente');}};
+ for(const dataset of [{cxdMonth:'2026-11'},{cxdClient:'preview-u-101'}])t.handlers.click({target:{closest:()=>({dataset})}});
+ assert.equal(t.ctx.__cxTest.getState().filters.mes,'2026-10');assert.equal(t.calls(),1);
 });
