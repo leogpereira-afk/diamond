@@ -1,4 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {source} from './helpers.mjs';
+test('shell versionado inclui todos os scripts e estilos da tela, inclusive previsão de custo',()=>{
+ const code=source('sw.js'),version=code.match(/diamond-pages-v(\d+)/)[1];
+ const ctx=vm.createContext({self:{addEventListener(){}}});
+ vm.runInContext(code+';globalThis.shell=SHELL;',ctx);
+ const assets=[...source('index.html').matchAll(/(?:src|href)="([^"?]+\.(?:js|css)\?v=(\d+))"/g)];
+ assert.ok(assets.length>0);
+ for(const [,asset,v]of assets){assert.equal(v,version,asset+' deve usar a versão atual');assert.ok(ctx.shell.includes(asset),asset+' ausente do shell');assert.ok(source(asset.split('?')[0]).length>0);}
+ for(const name of ['previsao-custo-domain.js','previsao-custo-store.js','previsao-custo.js','previsao-custo.css'])assert.ok(ctx.shell.includes(name+'?v='+version));
+});
 test('arquivos da versão instalada abrem do cache, mas HTML e API continuam atuais',async()=>{
  const code=source('sw.js'),version=code.match(/diamond-pages-v(\d+)/)[1],events={},fetched=[],puts=[];
  const base='https://leogpereira-afk.github.io/diamond/';
