@@ -1,11 +1,12 @@
 import {executarCondicoes} from '../supabase/functions/dmd-api/condicoes-api.mjs';
+import {executarRecebimentos} from '../supabase/functions/dmd-api/recebimentos-api.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
 export const root=new URL('../',import.meta.url);
 export const source=p=>fs.readFileSync(new URL(p,root),'utf8');
 export const copy=v=>v==null?null:JSON.parse(JSON.stringify(v));
-export function backend({beforeWrite=null,failEvent=false,beforePrecoCommit=null,failPrecoCommit=false,beforeCfgCommit=null,beforeReservaCommit=null,beforeCondicoesCommit=null}={}){
+export function backend({beforeWrite=null,failEvent=false,beforePrecoCommit=null,failPrecoCommit=false,beforeCfgCommit=null,beforeReservaCommit=null,beforeCondicoesCommit=null,beforeRecebimentoCommit=null,failRecebimentoCommit=false,loseRecebimentoResponse=false}={}){
  const reads=[];const tables=new Map();const table=n=>{if(!tables.has(n))tables.set(n,new Map());return tables.get(n);};
  table('cfg').set('usuarios',[{usuario:'domo',nome:'Domo',hash:'fake',papel:'corretor',ativo:true,corretores:[{nome:'Teste'}]},{usuario:'admin',hash:'fake',papel:'admin',ativo:true},{usuario:'cliente',hash:'fake',papel:'cliente',ativo:true}]);table('cfg').set('cfg',{});
  table('unidades').set('u-1',{id:'u-1',unidade:'1',status:'Disponível',precoBase:300000,obs:'interno'});
@@ -13,6 +14,27 @@ export function backend({beforeWrite=null,failEvent=false,beforePrecoCommit=null
  const getStore=n=>({followupEnvio:async(id,dados)=>{const e=table('envios').get(id);if(!e)throw Error('ausente');e.acompanhamento=copy(dados);return true;},nextEnvioNumber:async()=>{const n=Math.max(Number(table('cfg').get('seqEnvio'))||0,...[...table('envios').values()].map(e=>Number(e.numero)||0))+1;table('cfg').set('seqEnvio',n);return n;},recordEnvioEvent:async(id,tipo)=>{if(failEvent)throw Error('storage offline');const e=table('envios').get(id);if(!e)return{status:404};if(tipo==='abertura'){e.views=(e.views||0)+1;e.lastView=new Date().toISOString();e.firstView||=e.lastView;}else{if(['interesse','duvida'].includes(tipo)&&[...table('enviosEv').values()].filter(x=>x.envioId===id&&['interesse','duvida'].includes(x.tipo)).length>=50)return{status:429};table('enviosEv').set(id+'-'+crypto.randomUUID(),{envioId:id,tipo,em:new Date().toISOString()});}return{status:200};},getMany:async keys=>keys.map(k=>copy(table(n).get(k))).filter(Boolean),get:async k=>{reads.push(n);return copy(table(n).get(k));},listJSON:async()=>[...table(n)].map(([key,valor])=>({key,valor:copy(valor)})),setJSON:async(k,v)=>{if(beforeWrite)await beforeWrite(n,k,v);if(n==='enviosEv'&&failEvent)throw Error('storage offline');table(n).set(k,copy(v));},insertReserva:async(k,v)=>{if(table(n).has(k))return false;table(n).set(k,copy(v));return true;},insertJSON:async(k,v)=>{if(beforeWrite)await beforeWrite(n,k,v);if(table(n).has(k))return false;table(n).set(k,copy(v));return true;},delete:async k=>table(n).delete(k),list:async({prefix=''}={})=>({blobs:[...table(n).keys()].filter(k=>k.startsWith(prefix)).map(key=>({key}))})});
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const sb={from:n=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:copy(table(n).get('diamond'))})})})}),rpc:async(name,p)=>{
+ if(name==='dmd_caixa_recebimento_salvar'){
+  if(beforeRecebimentoCommit)await beforeRecebimentoCommit({table,p});
+  if(failRecebimentoCommit)return{error:{message:'storage offline'}};
+  const antigo=copy(table('vendas_recebimentos').get(p.p_id))||null,nova=p.p_depois,eventos=antigo?.eventos||[],evento=nova.eventos.at(-1);
+  const repetido=eventos.find(e=>e.operacaoId===evento.operacaoId);
+  if(repetido)return repetido.solicitacao===evento.solicitacao?{data:{registro:antigo,repetida:true}}:{error:{message:'OPERACAO_CONFLITO'}};
+  if(!same(antigo,p.p_antes)||nova.revisao!==(antigo?.revisao||0)+1||!same(nova.eventos.slice(0,-1),eventos)||eventos.some(e=>e.id===evento.id)||nova.eventos.length>10000)return{error:{message:'RECEBIMENTO_CONFLITO'}};
+  if(evento.tipo==='receber'){
+   const unidade=table('unidades').get(p.p_id)||null,cliente=table('leads').get(p.p_unidade_antes.clienteId)||null,condicoes=table('vendas_condicoes').get(p.p_id)||null;
+   if(!cliente||!same(cliente,p.p_cliente_antes))return{error:{message:'CLIENTE_CONFLITO'}};
+   if(!unidade||!same(unidade,p.p_unidade_antes))return{error:{message:'UNIDADE_CONFLITO'}};
+   if(!condicoes||!same(condicoes,p.p_condicoes_antes))return{error:{message:'CONDICOES_CONFLITO'}};
+   if(unidade.status!=='Vendido'||condicoes.unidadeId!==p.p_id||condicoes.clienteId!==unidade.clienteId||evento.fonte.clienteId!==unidade.clienteId)return{error:{message:'VENDA_CONFLITO'}};
+  }else{
+   const original=eventos.find(e=>e.tipo==='receber'&&e.id===evento.eventoId);
+   if(!original||eventos.some(e=>e.tipo==='estornar'&&e.eventoId===evento.eventoId)||evento.valor!==original.valor||evento.parcelaId!==original.parcelaId||evento.cronogramaChave!==original.cronogramaChave||!same(evento.fonte,original.fonte)||!evento.motivo)return{error:{message:'ESTORNO_CONFLITO'}};
+  }
+  table('vendas_recebimentos').set(p.p_id,copy(nova));
+  if(loseRecebimentoResponse)return{error:{message:'response connection lost'}};
+  return{data:{registro:copy(nova),repetida:false}};
+ }
  if(name==='dmd_venda_condicoes_salvar'){
   if(beforeCondicoesCommit)await beforeCondicoesCommit({table,p});
   if(p.p_fonte_store&&!same(table(p.p_fonte_store).get(p.p_fonte_key)||null,p.p_fonte_antes))return{error:{message:'TABELA_CONFLITO'}};
@@ -63,7 +85,7 @@ export function backend({beforeWrite=null,failEvent=false,beforePrecoCommit=null
  const vc=vm.createContext({sb,getStore,crypto,Date,structuredClone});vm.runInContext(source('supabase/functions/dmd-api/vagas-domain.js'),vc);vm.runInContext(source('supabase/functions/dmd-api/vagas-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export async function','async function')+';globalThis.executar=executarVagas;',vc);
  const cc=vm.createContext({sb,getStore,crypto,Date});vm.runInContext(source('supabase/functions/dmd-api/clientes-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export async function','async function')+';globalThis.executar=executarClienteCadastro;',cc);
  const pc=vm.createContext({sb,getStore,crypto,Date});vm.runInContext(source('supabase/functions/dmd-api/precos-api.mjs').replace(/^import .*;\n/gm,'').replaceAll('export async function','async function')+';globalThis.executar=executarPrecos;',pc);
- const context=vm.createContext({crypto,Buffer,Date,Math,SEED:[],sb,executarCondicoes:(body,usr)=>executarCondicoes(body,usr,{getStore,sb}),executarClienteCadastro:cc.executar,executarReservas:rc.executar,executarPrecos:pc.executar,executarVagas:vc.executar,connectLambda:()=>{},getStore,Deno:{env:{get:k=>k==='DMD_TOKEN'?'fake-gate':undefined}}});
+ const context=vm.createContext({crypto,Buffer,Date,Math,SEED:[],sb,executarRecebimentos:(body,usr)=>executarRecebimentos(body,usr,{getStore,sb}),executarCondicoes:(body,usr)=>executarCondicoes(body,usr,{getStore,sb}),executarClienteCadastro:cc.executar,executarReservas:rc.executar,executarPrecos:pc.executar,executarVagas:vc.executar,connectLambda:()=>{},getStore,Deno:{env:{get:k=>k==='DMD_TOKEN'?'fake-gate':undefined}}});
  const load=p=>{const code=source(p).replace(/^import .+;\n/gm,'').replace('export const handler','const handler');const c=vm.createContext({...context});vm.runInContext(code+';globalThis.testHandler=handler;',c);return c.testHandler;};
  const api=load('supabase/functions/dmd-api/api-core.mjs'),pub=load('supabase/functions/dmd-p/p-core.mjs');
  return {table,reads,publicGet:async(query={})=>pub({httpMethod:'GET',path:'/pp-aaaaaaaaaaaaaaaa',headers:{},queryStringParameters:query}),request:async(action,body={},user='domo')=>{const r=await api({httpMethod:'POST',headers:{'x-token':'fake-gate'},body:JSON.stringify({action,...body,...(user?{auth:{usuario:user,senhaHash:'fake'}}:{})})});return {status:r.statusCode,...JSON.parse(r.body)};},pub:async(body={},query={})=>{const r=await pub({httpMethod:'POST',path:'/pp-aaaaaaaaaaaaaaaa',headers:{},queryStringParameters:query,body:JSON.stringify(body)});return {status:r.statusCode,...JSON.parse(r.body)};}};

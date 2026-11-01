@@ -73,7 +73,7 @@
     const host=document.querySelector('#aba-corpo');if(!host)return;
     document.body.classList.remove('gestao-print-mode');
     if(!window.STORE?.podeVerPainel?.()){host.innerHTML='<section class="gt-panel"><h2>Acesso restrito</h2><p>O painel gerencial está disponível apenas para perfis autorizados.</p></section>';return;}
-    const params=new URLSearchParams(location.hash.split('?')[1]||''),visao=['compradores','vendas','estoque','comercial','permutas','pendencias','retornos','relatorios','previsao'].includes(params.get('visao'))?params.get('visao'):'resumo';
+    const params=new URLSearchParams(location.hash.split('?')[1]||''),visao=['compradores','vendas','estoque','comercial','permutas','pendencias','retornos','relatorios','previsao','caixa'].includes(params.get('visao'))?params.get('visao'):'resumo';
     const consultas=[
       STORE.api('reservasPainel',{operacao:'listar'}),
       STORE.api('listLeads',{comoCorretor:STORE.getUser()?.corretorAtivo?.nome||''}),

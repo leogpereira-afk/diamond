@@ -10,3 +10,7 @@ test('a cópia de vagas-domain.js da função é idêntica à da raiz',()=>{
 test('proposta e referência de preço usam as mesmas regras no navegador e servidor',()=>{
   assert.equal(fs.readFileSync('supabase/functions/dmd-api/proposta-domain.js','utf8'),fs.readFileSync('proposta-domain.js','utf8'));
 });
+
+test('caixa usa o mesmo motor de parcelas e baixas no navegador e servidor',()=>{
+  assert.equal(fs.readFileSync('supabase/functions/dmd-api/caixa-domain.js','utf8'),fs.readFileSync('caixa-domain.js','utf8'));
+});
