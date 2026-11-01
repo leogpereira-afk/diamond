@@ -60,12 +60,12 @@ export function criarServidorVendas(port=8791){
       if(u.pathname==='/api/dmd-api'){
         let raw='';for await(const chunk of req)raw+=chunk;
         const data=JSON.parse(raw||'{}');
-        const leitura=leituras.has(data.action)||(data.action==='vendasCondicoes'&&['listar','carregar'].includes(data.operacao))||(data.action==='vagas'&&['carregar','paraProposta'].includes(data.operacao))||(data.action==='clienteCadastro'&&data.operacao==='carregar');
+        const leitura=leituras.has(data.action)||(data.action==='vendasCondicoes'&&['listar','carregar'].includes(data.operacao))||(data.action==='vagas'&&['carregar','paraProposta'].includes(data.operacao))||(data.action==='clienteCadastro'&&data.operacao==='carregar')||(data.action==='previsaoCusto'&&data.operacao==='carregar');
         if(!leitura)events.push({action:data.action,operacao:data.operacao,em:new Date().toISOString()});
         const r=data.action==='vagas'&&data.operacao==='carregar'?{status:200,ok:true,estado:estadoVagas,revisao:1}:data.action==='vagas'&&data.operacao==='paraProposta'?{status:200,ok:true,vagas:[{codigo:'V02',pavimento:'Térreo'}]}:await b.request(data.action,data,data.auth?.usuario||null);
         res.statusCode=r.status;text=JSON.stringify(r);
       }else if(u.pathname==='/audit-state'){
-        text=JSON.stringify({events,unidades:[...b.table('unidades').values()],clientes:[...b.table('leads').values()],condicoes:[...b.table('vendas_condicoes').values()],tabelas:[...b.table('precos_historico').values()],propostas:[...b.table('propostas').values()],reservas:[...b.table('reservas').values()]});
+        text=JSON.stringify({events,previsao:b.table('previsao_custo').get('diamond')||null,previsaoOperacoes:[...b.table('previsao_custo_operacoes').values()],unidades:[...b.table('unidades').values()],clientes:[...b.table('leads').values()],condicoes:[...b.table('vendas_condicoes').values()],tabelas:[...b.table('precos_historico').values()],propostas:[...b.table('propostas').values()],reservas:[...b.table('reservas').values()]});
       }else if(u.pathname==='/fixture.js'){
         type='application/javascript';
         // A fixture apenas fornece a sessão sintética. Dados, fila e edições nunca

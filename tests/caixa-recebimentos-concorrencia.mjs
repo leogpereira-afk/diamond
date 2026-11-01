@@ -18,7 +18,7 @@ try{
  for(let i=0;i<3;i++){const c=pg.getPgClient();await c.connect();await c.query("SET statement_timeout='10s'");clients.push(c);}
  const [admin,a,b]=clients;
  await admin.query('CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;CREATE TABLE dmd_kv(store text NOT NULL,key text NOT NULL,valor jsonb,atualizado_em timestamptz DEFAULT now(),PRIMARY KEY(store,key));');
- await admin.query(await fs.readFile(new URL('../supabase/migrations/202611011900_caixa_recebimentos.sql',import.meta.url),'utf8'));
+ await admin.query(await fs.readFile(new URL('../supabase/migrations/20261101230000_caixa_recebimentos.sql',import.meta.url),'utf8'));
  const u={id:'qa-concorrencia',unidade:'QA',clienteId:'qa-cliente',status:'Vendido',atualizadoEm:'rev-1'},c={id:'qa-cliente',cliente:'Comprador sintético'};
  const venda={unidadeId:u.id,clienteId:c.id,unidadeRevisao:u.atualizadoEm,total:10000,entrada:0,data:'2026-10-01',permutas:[],parcelas:[{descricao:'Parcela teste',valor:10000,quantidade:1,intervalo:1,primeiro:'2026-10-31'}]};
  for(const [store,key,value]of [['unidades',u.id,u],['leads',c.id,c],['vendas_condicoes',u.id,venda]])await admin.query('INSERT INTO dmd_kv(store,key,valor)VALUES($1,$2,$3)',[store,key,value]);

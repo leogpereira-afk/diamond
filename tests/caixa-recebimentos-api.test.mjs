@@ -114,5 +114,5 @@ test('trilha incompleta não aceita alteração e limite mantém todos os evento
 });
 test('backup inclui ledger e a RPC é fechada aos papéis públicos',()=>{
  assert.match(source('supabase/functions/dmd-api/api-core.mjs'),/const ORDEM = \[[^\]]*'vendas_recebimentos'/);
- const sql=source('supabase/migrations/202611011900_caixa_recebimentos.sql');assert.match(sql,/revoke all on function[^;]+from public,anon,authenticated/);assert.match(sql,/grant execute on function[^;]+to service_role/);
+ const sql=source('supabase/migrations/20261101230000_caixa_recebimentos.sql');assert.match(sql,/revoke all on function[^;]+from public,anon,authenticated/);assert.match(sql,/grant execute on function[^;]+to service_role/);
 });

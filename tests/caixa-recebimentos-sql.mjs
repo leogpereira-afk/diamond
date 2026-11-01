@@ -6,7 +6,7 @@ import {executarRecebimentos} from '../supabase/functions/dmd-api/recebimentos-a
 const runtime=process.argv[2];
 if(!runtime)throw Error('Informe o caminho do runtime local PGlite para executar este ensaio SQL.');
 const {PGlite}=await import(pathToFileURL(runtime).href),db=new PGlite();
-const migration=fs.readFileSync(new URL('../supabase/migrations/202611011900_caixa_recebimentos.sql',import.meta.url),'utf8');
+const migration=fs.readFileSync(new URL('../supabase/migrations/20261101230000_caixa_recebimentos.sql',import.meta.url),'utf8');
 await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE public.dmd_kv(store text NOT NULL,key text NOT NULL,valor jsonb,atualizado_em timestamptz DEFAULT now(),PRIMARY KEY(store,key));');
 await db.exec(migration);
 const unidade={id:'qa-sql',unidade:'QA-SQL',status:'Vendido',clienteId:'qa-cliente',atualizadoEm:'revisao-1'};
