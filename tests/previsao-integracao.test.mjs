@@ -74,7 +74,7 @@ test('visão de previsão é reconhecida pelo carregador gerencial',async()=>{
 test('HTML carrega estilo, domínio, persistência e UI antes do painel',()=>{
   const html=source('index.html');
   assert.match(html,/href="previsao-custo\.css\?v=/);
-  const names=['previsao-custo-domain.js','previsao-custo-store.js','previsao-custo.js','gestao-painel.js'];
+  const names=['previsao-custo-domain.js','previsao-cobertura-domain.js','previsao-custo-store.js','previsao-custo.js','gestao-painel.js'];
   for(let i=1;i<names.length;i++)assert.ok(html.indexOf('src="'+names[i-1])<html.indexOf('src="'+names[i]));
 });
 

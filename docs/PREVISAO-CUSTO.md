@@ -8,6 +8,20 @@ A versão v63 apresenta primeiro os indicadores, a cobertura e a simulação do 
 
 A prévia isolada `node tests/serve-previsao-visual-preview.mjs` usa somente exemplos fictícios em memória. O argumento `--partial` acrescenta uma condição incompleta para conferir indicadores desconhecidos, sem tratá-los como zero.
 
+## Cobertura detalhada e simulador — v64: cobertura e apartamentos
+
+A nova camada de leitura usa o mesmo motor contratual e não grava vendas, permutas, aportes ou recebimentos ao abrir cards ou selecionar apartamentos. Cada percentual usa o custo configurado como denominador; valores desconhecidos continuam desconhecidos. Os detalhes de cada indicador mostram sua base, fórmula e registros de origem.
+
+A cobertura contratada e as entradas recebidas ficam separadas. Entradas recebidas não são saldo disponível: este módulo não registra saídas da obra. Aportes continuam independentes de SCP. A decomposição econômica separa aportes, dinheiro contratado durante a obra por origem, permutas e comissões. Permutas já pertencem às vendas; recebimentos não são somados outra vez. Todas as parcelas finais permanecem fora da cobertura durante a obra.
+
+A origem SCP/direta exige evidência explícita do contrato atual. Registros sem indicação suficiente ficam em **Origem a conferir**; ausência de referência a SCP não significa venda direta. Classificação não altera a cobertura econômica total nem o registro da venda.
+
+O simulador usa apenas apartamentos disponíveis com preço vigente. Loja aparece separadamente e não reduz a quantidade estimada de apartamentos. Reservas não entram. A estimativa por ticket médio arredonda para cima e é uma referência; a seleção das unidades mostra sua contribuição exata em centavos, falta e eventual excedente. A comissão futura precisa ser explícita, inclusive quando zero. Os percentuais futuros não mudam as condições dos contratos existentes.
+
+Quando falta composição contratual, o simulador pode exibir um cenário sobre o subtotal identificado, claramente parcial, sem transformá-lo em meta definitiva. Configurações são salvas apenas pelo formulário existente, mediante confirmação do servidor; seleções e abertura de detalhes são ações de leitura.
+
+Execute `node tests/serve-previsao-cobertura-preview.mjs` para a prévia fictícia em `http://127.0.0.1:8801/#/admin/painel?visao=previsao`. O argumento `--partial` apresenta composição pendente e comissão futura não informada. A API da prévia é local em memória, com conexões externas bloqueadas. Esta evolução depende de aprovação antes de publicação.
+
 ## Funcionamento
 
 - Custo inicial configurável: R$ 17.000.000.
@@ -37,6 +51,7 @@ Valores e cálculos são em centavos inteiros. Recibos e aportes com datas futur
 ## Estrutura
 
 - `previsao-custo-domain.js`: cálculo puro e validações econômicas.
+- `previsao-cobertura-domain.js`: percentuais, decomposição e simulação de apartamentos a partir do modelo financeiro.
 - `previsao-custo-schema.js`: validação compartilhada, também espelhada na função do servidor.
 - `previsao-custo-store.js`: cliente autenticado, migração da cópia anterior, revisão, backup e importação.
 - `supabase/functions/dmd-api/previsao-custo-api.mjs`: autorização, validação e chamada da RPC.
