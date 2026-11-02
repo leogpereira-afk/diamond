@@ -51,9 +51,9 @@ test('ranking usa IDs distintos mesmo com nomes iguais, saldo e participação d
  assert.match(html,/Barras proporcionais ao maior saldo; percentuais sobre/);assert.doesNotMatch(html,/Clientes são identificados pelo cadastro/);
 });
 
-test('top cinco mantém todos os outros clientes na tabela e com ação de detalhe',()=>{
+test('oito clientes aparecem diretamente com ação de detalhe',()=>{
  const m=model();m.ranking.clientes=Array.from({length:8},(_,i)=>({id:'id-'+i,nome:'Cliente Exemplo '+i,unidades:['10'+i],previsto:(8-i)*10000,recebido:0,aReceber:(8-i)*10000,parcelas:1,participacao:(8-i)/36}));m.ranking.total=360000;
- const html=renderer().render(m);assert.equal((html.match(/class="cxd-client"/g)||[]).length,5);assert.match(html,/Os 5 maiores saldos de 8 clientes/);assert.match(html,/Ver todos os 8 clientes e valores/);assert.equal((html.match(/data-cxd-client="id-7"/g)||[]).length,1);
+ const html=renderer().render(m);assert.equal((html.match(/class="cxd-client"/g)||[]).length,8);assert.match(html,/8 clientes com saldo/);assert.match(html,/Ver todos os 8 clientes e valores/);assert.equal((html.match(/data-cxd-client="id-7"/g)||[]).length,2);
 });
 
 test('render escapa nomes, identificadores e rótulos sem cortar nome completo',()=>{

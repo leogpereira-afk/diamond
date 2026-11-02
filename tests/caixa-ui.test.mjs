@@ -54,7 +54,7 @@ test('equipe não master não consulta nem acessa confirmações',async()=>{
  for(const user of [{usuario:'domo',papel:'corretor',ehMaster:false},{usuario:'outra-equipe',papel:'corretor',ehMaster:true}]){
   const t=fixture({user});await t.load();assert.match(t.initial,/somente para a administração/);assert.equal(t.calls(),0);
  }
- const admin=fixture({user:{usuario:'admin',papel:'admin'}});await admin.load();assert.equal(admin.calls(),1);
+ const admin=fixture({user:{usuario:'admin',papel:'admin'}});await admin.load();assert.equal(admin.calls(),2);
 });
 
 test('sem vencimento é uma visão própria e não inventa o dia da entrada',async()=>{

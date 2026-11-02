@@ -5,3 +5,6 @@
 @media print{.cx-toolbar,.cx-button,.cx-link,.cx-notes{display:none!important}.cx-root details>*,.cx-root details:not([open])>*{display:block}.cx-kpis{grid-template-columns:repeat(4,1fr)}.cx-table-wrap{overflow:visible}.cx-table{font-size:10px}.cx-table tr{break-inside:avoid}.cx-card{break-inside:auto}.cx-message{display:none}}
 
 .cx-parcels{scroll-margin-top:140px}.cx-client-dialog{max-width:880px}.cx-client-dialog .cx-table td:first-child{max-width:260px}
+
+.cx-money .cx-kpis{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:6px}.cx-money summary{cursor:pointer;font-weight:650;min-height:40px;display:flex;align-items:center}.cx-money .cx-kpi strong{overflow-wrap:anywhere}
+@media(max-width:760px){.cx-money .cx-kpis{grid-template-columns:1fr}.cx-money .cx-kpi{padding:10px 12px}.cx-money .cx-kpi strong{font-size:25px}.cx-money .cx-kpi small{font-size:11px}}

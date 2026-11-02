@@ -1,0 +1,20 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const M=require('../caixa-money-domain.js'),P=globalThis.DiamondPrevisaoDomain;
+function fixture(){
+ const units=[{id:'u-a',unidade:'101',status:'Vendido',clienteId:'client-a'},{id:'u-b',unidade:'102',status:'Vendido',clienteId:'client-b'}];
+ const conditions=units.map((u,i)=>({unidadeId:u.id,clienteId:u.clienteId,revisao:1,total:i?50000:100000,entrada:0,permutas:i?[{valor:10000}]:[],parcelas:[{quantidade:1,valor:i?30000:100000},{quantidade:1,valor:i?10000:0}]}));
+ const keys=Object.fromEntries(units.map((u,i)=>[u.id,P.contractKey({u,contrato:conditions[i]})]));
+ const record={data:{contracts:Object.fromEntries(units.map((u,i)=>[u.id,{contractKey:keys[u.id],finalSeriesIndices:i?[1]:[]}])),receipts:[],coverageConsolidation:{asOf:'2026-11-01',contractKeys:keys,groups:[{label:'SCP exemplo',unitIds:['u-a'],commonCents:100000,receivedCents:25000},{label:'Direta exemplo',unitIds:['u-b'],commonCents:30000,receivedCents:null}]}}};
+ return {units,conditions,record,model:{recebimentos:[],linhas:[],ledgerInvalido:false}};
+}
+test('posição geral inclui finais e exclui permutas sem somar SCP duas vezes',()=>{const f=fixture(),s=JSON.stringify(f),m=M.build(f);assert.equal(m.total,140000);assert.equal(m.received,25000);assert.equal(m.outstanding,115000);assert.equal(JSON.stringify(f),s);});
+test('baixa posterior ao consolidado soma uma vez e reduz o saldo',()=>{const f=fixture();f.model.recebimentos=[{unidadeId:'u-a',valor:10000,data:'2026-11-02'}];const m=M.build(f);assert.equal(m.received,35000);assert.equal(m.outstanding,105000);});
+test('baixa anterior ou na data-base não é duplicada',()=>{for(const data of ['2026-10-31','2026-11-01']){const f=fixture();f.model.recebimentos=[{unidadeId:'u-a',valor:10000,data}];const m=M.build(f);assert.equal(m.received,null);assert.equal(m.outstanding,null);assert.match(m.issues[0],/incluídas/);}});
+test('sobreposição entre caixa e previsão exige conciliação',()=>{const f=fixture();f.model.recebimentos=[{unidadeId:'u-b',valor:10000,data:'2026-11-02'}];f.record.data.receipts=[{unitId:'u-b',valorCents:10000,contractKey:f.record.data.contracts['u-b'].contractKey}];assert.equal(M.build(f).received,null);});
+test('mudança de condição invalida a consolidação antiga',()=>{const f=fixture();f.conditions[0].revisao++;assert.equal(M.build(f).total,null);});
+test('nova venda entra uma vez sem alterar os grupos anteriores',()=>{const f=fixture();f.units.push({id:'u-c',unidade:'103',status:'Vendido'});f.conditions.push({unidadeId:'u-c',total:20000,permutas:[],parcelas:[]});const m=M.build(f);assert.equal(m.total,160000);assert.equal(m.outstanding,135000);});
+test('falha de ledger não vira zero recebido',()=>{const f=fixture();f.model.ledgerInvalido=true;assert.equal(M.build(f).received,null);});
+test('unidade duplicada na consolidação bloqueia soma',()=>{const f=fixture();f.record.data.coverageConsolidation.groups.push({...f.record.data.coverageConsolidation.groups[0]});assert.equal(M.build(f).received,null);});
+test('recebimento maior que o saldo não gera negativo',()=>{const f=fixture();f.model.recebimentos=[{unidadeId:'u-a',valor:100000,data:'2026-11-02'}];assert.equal(M.build(f).outstanding,null);});
+test('novo recebimento explícito no mesmo dia da base soma uma vez',()=>{const f=fixture();f.model.recebimentos=[{unidadeId:'u-a',valor:10000,data:'2026-11-01',observacao:M.newReceiptNote(f.record,'u-a')}];assert.equal(M.build(f).received,35000);});
+test('marcador de outra posição não libera dupla contagem',()=>{const f=fixture(),note=M.newReceiptNote(f.record,'u-a');f.record.data.coverageConsolidation.groups[0].receivedCents=30000;f.model.recebimentos=[{unidadeId:'u-a',valor:10000,data:'2026-11-01',observacao:note}];assert.equal(M.build(f).received,null);});
