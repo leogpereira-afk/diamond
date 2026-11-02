@@ -187,5 +187,5 @@ test('unidade diferente no prefixo SCP não classifica outro apartamento',()=>{
 
 test('módulo expõe a mesma API no navegador e no CommonJS',()=>{
  const browser=vm.createContext({window:{}});vm.runInContext(fs.readFileSync(path.join(__dirname,'../previsao-cobertura-domain.js'),'utf8'),browser);
- assert.deepEqual(Object.keys(browser.window.DiamondCoberturaDomain).sort(),['build','classifyOrigin']);assert.equal(browser.window.DiamondCoberturaDomain.classifyOrigin({observacoes:'Origem da venda: SCP.'}),C.classifyOrigin({observacoes:'Origem da venda: SCP.'}));
+ assert.deepEqual(Object.keys(browser.window.DiamondCoberturaDomain).sort(),['build','classifyOrigin','consolidate']);assert.equal(browser.window.DiamondCoberturaDomain.classifyOrigin({observacoes:'Origem da venda: SCP.'}),C.classifyOrigin({observacoes:'Origem da venda: SCP.'}));
 });

@@ -57,8 +57,35 @@
     return json;
   }
   const defaults=()=>({settings:{targetCents:1700000000,futurePaymentShare:.5,futureCommissionRate:null},contributionsReviewed:false,contributions:[],contracts:{},receipts:[]});
+  function consolidation(value){
+    if(value===null)return null;
+    keys(value,['asOf','source','contractKeys','groups'],'Consolidação');
+    object(value.contractKeys,'Vínculos da consolidação');
+    const contractKeys={};
+    for(const [key,v] of Object.entries(value.contractKeys)){
+      if(id(key,'Unidade')!==key)fail('Unidade inválida.');
+      contractKeys[key]=text(v,'Referência do contrato',MAX_CONTRACT_KEY);
+    }
+    if(!Object.keys(contractKeys).length||Object.keys(contractKeys).length>1000)fail('Informe de 1 a 1000 contratos na consolidação.');
+    const groups=array(value.groups,'Grupos consolidados',1000).map(g=>{
+      keys(g,['id','label','origin','unitIds','commonCents','receivedCents','receivedCount','outstandingCount','source'],'Grupo');
+      if(!['scp','direta','barter'].includes(g.origin))fail('Origem consolidada inválida.');
+      const unitIds=array(g.unitIds,'Unidades do grupo',1000).map(v=>id(v,'Unidade'));
+      if(!unitIds.length)fail('Grupo sem unidades.');
+      const commonCents=integer(g.commonCents,'Total monetário');
+      if(g.origin==='barter'&&commonCents!==0)fail('Permuta integral não tem componente em dinheiro.');
+      const receivedCents=g.receivedCents===null?null:integer(g.receivedCents,'Recebido consolidado');
+      if(receivedCents!==null&&receivedCents>commonCents)fail('Recebido superior ao total monetário.');
+      const count=(v,label)=>v===null?null:integer(v,label);
+      return {id:id(g.id,'Grupo'),label:text(g.label,'Descrição do grupo',200),origin:g.origin,unitIds,commonCents,receivedCents,receivedCount:count(g.receivedCount,'Parcelas recebidas'),outstandingCount:count(g.outstandingCount,'Parcelas a vencer'),source:text(g.source,'Fonte do grupo',2000)};
+    });
+    unique(groups.map(g=>g.id),'Grupos');
+    const units=groups.flatMap(g=>g.unitIds);unique(units,'Unidades consolidadas');
+    if(units.length!==Object.keys(contractKeys).length||units.some(id=>!Object.hasOwn(contractKeys,id)))fail('Os grupos devem cobrir exatamente os contratos vinculados.');
+    return {asOf:day(value.asOf),source:text(value.source,'Fonte da consolidação',2000),contractKeys,groups};
+  }
   function validate(data){
-    keys(data,['settings','contributionsReviewed','contributions','contracts','receipts'],'Registro');
+    keys(data,['settings','contributionsReviewed','contributions','contracts','receipts','coverageConsolidation'],'Registro');
     keys(data.settings,['targetCents','futurePaymentShare','futureCommissionRate'],'Configuração');
     const settings={targetCents:integer(data.settings.targetCents,'Custo previsto'),futurePaymentShare:fraction(data.settings.futurePaymentShare,'Participação futura'),futureCommissionRate:fraction(data.settings.futureCommissionRate,'Comissão futura',true)};
     if(settings.targetCents===0)fail('Custo previsto deve ser maior que zero.');
@@ -86,6 +113,7 @@
     });
     unique(receipts.map(r=>r.id),'Recebimentos');
     const normalized={settings,contributionsReviewed:bool(data.contributionsReviewed,'Conferência dos aportes'),contributions,contracts,receipts};
+    if(Object.hasOwn(data,'coverageConsolidation'))normalized.coverageConsolidation=consolidation(data.coverageConsolidation);
     size(JSON.stringify(normalized));
     return normalized;
   }

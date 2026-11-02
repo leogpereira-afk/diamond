@@ -28,6 +28,12 @@ for(const [id,contrato] of b.table('vendas_condicoes')){
  data.contracts[id]={contractKey:key,commissionCents:0,finalSeriesIndices:contrato.parcelas.length?[1]:[],receiptsReviewed:!partial};
  if(!partial)data.receipts.push({id:'preview-receipt-'+id,unitId:id,contractKey:key,data:'2026-10-20',valorCents:contrato.entrada,natureza:'comum',observacao:'Recebimento fictício para demonstrar a separação de caixa e cobertura.'});
 }
+if(process.argv.includes('--consolidated')){
+ const scpIds=[...b.table('vendas_condicoes').keys()].filter(id=>id!=='u-102');
+ data.coverageConsolidation={asOf:'2026-11-01',source:'Consolidação fictícia para teste; nenhum dado real.',contractKeys:Object.fromEntries(Object.entries(data.contracts).map(([id,c])=>[id,c.contractKey])),groups:[
+ {id:'scp-demo',label:'SCP de exemplo',origin:'scp',unitIds:scpIds,commonCents:15500000+(partial?35000000:0),receivedCents:3500000,receivedCount:3,outstandingCount:8,source:'Posição sintética de teste.'},
+ {id:'direct-demo',label:'Venda direta de exemplo',origin:'direta',unitIds:['u-102'],commonCents:26500000,receivedCents:null,receivedCount:null,outstandingCount:null,source:'Contrato sintético de teste.'}]};
+}
 globalThis.DiamondPrevisaoSchema.validate(data);
 b.table('previsao_custo').set('diamond',{schema:1,revision:1,updatedAt:'2026-11-01T12:00:00.000Z',updatedBy:'admin-da-previa',status:'Salvo no sistema',data});
 server.listen(port,'127.0.0.1',()=>console.log('Prévia da cobertura com dados fictícios: '+base+'/#/admin/painel?visao=previsao'));

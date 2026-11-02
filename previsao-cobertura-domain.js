@@ -28,6 +28,31 @@
   return scp===direct?null:scp?'scp':'direta';
  }
 
+ // Consolidated coverage is a separate, dated source. It never creates receipts
+ // or allocates a group amount across apartments. Current contract keys bind it.
+ function consolidate(model,record){
+  if(!record)return model;
+  const invalid=message=>({...model,consolidation:{valid:false,message},issues:[...model.issues,{code:'consolidation_stale',scope:'coverage',message}]});
+  const contracts=model.contracts,keys=record.contractKeys,groups=record.groups;
+  if(!keys||!Array.isArray(groups)||!contracts.length||model.unconfirmedContracts.length||model.issues.some(i=>['rows_invalid','unit_duplicate_or_missing'].includes(i.code)))return invalid('A consolidação aguarda a posição completa dos contratos.');
+  const ids=groups.flatMap(g=>Array.isArray(g.unitIds)?g.unitIds:[]);
+  if(new Set(ids).size!==ids.length||ids.length!==contracts.length||Object.keys(keys).length!==contracts.length||contracts.some(c=>!ids.includes(c.id)||keys[c.id]!==c.contractKey||!c.manualCurrent||![c.grossCents,c.permutaCents,c.finalCents,c.commissionCents].every(amount)))return invalid('Os contratos mudaram desde a consolidação. Atualize a fonte consolidada antes de usar estes valores.');
+  if(groups.some(g=>!['scp','direta','barter'].includes(g.origin)||!amount(g.commonCents)||(g.origin==='barter'&&g.commonCents!==0)||(g.receivedCents!==null&&(!amount(g.receivedCents)||g.receivedCents>g.commonCents))))return invalid('Os valores da consolidação são inválidos.');
+  const commonCents=sum(groups.map(g=>g.commonCents)),barterCents=sum(contracts.map(c=>c.permutaCents)),commissionCents=sum(contracts.map(c=>c.commissionCents)),finalCents=sum(contracts.map(c=>c.finalCents));
+  if(![commonCents,barterCents,commissionCents,finalCents,model.contributionsCents].every(amount))return invalid('A consolidação excede a precisão suportada ou os aportes não estão conferidos.');
+  // A barter-only group must remain fully covered by the recorded barter.
+  if(groups.filter(g=>g.origin==='barter').some(g=>g.unitIds.some(id=>{const c=contracts.find(c=>c.id===id);return c.grossCents!==c.permutaCents||c.finalCents!==0;})))return invalid('Uma venda antes integralmente em permuta passou a ter outra composição.');
+  const coverageCents=sum([commonCents,barterCents,-commissionCents,model.contributionsCents]);
+  if(!amount(coverageCents))return invalid('O total consolidado é inválido.');
+  const gap=difference(model.settings.targetCents,coverageCents);
+  const dec=value=>{const [mantissa,exponent='0']=String(value).toLowerCase().split('e'),[integer,decimal='']=mantissa.split('.');let n=BigInt(integer+decimal),scale=decimal.length-Number(exponent);if(scale<0){n*=10n**BigInt(-scale);scale=0;}return {n,d:10n**BigInt(scale)};};
+  let requiredGrossCents=null;
+  if(model.future.valid&&gap!==null){const p=dec(model.future.P),c=dec(model.future.C),n=p.n*c.d-c.n*p.d,d=p.d*c.d;requiredGrossCents=fromBig((BigInt(gap)*d+n-1n)/n);}
+  const gross=sum(contracts.map(c=>c.grossCents));
+  const consolidation={...record,valid:true,groups:groups.map(g=>({...g,outstandingCents:g.receivedCents===null?null:g.commonCents-g.receivedCents})),commonCents,barterCents,commissionCents,finalCents,adjustmentCents:sum([commonCents,barterCents,finalCents,-gross])};
+  return {...model,consolidation,totals:{...model.totals,coverageCents,coverageKnownCents:coverageCents,coverageComplete:true,shortfallCents:gap,shortfallKnownCents:gap,targetStatus:gap===null?'unknown':gap===0?'achieved':'shortfall'},future:{...model.future,requiredGrossCents},inventory:{...model.inventory,remainingShortfallCents:model.inventory.selectionComplete?difference(gap,model.inventory.selectedContributionCents):null},issues:model.issues.filter(i=>i.scope!=='coverage'),complete:gap!==null&&model.future.valid&&requiredGrossCents!==null};
+ }
+
  function build({model,classifications={}}={}){
   const source=!!model&&typeof model==='object'&&!!model.totals&&Array.isArray(model.contracts)&&Array.isArray(model.inventory?.units);
   const m=source?model:{},t=m.totals||{},contracts=source?m.contracts:[],issues=[];
@@ -68,10 +93,19 @@
   const contributionPart={key:'contributions',cents:amount(m.contributionsCents)?m.contributionsCents:null,knownCents:source?(amount(m.contributionsCents)?m.contributionsCents:0):null,sign:1,unitIds:[],count:null,complete:amount(m.contributionsCents)};
   Object.assign(contributionPart,{signedCents:contributionPart.cents,percent:ratio(contributionPart.cents,targetCents),knownPercent:ratio(contributionPart.knownCents,targetCents)});
   const parts=[contributionPart,part('direta',eligible.filter(c=>origin(c)==='direta'),'commonReceivableCents'),part('scp',eligible.filter(c=>origin(c)==='scp'),'commonReceivableCents'),part('unknown',eligible.filter(c=>origin(c)==='unknown'),'commonReceivableCents'),part('barter',eligible,'permutaCents'),part('commission',eligible,'commissionCents',-1)];
+  if(m.consolidation?.valid){
+   for(const p of parts){
+    if(p.key==='contributions')continue;
+    const selected=m.consolidation.groups.filter(g=>g.origin===p.key);
+    const value=p.key==='barter'?m.consolidation.barterCents:p.key==='commission'?m.consolidation.commissionCents:sum(selected.map(g=>g.commonCents));
+    Object.assign(p,{cents:value,knownCents:value,signedCents:p.sign*value,percent:ratio(value,targetCents),knownPercent:ratio(value,targetCents),complete:true,unitIds:['barter','commission'].includes(p.key)?contracts.map(c=>c.id):selected.flatMap(g=>g.unitIds),groups:selected});
+   }
+  }
   const knownTotalCents=source?sum(parts.map(p=>p.knownCents===null?null:p.sign*p.knownCents)):null;
   const matchesCoverageKnown=knownTotalCents!==null&&knownTotalCents===coverage.knownCents;
   if(source&&!matchesCoverageKnown)note('decomposition_unavailable','A composição detalhada não pôde ser conciliada com a cobertura conhecida.');
-  const decomposition={parts,totalCents:coverage.complete&&matchesCoverageKnown?knownTotalCents:null,knownTotalCents,complete:coverage.complete&&matchesCoverageKnown,matchesCoverageKnown,classificationComplete:eligible.every(c=>origin(c)!=='unknown'),acceptedUnitIds:eligible.map(c=>c.id),pending,excluded};
+  const decomposition={parts,totalCents:coverage.complete&&matchesCoverageKnown?knownTotalCents:null,knownTotalCents,complete:coverage.complete&&matchesCoverageKnown,matchesCoverageKnown,classificationComplete:eligible.every(c=>origin(c)!=='unknown'),acceptedUnitIds:m.consolidation?.valid?contracts.map(c=>c.id):eligible.map(c=>c.id),pending:m.consolidation?.valid?[]:pending,excluded};
+  if(m.consolidation?.valid)decomposition.classificationComplete=true;
 
   const available=(m.inventory?.units||[]).filter(u=>u?.row?.u?.status==='Disponível').map(u=>({...u,unidade:String(u.row.u.unidade||'')}));
   const apartments=available.filter(u=>!isShop(u)),shops=available.filter(isShop);
@@ -101,7 +135,7 @@
   if(estimatedCount===null&&inventoryComplete&&amount(gapCents)&&gapCents>0)note(count&&availableContributionCents>0?'estimate_overflow':'no_apartment_contribution','Não há uma quantidade estimada de apartamentos calculável para este cenário.');
   return {targetCents,metrics,coverage,decomposition,simulation,issues};
  }
- const api={build,classifyOrigin};
+ const api={build,classifyOrigin,consolidate};
  root.DiamondCoberturaDomain=api;
  if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

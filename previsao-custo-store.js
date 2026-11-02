@@ -129,6 +129,7 @@
   }
   function merge(remote,local){
     const data=copy(remote),conflicts=[],receiptUnits=new Set();
+    if(local.coverageConsolidation&&!same(local.coverageConsolidation,remote.coverageConsolidation))conflicts.push('A consolidação da cópia local difere do sistema; confira a fonte antes de importar.');
     const partner=value=>value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
     const financialKey=(name,item)=>JSON.stringify(name==='contributions'?[partner(item.socio),item.data,item.valorCents]:[item.unitId,item.data,item.valorCents,item.natureza]);
     if(!same(data.settings,local.settings))conflicts.push('As premissas da cópia local diferem das premissas salvas no sistema.');

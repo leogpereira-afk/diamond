@@ -75,3 +75,12 @@ test('configuração, listagem normal e link público não expõem previsão; ba
 test('schema usado no servidor é idêntico ao schema entregue ao navegador',()=>{
  assert.equal(source('previsao-custo-schema.js'),source('supabase/functions/dmd-api/previsao-custo-schema.js'));
 });
+
+test('consolidação sincroniza e rejeita cliente antigo que omite a nova fonte',async()=>{
+ const b=backend(),data=fixture();data.coverageConsolidation={asOf:'2026-01-01',source:'Consolidação sintética',contractKeys:{'unit-example':'contract-example'},groups:[{id:'scp-example',label:'SCP exemplo',origin:'scp',unitIds:['unit-example'],commonCents:10000,receivedCents:1000,receivedCount:1,outstandingCount:9,source:'Documento sintético'}]};
+ const body=save(data),first=await b.request('previsaoCusto',body);assert.equal(first.status,200,first.erro);
+ assert.deepEqual((await load(b)).registro.data,data);
+ const legacy=await b.request('previsaoCusto',save(fixture(),1));assert.equal(legacy.status,409);assert.deepEqual((await load(b)).registro.data,data);
+ const retry=await b.request('previsaoCusto',body);assert.equal(retry.repetida,true);assert.equal(b.table('previsao_custo_operacoes').size,1);
+ const next=copy(data);next.settings.targetCents+=100;assert.equal((await b.request('previsaoCusto',save(next,1))).status,200);assert.deepEqual((await load(b)).registro.data.coverageConsolidation,data.coverageConsolidation);
+});

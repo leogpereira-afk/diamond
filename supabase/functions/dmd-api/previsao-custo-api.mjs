@@ -31,6 +31,8 @@ export async function executarPrevisaoCusto(body,usr,{getStore,sb}={}){
     schema.size(JSON.stringify(schema.envelope(body.revisao+1,'9999-12-31T23:59:59.999Z',dados,usr.usuario)));
   }catch(error){return result(400,{erro:error.message});}
   try{
+    const current=await getStore('previsao_custo').get('diamond',{type:'json'});
+    if(current?.data?.coverageConsolidation&&!Object.hasOwn(dados,'coverageConsolidation'))return result(409,{erro:'Atualize a página para preservar a consolidação registrada.'});
     const {data,error}=await sb.rpc('dmd_previsao_custo_salvar',{
       p_revisao:body.revisao,p_operacao_id:body.operacaoId,p_dados:dados,p_usuario:usr.usuario,
     });
