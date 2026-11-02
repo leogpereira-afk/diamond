@@ -84,3 +84,8 @@ test('render é puro, não consulta fontes nem modifica o modelo',()=>{
 test('estilos oferecem grade responsiva sem truncar nomes e com foco visível',()=>{
  const css=fs.readFileSync(new URL('../caixa-dashboard.css',import.meta.url),'utf8');assert.match(css,/@media\(max-width:950px\).*grid-template-columns:minmax\(0,1fr\)/);assert.match(css,/overflow-wrap:anywhere/);assert.match(css,/:focus-visible/);assert.match(css,/\.cxd-table-wrap\{max-width:100%;overflow:auto/);assert.doesNotMatch(css,/text-overflow:ellipsis|line-clamp/);
 });
+
+test('todos os anos e meses são renderizados com acesso às últimas parcelas',()=>{
+ const m=model();m.mensal=Array.from({length:40},(_,i)=>({...m.mensal[0],mes:new Date(Date.UTC(2026,6+i,1)).toISOString().slice(0,7)}));m.periodo={inicio:'2026-07',fim:'2029-10',quantidade:40};
+ const html=renderer().render(m);assert.equal((html.match(/class="cxd-month /g)||[]).length,40);assert.equal((html.match(/class="cxd-year"/g)||[]).length,4);assert.match(html,/data-cxd-month="2029-10"/);assert.match(html,/Ver valores exatos dos 40 meses/);
+});

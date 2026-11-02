@@ -16,10 +16,10 @@ function adicionar(s,{id='qa-u2',clienteId='qa-c2',nome='Outro cliente',unidade=
  const c={unidadeId:id,clienteId,unidadeRevisao:'r1',data:'2026-01-01',total:valor,entrada:0,permutas:[],parcelas:[{descricao:'Parcela única',valor,quantidade:1,intervalo:1,primeiro:mes+'-10'}]};
  s.unidades.push(u);s.condicoes.push(c);if(!s.leads.some(l=>l.id===clienteId))s.leads.push({id:clienteId,cliente:nome});return u;
 }
-test('seis meses consecutivos reconciliam exatamente com o Caixa por vencimento e preservam centavos',()=>{
+test('todos os meses contratuais reconciliam exatamente com o Caixa por vencimento e preservam centavos',()=>{
  const s=fixture();receber(s);const r=Dash.build(s);
- assert.deepEqual(r.periodo,{inicio:'2026-10',fim:'2027-03',quantidade:6});
- assert.deepEqual(r.mensal.map(m=>m.mes),['2026-10','2026-11','2026-12','2027-01','2027-02','2027-03']);
+ assert.deepEqual(r.periodo,{inicio:'2026-10',fim:'2026-12',quantidade:3});
+ assert.deepEqual(r.mensal.map(m=>m.mes),['2026-10','2026-11','2026-12']);
  for(const m of r.mensal){const base=D.build({...s,mes:m.mes});assert.equal(m.previsto,base.resumo.previsto);assert.equal(m.recebido,base.resumo.recebidoParcelas);assert.equal(m.aReceber,base.resumo.aReceber);assert.equal(m.parcelas,base.filtradas.length);}
  assert.equal(r.mensal[0].recebido,10000);assert.equal(r.mensal[1].recebido,0,'Data real de novembro não muda competência da parcela de outubro');assert.equal(r.mensal[2].previsto,1);
  assert.equal(r.mensal.reduce((sum,m)=>sum+m.previsto,0),70001);
@@ -54,7 +54,7 @@ test('busca e situação são aplicadas a cada mês, com mesma normalização do
  }
 });
 test('mês sem parcelas é distinguido de mês com parcelas inteiramente recebidas',()=>{
- const s=fixture();receber(s,{valor:35000});const r=Dash.build(s);
+ const s=fixture();adicionar(s,{mes:'2027-02'});receber(s,{valor:35000});const r=Dash.build(s);
  assert.equal(r.mensal[0].aReceber,0);assert.equal(r.mensal[0].semParcelas,false);assert.equal(r.mensal[0].parcelas,1);
  assert.equal(r.mensal[3].aReceber,0);assert.equal(r.mensal[3].semParcelas,true);assert.equal(r.mensal[3].parcelas,0);assert.equal(r.mensal[3].conferir,false);
 });
@@ -76,9 +76,14 @@ test('sem data mantém ranking da entrada, sem fabricar seis competências ou da
  const s=fixture();s.mes='sem-data';receber(s,{parcelaId:'entrada',valor:1});const r=Dash.build(s);
  assert.equal(r.periodo,null);assert.deepEqual(r.mensal,[]);assert.equal(r.ranking.total,9999);assert.equal(r.ranking.clientes[0].previsto,10000);assert.equal(r.ranking.clientes[0].recebido,1);assert.equal(r.ranking.clientes[0].participacao,1);
 });
-test('fim do calendário reduz período sem exceção e não ultrapassa dezembro de 2199',()=>{
- const s=fixture();s.mes='2199-10';s.hoje='2199-10-01';let r=Dash.build(s);assert.deepEqual(r.periodo,{inicio:'2199-10',fim:'2199-12',quantidade:3});assert.equal(r.mensal.length,3);
- r=Dash.build({...s,mes:'2199-12'});assert.equal(r.mensal.length,1);assert.equal(r.periodo.fim,'2199-12');
+test('período inclui a última parcela, meses vazios e ignora o mês selecionado como limite',()=>{
+ const s=fixture();adicionar(s,{mes:'2029-10'});const r=Dash.build({...s,mes:'2028-05'});
+ assert.deepEqual(r.periodo,{inicio:'2026-10',fim:'2029-10',quantidade:37});
+ assert.equal(r.mensal.at(-1).previsto,25000);assert.equal(r.mensal.find(m=>m.mes==='2027-01').semParcelas,true);
+});
+test('fim contratual em dezembro de 2199 não ultrapassa calendário suportado',()=>{
+ const s=fixture();s.condicoes[0].parcelas=[{valor:70001,quantidade:1,intervalo:1,primeiro:'2199-12-01'}];s.mes='2199-12';
+ assert.deepEqual(Dash.build(s).periodo,{inicio:'2199-12',fim:'2199-12',quantidade:1});
 });
 test('fontes, modelo opcional e resultados de outra rodada não são mutados ou usados como cache obsoleto',()=>{
  const s=fixture(),old=D.build({...s,busca:'inexistente'}),before=JSON.stringify(s),oldBefore=JSON.stringify(old);
@@ -87,7 +92,7 @@ test('fontes, modelo opcional e resultados de outra rodada não são mutados ou 
  r.cobertura.pendencias[0].motivo='Texto de outra tela';assert.notEqual(Dash.build(s).cobertura.pendencias[0].motivo,'Texto de outra tela');
 });
 test('mês inválido adota mês normalizado pelo motor, e fonte indisponível não gera dashboard vazio',()=>{
- const s=fixture(),r=Dash.build({...s,mes:'2026-99'});assert.equal(r.mes,'2026-11');assert.equal(r.periodo.inicio,'2026-11');
+ const s=fixture(),r=Dash.build({...s,mes:'2026-99'});assert.equal(r.mes,'2026-11');assert.equal(r.periodo.inicio,'2026-10');
  assert.throws(()=>Dash.build({...s,unidades:null}),/indisponíveis/);
 });
 test('ranking não limita silenciosamente os clientes; empates têm ordenação determinística',()=>{

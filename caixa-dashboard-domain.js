@@ -35,9 +35,10 @@
     void modeloAtualOpcional;
     const atual=D.build(source),mensal=[];
     if(atual.mes!=='sem-data'){
-      let mes=atual.mes;
-      for(let i=0;i<6;i++){
-        const modelo=i===0?atual:D.build({...source,hoje:atual.hoje,mes});
+      const limites=atual.linhas.filter(l=>l.vencimento).map(l=>l.vencimento.slice(0,7)).sort();
+      let mes=limites[0];
+      while(mes&&mes<=limites.at(-1)){
+        const modelo=mes===atual.mes?atual:D.build({...source,hoje:atual.hoje,mes});
         const r=modelo.resumo;
         mensal.push({mes,previsto:r.previsto,recebido:r.recebidoParcelas,aReceber:r.aReceber,parcelas:modelo.filtradas.length,conferir:r.recebidoParcelas===null||r.aReceber===null,semParcelas:modelo.filtradas.length===0});
         if(mes==='2199-12')break;

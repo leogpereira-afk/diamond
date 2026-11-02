@@ -148,7 +148,7 @@ test('filtros ficam na URL para sobreviver à atualização das condições',asy
  await t.load();t.handlers.submit({target:{id:'cx-filters',values:{mes:'2026-10',busca:'Cliente Exemplo Um',status:'pendentes'}},preventDefault(){}});
  assert.equal(savedUrl,'#/admin/painel?visao=caixa&mes=2026-10&caixaBusca=Cliente+Exemplo+Um&caixaStatus=pendentes');
  assert.equal(value(t.host.innerHTML,'previsto'),'R$ 10.000,00');assert.equal(value(t.host.innerHTML,'recebido-parcelas'),'R$ 5.000,00');
- assert.equal(t.host.innerHTML.match(/Histórico por data de recebimento <span class="cx-tag">(\d+) registro/)?.[1],'2');
+ assert.equal(t.host.innerHTML.match(/Histórico de confirmações <span class="cx-tag">(\d+) registro/)?.[1],'2');
 });
 
 test('aba Caixa acompanha o mês atual sem reconsultar nem alterar links das outras abas',async()=>{
@@ -190,4 +190,10 @@ test('cliques nos gráficos sem consulta confirmada não navegam nem abrem detal
  t.ctx.document={createElement(){throw Error('Não deve abrir cliente');}};
  for(const dataset of [{cxdMonth:'2026-11'},{cxdClient:'preview-u-101'}])t.handlers.click({target:{closest:()=>({dataset})}});
  assert.equal(t.ctx.__cxTest.getState().filters.mes,'2026-10');assert.equal(t.calls(),1);
+});
+
+test('confirmação histórica exibe limite e não finge data exata de entrada',async()=>{
+ const t=fixture(),r=t.b.table('vendas_recebimentos').get('u-101');
+ const e=r.eventos[0];e.data='2026-10-31';e.confirmacaoHistorica={versao:1,ate:'2026-10-31',consolidacao:null};
+ const html=await t.load();assert.match(html,/Recebido com data no mês/);assert.match(html,/Recebido até 31\/10\/2026 · data exata não informada/);assert.match(html,/confirmação histórica/i);assert.doesNotMatch(html,/em 31\/10\/2026/);
 });

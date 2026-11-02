@@ -44,12 +44,19 @@
     const chave = JSON.stringify(['caixa-v1', u.id, c.clienteId, c.data, c.total, c.entrada, permuta, termos, text(c.correcao)]);
     return {ok:true, erro:null, chave, parcelas, permuta, saldoAInformar:c.total-soma, pendente:soma<c.total, semData:c.entrada>0};
   }
+  function confirmacaoHistorica(ev) {
+    const h=ev?.confirmacaoHistorica,c=h?.consolidacao;
+    if(ev?.tipo!=='receber'||!h||h.versao!==1||!dia(h.ate)||ev.data!==h.ate||!dia(ev.fonte?.vencimento)||ev.fonte.vencimento>h.ate) return null;
+    if(c!==null&&(!c||!text(c.grupoId)||!dia(c.dataBase)||c.dataBase<h.ate||!money(c.recebidoCentavos))) return null;
+    return h;
+  }
   function validarLedger(registro) {
     if (registro == null) return true;
     if (!text(registro.unidadeId) || !Number.isSafeInteger(registro.revisao) || !Array.isArray(registro.eventos) || registro.revisao !== registro.eventos.length || registro.eventos.length > 10000) return false;
     const ids = new Map(), operacoes = new Set(), estornados = new Set();
     for (const ev of registro.eventos) {
       if (!ev || !text(ev.id) || ids.has(ev.id) || !text(ev.operacaoId) || operacoes.has(ev.operacaoId) || !money(ev.valor) || !ev.valor || !dia(ev.data) || !text(ev.parcelaId) || !text(ev.cronogramaChave)) return false;
+      if(ev.confirmacaoHistorica!==undefined&&!confirmacaoHistorica(ev))return false;
       if (ev.tipo === 'estornar') {
         const original = ids.get(ev.eventoId);
         if (!original || original.tipo !== 'receber' || estornados.has(ev.eventoId) || original.valor !== ev.valor || original.parcelaId !== ev.parcelaId || original.cronogramaChave !== ev.cronogramaChave) return false;
@@ -107,7 +114,7 @@
     const doMes=linhas.filter(r=>casa(r)&&(mes==='sem-data'?!r.vencimento:r.vencimento?.slice(0,7)===mes));
     const filtradas=doMes.filter(r=>!status||status==='todos'||(status==='pendentes'&&r.saldo!==0)||(status==='recebidas'&&r.saldo===0)||(status==='vencidas'&&r.vencida)||r.status===status);
     const soma = k => filtradas.reduce((s,r)=>s+(r[k]||0),0), parcial=filtradas.some(r=>r.conferir);
-    const resumo={previsto:soma('valor'),recebidoParcelas:parcial?null:soma('recebido'),aReceber:parcial?null:soma('saldo'),vencido:parcial?null:filtradas.filter(r=>r.vencida).reduce((s,r)=>s+r.saldo,0),recebidoNoMes:ledgerInvalido?null:ativos.filter(r=>casa(r)&&r.data.slice(0,7)===mes).reduce((s,r)=>s+r.valor,0)};
+    const resumo={previsto:soma('valor'),recebidoParcelas:parcial?null:soma('recebido'),aReceber:parcial?null:soma('saldo'),vencido:parcial?null:filtradas.filter(r=>r.vencida).reduce((s,r)=>s+r.saldo,0),recebidoNoMes:ledgerInvalido?null:ativos.filter(r=>casa(r)&&!confirmacaoHistorica(r)&&r.data.slice(0,7)===mes).reduce((s,r)=>s+r.valor,0),recebidoSemDataExata:ledgerInvalido?null:ativos.filter(r=>casa(r)&&confirmacaoHistorica(r)).reduce((s,r)=>s+r.valor,0)};
     const mesesSet=new Set([diaHoje.slice(0,7),...(mes!=='sem-data'?[mes]:[]),...linhas.filter(r=>r.vencimento).map(r=>r.vencimento.slice(0,7)),...ativos.map(r=>r.data.slice(0,7))]);
     // Inclui meses vazios entre os vencimentos, para que outubro/novembro sejam comparáveis.
     const ordenados=[...mesesSet].sort(),meses=[];let m=ordenados[0];
@@ -115,7 +122,7 @@
     historico.sort((a,b)=>String(b.em).localeCompare(String(a.em)));
     return {linhas,filtradas,meses,resumo,pendencias,recebimentos:ativos,historico,permutas,hoje:diaHoje,mes,ledgerInvalido};
   }
-  const api={dia,hoje,somarMeses,cronograma,validarLedger,eventosAtivos,build};
+  const api={dia,hoje,somarMeses,cronograma,confirmacaoHistorica,validarLedger,eventosAtivos,build};
   root.DiamondCaixaDomain=api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

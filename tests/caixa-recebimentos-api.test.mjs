@@ -116,3 +116,15 @@ test('backup inclui ledger e a RPC é fechada aos papéis públicos',()=>{
  assert.match(source('supabase/functions/dmd-api/api-core.mjs'),/const ORDEM = \[[^\]]*'vendas_recebimentos'/);
  const sql=source('supabase/migrations/20261101230000_caixa_recebimentos.sql');assert.match(sql,/revoke all on function[^;]+from public,anon,authenticated/);assert.match(sql,/grant execute on function[^;]+to service_role/);
 });
+
+test('histórico conciliado sobrevive a nova baixa, recarga e repetição sem duplicar valores',async()=>{
+ const b=setup(),first=await run(b);assert.equal(first.status,200);
+ const ledger=b.table('vendas_recebimentos').get(unidade.id);ledger.eventos[0].confirmacaoHistorica={versao:1,ate:'2026-10-31',consolidacao:{grupoId:'scp-teste',dataBase:'2026-11-01',recebidoCentavos:30000}};
+ const original=copy(ledger.eventos[0]);
+ const next={...confirmar,parcelaId:plano.parcelas[2].id,revisao:1,operacaoId:'qa-novo-apos-historico01'};
+ const saved=await run(b,next);assert.equal(saved.status,200,saved.erro);assert.deepEqual(saved.registro.eventos[0],original);
+ const retry=await run(b,next);assert.equal(retry.repetida,true);assert.equal(retry.registro.eventos.length,2);
+ const reloaded=await run(b,{operacao:'listar'});assert.deepEqual(reloaded.recebimentos[0],saved.registro);
+ assert.equal((await run(b,{...confirmar,revisao:2,operacaoId:'qa-duplicata-historico01'})).status,409);
+ assert.deepEqual(b.table('vendas_condicoes').get(unidade.id),condicao);
+});

@@ -3,7 +3,9 @@
 (function(root){
  'use strict';
  if(!root.DiamondPrevisaoDomain&&typeof require==='function')require('./previsao-custo-domain.js');
+ if(!root.DiamondCaixaDomain&&typeof require==='function')require('./caixa-domain.js');
  const P=root.DiamondPrevisaoDomain;
+ const historical=e=>root.DiamondCaixaDomain?.confirmacaoHistorica(e);
  const ok=v=>Number.isSafeInteger(v)&&v>=0;
  const sum=a=>{if(!a.every(ok))return null;const n=a.reduce((s,v)=>s+BigInt(v),0n);return n<=BigInt(Number.MAX_SAFE_INTEGER)?Number(n):null;};
  function newReceiptNote(record,unitId){
@@ -43,11 +45,17 @@
     let received=null,note='';
     if(g.receivedCents!==null){
      if(!ok(g.receivedCents)||g.receivedCents>g.commonCents)return fail('Recebido consolidado inválido.');
-     // Backdated payments could already be included in the aggregate. Do not guess.
-     if(events.some(e=>e.data<con.asOf||(e.data===con.asOf&&!e.observacao?.startsWith(newReceiptNote(record,e.unidadeId))))||general.length){
+     const matched=e=>{const h=historical(e),c=h?.consolidacao;return c&&c.grupoId===g.id&&c.dataBase===con.asOf&&c.recebidoCentavos===g.receivedCents;};
+     const historicalEvents=events.filter(matched),historicalTotal=sum(historicalEvents.map(e=>e.valor)),fresh=events.filter(e=>!matched(e));
+     const reversed=(model.historico||[]).some(e=>g.unitIds.includes(e.unidadeId)&&e.tipo==='receber'&&e.ativo===false&&matched(e));
+     // Only an explicit, matching reconciliation can connect individual history to the aggregate.
+     if(reversed||historicalTotal===null||historicalTotal>g.receivedCents||fresh.some(e=>historical(e)?.consolidacao||e.data<con.asOf||(e.data===con.asOf&&!e.observacao?.startsWith(newReceiptNote(record,e.unidadeId))))||general.length){
       issues.push(g.label+': há baixas que podem estar incluídas na posição consolidada. Concilie o histórico antes de somar.');
-     }else received=sum([g.receivedCents,...events.map(e=>e.valor)]);
+     }else received=sum([g.receivedCents,...fresh.map(e=>e.valor)]);
      note='Base consolidada em '+con.asOf.split('-').reverse().join('/')+'; novas baixas com data posterior ou declaradas novas no mesmo dia são acrescentadas uma única vez.';
+     if(historicalEvents.length&&historicalTotal!==null&&historicalTotal<=g.receivedCents)note+=' '+(historicalTotal/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+' vinculados às parcelas históricas; '+((g.receivedCents-historicalTotal)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})+' do consolidado sem vínculo individual. Esses valores já estão incluídos no recebido.';
+    }else if(events.some(e=>historical(e)?.consolidacao)){
+     issues.push(g.label+': confirmação histórica aponta uma consolidação que não corresponde a esta posição.');
     }else if(events.length&&general.length){
      issues.push(g.label+': há baixas na Previsão de custo e no Caixa. O total aguarda conciliação para evitar duplicidade.');
     }else{
@@ -65,11 +73,11 @@
    if(!c||!ok(c.total)||!Array.isArray(c.permutas)){add('Unidade '+u.unidade,null,null,'Condições incompletas.');continue;}
    const barter=sum(c.permutas.map(p=>p.valor)),total=barter!==null&&barter<=c.total?c.total-barter:null;
    const events=active.filter(e=>e.unidadeId===u.id),general=(data.receipts||[]).filter(e=>e.unitId===u.id);
-   const uncertain=lines.some(l=>l.conferir)||events.length&&general.length||general.some(e=>e.contractKey!==P.contractKey({u,contrato:c}));
+   const uncertain=lines.some(l=>l.conferir)||events.some(e=>historical(e)?.consolidacao)||events.length&&general.length||general.some(e=>e.contractKey!==P.contractKey({u,contrato:c}));
    add(u.compradorNome||'Unidade '+u.unidade,total,uncertain?null:sum(events.length?events.map(e=>e.valor):general.map(e=>e.valorCents)),'Saldo contratual sem baixa; pode conter valores ainda sem vencimento cadastrado.');
   }
   if(active.some(e=>!us.has(e.unidadeId)||us.get(e.unidadeId).status!=='Vendido'))return fail('Há recebimentos de unidades reabertas ou removidas. Concilie o histórico.');
-  return {total:sum(groups.map(g=>g.total)),received:sum(groups.map(g=>g.received)),outstanding:sum(groups.map(g=>g.outstanding)),groups,issues,caption:'Inclui os balões finais em dinheiro. Permutas e aportes dos sócios ficam fora. Os totais não mudam com o filtro mensal; as baixas individuais antigas ainda precisam ser vinculadas ao consolidado.'};
+  return {total:sum(groups.map(g=>g.total)),received:sum(groups.map(g=>g.received)),outstanding:sum(groups.map(g=>g.outstanding)),groups,issues,caption:'Inclui os balões finais em dinheiro. Permutas e aportes dos sócios ficam fora. Os totais não mudam com o filtro mensal. Confirmações históricas vinculadas ao consolidado apenas detalham o recebido; não somam uma nova entrada.'};
  }
  root.DiamondCaixaMoneyDomain={build,newReceiptNote};
  if(typeof module!=='undefined'&&module.exports)module.exports={build,newReceiptNote};

@@ -34,7 +34,7 @@ test('identidade ignora observação/nome de série/revisão; conserva termos fi
 });
 test('recebimento parcial usa mês do vencimento no saldo e mês real no caixa',()=>{
   const r=ledger(),out=run({recebimentos:[r]}),nov=run({recebimentos:[r],mes:'2026-11'});
-  assert.deepEqual(out.resumo,{previsto:35000,recebidoParcelas:10000,aReceber:25000,vencido:25000,recebidoNoMes:0});
+  assert.deepEqual(out.resumo,{previsto:35000,recebidoParcelas:10000,aReceber:25000,vencido:25000,recebidoNoMes:0,recebidoSemDataExata:0});
   assert.equal(nov.resumo.recebidoNoMes,10000);assert.equal(nov.resumo.recebidoParcelas,0);assert.equal(out.filtradas[0].status,'parcial');
 });
 test('várias baixas fecham uma parcela exatamente',()=>{
@@ -69,3 +69,11 @@ test('motor não modifica fontes e mantém meses vazios no calendário',()=>{
 });
 test('permuta nula vira pendência da unidade, sem derrubar as demais',()=>{const b=run({condicoes:[{...c,permutas:[null]}]});assert.equal(b.linhas.length,0);assert.match(b.pendencias[0].motivo,/permuta inválido/);});
 test('histórico inválido fora do estoque aparece nas pendências',()=>{const b=run({recebimentos:[{unidadeId:'fora-do-estoque',revisao:1,eventos:[]}]});assert.equal(b.resumo.recebidoNoMes,null);assert.ok(b.pendencias.some(p=>p.unidadeId==='fora-do-estoque'));});
+
+test('confirmação histórica quita por vencimento sem inventar entrada de caixa na data-base',()=>{
+ const e=event({valor:35000,data:'2026-10-31',confirmacaoHistorica:{versao:1,ate:'2026-10-31',consolidacao:null}}),r=run({recebimentos:[ledger([e])]});
+ assert.equal(r.resumo.recebidoParcelas,35000);assert.equal(r.resumo.aReceber,0);assert.equal(r.resumo.recebidoNoMes,0);assert.equal(r.resumo.recebidoSemDataExata,35000);assert.equal(D.confirmacaoHistorica(e).ate,'2026-10-31');
+});
+test('metadados históricos inválidos não ocultam entrada nem geram quitação aparente',()=>{
+ const e=event({data:'2026-10-31',confirmacaoHistorica:{versao:1,ate:'2026-09-31',consolidacao:null}});assert.equal(D.validarLedger(ledger([e])),false);assert.equal(run({recebimentos:[ledger([e])]}).resumo.recebidoParcelas,null);
+});
