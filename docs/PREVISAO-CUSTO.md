@@ -1,6 +1,12 @@
-# Previsão de custo — Diamond v60
+# Previsão de custo — Diamond v63
 
 Aba da gestão Diamond em `#/admin/painel?visao=previsao`. Os lançamentos, conferências e premissas pertencem ao empreendimento e ficam no banco do sistema. Computador e celular consultam o mesmo registro. A sincronização não modifica os contratos de venda existentes.
+
+## Organização do painel
+
+A versão v63 apresenta primeiro os indicadores, a cobertura e a simulação do estoque. A área **Editar e conferir** fica abaixo, com atalhos e seções recolhíveis para premissas, contratos, aportes, recebimentos e backup. Os avisos de gravação e erro aparecem também junto ao formulário, e rascunhos continuam identificados no resumo. A alteração é visual: mantém o modelo financeiro, a API, as revisões e os registros existentes.
+
+A prévia isolada `node tests/serve-previsao-visual-preview.mjs` usa somente exemplos fictícios em memória. O argumento `--partial` acrescenta uma condição incompleta para conferir indicadores desconhecidos, sem tratá-los como zero.
 
 ## Funcionamento
 
