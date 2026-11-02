@@ -202,3 +202,15 @@ test('PDF completo, simples e SCP arquivam os mesmos bytes liberados no download
   for(const {doc,nome} of docs){let downloaded;doc.save=()=>{downloaded=doc.output('datauristring').split(',')[1];};await s.baixar(doc,nome,p);assert.equal(downloaded,archives.at(-1).data);assert.equal(archives.at(-1).id,p.id);assert.match(Buffer.from(downloaded,'base64').toString('latin1'),/^%PDF-/);}
   assert.equal(archives.length,3);
 });
+
+test('PDF mostra centavos e separa mensalidade, balão e final com total exato', async()=>{
+ const s=setup(),p=proposta({neg:300000.01,inp:{entradaPct:10,finalPct:50,nParcelas:36}}),before=copy(p);
+ const {doc}=await s.gerar(p,s.plano(p),cfgAtual);
+ assert.match(texto(doc),/300\.000,01/);
+ assert.match(texto(doc),/35 x R\$\s*1\.944,44 \+ última de R\$\s*1\.944,60/);
+ assert.ok(doc.texts.some(r=>r.text==='Parcela 36/36'));
+ assert.ok(doc.texts.some(r=>r.text==='Parcela final (50%)'));
+ assert.ok(!doc.texts.some(r=>r.text.includes(' + Parcela final')));
+ assert.deepEqual(p,before);
+ if(process.env.DIAMOND_PDF_TEST_OUTPUT) fs.writeFileSync(process.env.DIAMOND_PDF_TEST_OUTPUT,Buffer.from(doc.output('arraybuffer')));
+});

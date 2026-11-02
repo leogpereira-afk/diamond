@@ -22,7 +22,8 @@ const PLANO = (() => {
   //        balPrimeiro, balIntervalo, chavesMes, correcaoMensal, correcaoDesde,
   //        dataProposta (Date), diaVenc }
   function calc(inp) {
-    const neg = +inp.neg || 0;
+    const money = n => Math.round((n + Number.EPSILON) * 100) / 100;
+    const neg = money(+inp.neg || 0);
     const f = inp.forma;
     const preset = { '12x': 12, '24x': 24, '36x': 36 }[f] || null;
 
@@ -37,7 +38,11 @@ const PLANO = (() => {
       const balTot = balQtde * (+inp.balValor || 0);
       vParc = nParc > 0 ? (neg - ent - fin - balTot) / nParc : 0;
     }
-    const balValor = f === 'perso' ? (+inp.balValor || 0) : 0;
+    const balValor = f === 'perso' ? money(+inp.balValor || 0) : 0;
+    ent = money(ent); fin = money(fin);
+    const saldoCentavos = Math.round(neg * 100) - Math.round(ent * 100) - Math.round(fin * 100) - balQtde * Math.round(balValor * 100);
+    vParc = nParc ? Math.floor(saldoCentavos / nParc) / 100 : 0;
+    const ultimaParcela = nParc ? (saldoCentavos - Math.round(vParc * 100) * (nParc - 1)) / 100 : 0;
     const balPrimeiro = +inp.balPrimeiro || 6;
     const balIntervalo = Math.max(1, +inp.balIntervalo || 6);
     const chavesMes = Math.max(0, Math.round(+inp.chavesMes || 36));
@@ -53,11 +58,11 @@ const PLANO = (() => {
     let somaParcelas = 0, somaBaloes = 0, totalCorrigido = ent + fin;
     for (let m = 0; m <= maxM; m++) {
       const entrada = m === 0 ? ent : 0;
-      const parcela = (m >= 1 && m <= nParc) ? vParc : 0;
+      const parcela = (m >= 1 && m <= nParc) ? (m === nParc ? ultimaParcela : vParc) : 0;
       const balao = (balQtde > 0 && m >= 1 && m >= balPrimeiro && (m - balPrimeiro) % balIntervalo === 0
         && (m - balPrimeiro) / balIntervalo + 1 <= balQtde) ? balValor : 0;
       const chaves = (m === chavesMes && fin > 0) ? fin : 0;
-      const total = entrada + parcela + balao + chaves;
+      const total = money(entrada + parcela + balao + chaves);
       const fator = Math.pow(1 + corr, Math.max(0, m - (desde - 1)));
       const corrigido = (parcela + balao) * fator;
       somaParcelas += parcela; somaBaloes += balao; totalCorrigido += corrigido;
@@ -65,10 +70,11 @@ const PLANO = (() => {
         cronograma.push({ m, data: dataVenc(base, m, dia), entrada, parcela, balao, chaves, total, fator, corrigido });
       }
     }
-    const totalNominal = ent + somaParcelas + somaBaloes + fin;
+    somaParcelas = money(somaParcelas); somaBaloes = money(somaBaloes);
+    const totalNominal = money(ent + somaParcelas + somaBaloes + fin);
     return {
       forma: f, formaLabel: formaLabel(f), neg,
-      ent, fin, nParc, vParc, balQtde, balValor, chavesMes,
+      ent, fin, nParc, vParc, ultimaParcela, balQtde, balValor, chavesMes,
       balPrimeiro, balIntervalo, // valores efetivos (sanitizados) usados no cronograma
       somaParcelas, somaBaloes, totalNominal, totalCorrigido,
       ganhoCorrecao: totalCorrigido - totalNominal,
@@ -78,6 +84,14 @@ const PLANO = (() => {
     };
   }
 
-  return { FORMAS, formaLabel, calc, dataVenc };
+  function linhasSeparadas(plano) {
+    return plano.cronograma.flatMap(l => ['entrada', 'parcela', 'balao', 'chaves'].filter(k => l[k] > 0).map(k => ({...l, entrada:0, parcela:0, balao:0, chaves:0, [k]:l[k], total:l[k]})));
+  }
+  function resumoMensais(plano, fmt) {
+    if (!plano.nParc) return 'Sem parcelas mensais';
+    if (plano.ultimaParcela !== plano.vParc) return (plano.nParc - 1) + ' x ' + fmt(plano.vParc,2) + ' + última de ' + fmt(plano.ultimaParcela,2);
+    return plano.nParc + ' x ' + fmt(plano.vParc,2);
+  }
+  return { FORMAS, formaLabel, calc, dataVenc, linhasSeparadas, resumoMensais };
 })();
 window.PLANO = PLANO;

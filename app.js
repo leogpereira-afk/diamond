@@ -789,10 +789,10 @@
               </div>` : ''}
             </div>
             <div class="linhas uni-plano">
-              <div><span>Entrada (${pctTxt(d.entradaPct)}%)</span><b>${fmt(p.ent)}</b></div>
-              <div><span>Parcelas mensais (${p.nParc}x)${d.diluirBaloes && balCfg > 0 ? ' · com balões diluídos' : ''}</span><b>${inviavel ? '—' : fmt(p.vParc, 2)}</b></div>
+              <div><span>Entrada (${pctTxt(d.entradaPct)}%)</span><b>${fmt(p.ent,2)}</b></div>
+              <div><span>Parcelas mensais (${p.nParc}x)${d.diluirBaloes && balCfg > 0 ? ' · com balões diluídos' : ''}</span><b>${inviavel ? '—' : PLANO.resumoMensais(p,fmt)}</b></div>
               ${p.balQtde ? `<div><span>Balões (${p.balQtde}x)</span><b>${fmt(p.balValor)}</b></div>` : ''}
-              ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
+              ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin,2)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
             </div>
             ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada ou a parcela final${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
             <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div>`;
@@ -979,7 +979,7 @@
       const validade=new Date((p.inp.dataProposta||STORE.diaLocalISO(p.criadoEm))+'T12:00:00');validade.setDate(validade.getDate()+7);
       p.resumoEnvio={modalidade:comPlano?pln.formaLabel:'À vista',validade:STORE.ymdLocal(validade),itens:comPlano?[
         {rotulo:'Entrada',valor:fmt(pln.ent,2)},
-        {rotulo:'Parcelas mensais',valor:pln.nParc+' × '+fmt(pln.vParc,2)+' (valores nominais)'},
+        {rotulo:'Parcelas mensais',valor:PLANO.resumoMensais(pln,fmt)+' (valores nominais)'},
         {rotulo:'Balões',valor:pln.balQtde?pln.balQtde+' × '+fmt(pln.balValor,2)+' · primeiro no mês '+pln.balPrimeiro+', a cada '+pln.balIntervalo+' meses':'Sem balões'},
         {rotulo:'Parcela final',valor:fmt(pln.fin,2)+' · mês '+pln.chavesMes},
         {rotulo:'Correção',valor:p.inp.indice||'INCC'}
@@ -1126,14 +1126,14 @@
     const perso = inp.forma === 'perso';
     const resumoHTML = () => `<h3>Resumo</h3><p class="sim-referencia">${!sim.tabela ? 'Consultando a referência da tabela…' : sim.tabela?.versao ? 'Tabela '+esc(sim.tabela.versao)+' · '+esc(sim.tabela.dataTabela || 'Data não registrada') : 'Valor da proposta salva · tabela não registrada'}</p><div class="linhas">
       <div><span>Entrada${perso ? ' ('+pctStr(inp.entradaPct)+')' : ''} · ${fmtData(plano.cronograma[0]?.data)}</span><b>${fmt(plano.ent,2)}</b></div>
-      ${plano.nParc ? `<div><span>Parcelas mensais (${plano.nParc}x)</span><b>${fmt(plano.vParc,2)}</b></div>` : ''}
+      ${plano.nParc ? `<div><span>Parcelas mensais (${plano.nParc}x)</span><b>${PLANO.resumoMensais(plano,fmt)}</b></div>` : ''}
       ${plano.balQtde ? `<div><span>Balões (${plano.balQtde}x)</span><b>${fmt(plano.balValor,2)}</b></div>` : ''}
       ${plano.fin ? `<div><span>Parcela final${perso ? ' ('+pctStr(inp.finalPct)+')' : ''} · mês ${plano.chavesMes}</span><b>${fmt(plano.fin,2)}</b></div>` : ''}
       ${perso && !plano.balQtde && !plano.fin ? '<div class="sim-sem-balao"><span>Sem balão e sem parcela final</span><b>Saldo nas mensais</b></div>' : ''}
       <div><span>Total nominal</span><b>${fmt(plano.totalNominal,2)}</b></div>
       ${STORE.isAdmin() ? `<div><span>${inp.semComissao ? 'Sem comissão' : 'Corretagem '+pctStr(comissao.percentual)+' ('+esc(comissao.quemPaga)+')'}</span><b class="${comissao.valor?'neg':''}">${fmt(comissao.valor,2)}</b></div><div class="destaque"><span>LÍQUIDO DA VENDA</span><b>${fmt(liquido,2)}</b></div>` : ''}
       </div>`;
-    const cronogramaHTML = () => `<h3>Cronograma</h3><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Mês</th><th>Vencimento</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${plano.cronograma.filter(l=>l.total>0).map(l=>{
+    const cronogramaHTML = () => `<h3>Cronograma</h3><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Mês</th><th>Vencimento</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${PLANO.linhasSeparadas(plano).map(l=>{
       const de=[];if(l.entrada)de.push(perso?'Entrada ('+pctStr(inp.entradaPct)+')':'Entrada / sinal');if(l.parcela)de.push('Parcela mensal');if(l.balao)de.push('Balão');if(l.chaves)de.push('Parcela final'+(perso?' ('+pctStr(inp.finalPct)+')':''));
       return `<tr><td>${l.m}</td><td>${fmtData(l.data)}</td><td>${de.join(' + ')}</td><td>${fmt(l.total,2)}</td></tr>`;
     }).join('')}</tbody><tfoot><tr><td colspan="3">TOTAL</td><td>${fmt(plano.totalNominal,2)}</td></tr></tfoot></table></div>`;
@@ -1184,8 +1184,8 @@
             <div class="form">
               <label>Forma<select id="s-forma">${PLANO.FORMAS.map((f) => `<option value="${f.id}" ${inp.forma === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}</select></label>
               ${perso ? `
-              <label>Entrada (%)<input id="s-entpct" type="number" step="0.5" value="${inp.entradaPct}"><span class="hint">${fmt(plano.ent)}</span></label>
-              <label>Parcela final — chaves (%)<input id="s-finpct" type="number" step="0.5" value="${inp.finalPct}"><span class="hint">${fmt(plano.fin)}</span></label>
+              <label>Entrada (%)<input id="s-entpct" type="number" step="0.5" value="${inp.entradaPct}"><span class="hint">${fmt(plano.ent,2)}</span></label>
+              <label>Parcela final — chaves (%)<input id="s-finpct" type="number" step="0.5" value="${inp.finalPct}"><span class="hint">${fmt(plano.fin,2)}</span></label>
               <label>Parcelas mensais (nº)<input id="s-nparc" type="number" value="${inp.nParcelas}"><span class="hint">${fmt(plano.vParc, 2)}/mês</span></label>
               <label>Balões (qtde)<input id="s-balq" type="number" value="${inp.balQtde}"></label>
               <label>Valor do balão<input id="s-balv" type="number" value="${inp.balValor}"></label>
@@ -1339,7 +1339,7 @@
     const validade=new Date((p.inp.dataProposta||STORE.diaLocalISO(p.criadoEm))+'T12:00:00');validade.setDate(validade.getDate()+7);
     return{modalidade:plano.formaLabel,validade:STORE.ymdLocal(validade),itens:[
       {rotulo:'Entrada',valor:fmt(plano.ent,2)},
-      {rotulo:'Parcelas mensais',valor:plano.nParc+' × '+fmt(plano.vParc,2)+' (valores nominais)'},
+      {rotulo:'Parcelas mensais',valor:PLANO.resumoMensais(plano,fmt)+' (valores nominais)'},
       {rotulo:'Balões',valor:plano.balQtde?plano.balQtde+' × '+fmt(plano.balValor,2):'Sem balões'},
       {rotulo:'Parcela final',valor:fmt(plano.fin,2)+' · mês '+plano.chavesMes},
       {rotulo:'Correção',valor:p.inp.indice||'INCC'}]};
@@ -1467,7 +1467,7 @@
       [['Cliente', p.cliente || '—'], ['Telefone', p.clienteTel || '—']],
       [['Corretor', p.corretor || '—'], ['Telefone', p.corretorTel || '—']],
       [['Unidade', p.unidade + area], ['Forma', plano.formaLabel]],
-      [['Valor negociado', fmt(plano.neg)], ['Proposta em', fmtData(propData)]],
+      [['Valor negociado', fmt(plano.neg,2)], ['Proposta em', fmtData(propData)]],
       [['Vencimentos', 'todo dia ' + (p.inp.diaVenc || 10)], ['Correção', (p.inp && p.inp.indice) || 'INCC']],
     ];
     const RH = 20, COLW = (W - 2 * M) / 2, colX = [M, M + COLW];
@@ -1497,10 +1497,10 @@
     doc.setTextColor(26,26,26);doc.setFont('helvetica','bold');doc.setFontSize(9);
     doc.text('RESUMO DO PAGAMENTO (VALORES NOMINAIS)',M+10,y+13);
     doc.setFont('helvetica','normal');doc.setFontSize(8.5);
-    doc.text('Entrada: '+fmt(plano.ent,2)+' | Mensais: '+plano.nParc+' x '+fmt(plano.vParc,2),M+10,y+29);
+    doc.text('Entrada: '+fmt(plano.ent,2)+' | Mensais: '+PLANO.resumoMensais(plano,fmt),M+10,y+29);
     doc.text((plano.balQtde?'Balões: '+plano.balQtde+' x '+fmt(plano.balValor,2):'Sem balões')+' | Final: '+fmt(plano.fin,2)+(plano.fin?' no mês '+plano.chavesMes:''),M+10,y+44);
     y+=66;
-    const linhas = plano.cronograma.filter((l) => l.total > 0);
+    const linhas = PLANO.linhasSeparadas(plano);
     const col = [M, M + 40, M + 120, W - M];
     const cabecalhoTab = () => {
       doc.setFillColor(26, 26, 26); doc.rect(M, y, W - 2 * M, 20, 'F');
@@ -2000,11 +2000,11 @@
     const perso = plano.forma === 'perso';
     const li = [];
     if(p.vaga)li.push('• Vaga: '+vagaTexto(p.vaga));
-    li.push(`• Valor: ${fmt(plano.neg)}`);
-    li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
-    if (plano.nParc) li.push(`• ${plano.nParc} parcelas de ${fmt(plano.vParc, 2)} (todo dia ${p.inp.diaVenc})`);
+    li.push(`• Valor: ${fmt(plano.neg,2)}`);
+    li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent,2)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
+    if (plano.nParc) li.push(`• ${PLANO.resumoMensais(plano,fmt)} (todo dia ${p.inp.diaVenc})`);
     if (plano.balQtde) li.push(`• ${plano.balQtde} balões de ${fmt(plano.balValor)} a cada ${plano.balIntervalo} meses`);
-    if (plano.fin) li.push(`• Parcela final${perso ? ' (' + pctStr(p.inp.finalPct) + ')' : ''}: ${fmt(plano.fin)} na entrega (mês ${plano.chavesMes})`);
+    if (plano.fin) li.push(`• Parcela final${perso ? ' (' + pctStr(p.inp.finalPct) + ')' : ''}: ${fmt(plano.fin,2)} na entrega (mês ${plano.chavesMes})`);
     const prop = plano.cronograma[0] && plano.cronograma[0].data ? new Date(plano.cronograma[0].data) : new Date();
     const val = new Date(prop.getTime()); val.setDate(val.getDate() + 7);
     li.push(`\n_Proposta válida por 7 dias — até ${fmtData(val)}._`);
