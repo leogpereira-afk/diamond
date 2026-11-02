@@ -264,7 +264,7 @@
   if(!target)return;reveal(target);target.scrollIntoView({block:'start'});const focus=name==='editing'?target.querySelector('#pc-edit-title'):target.querySelector('summary');focus?.focus({preventScroll:true});
  }
  async function onClick(ev){const b=ev.target.closest('button'),owner=state;if(!b)return;try{
-  if(b.hasAttribute('data-pc-pdf')){assertActive(owner);const m=state.presentation.model;window.DiamondPrevisaoPdf.build(m,coverageModel(m),{revision:state.record.revision,draft:!!state.drafts['pc-settings']}).save('Diamond-Cobertura-'+day()+'.pdf');return;}
+  if(b.hasAttribute('data-pc-pdf')){assertActive(owner);const m=state.presentation.model;window.DiamondPrevisaoPdf.build(m,coverageModel(m),{units:(state.x.insights.rows||[]).map(r=>r.u),revision:state.record.revision,draft:!!state.drafts['pc-settings']}).save('Diamond-Cobertura-'+day()+'.pdf');return;}
   if(b.hasAttribute('data-pc-detail')){detailDialog(b.dataset.pcDetail);return;}
   if(b.hasAttribute('data-pc-open-section')){openSection(b.dataset.pcOpenSection);return;}
   if(b.hasAttribute('data-pc-overview')){const target=state.root.querySelector('#pc-summary');target?.scrollIntoView({block:'start'});target?.focus({preventScroll:true});return;}
