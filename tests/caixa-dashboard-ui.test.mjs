@@ -25,6 +25,7 @@ test('fonte ausente mostra aguardo, sem gráficos fabricados ou saldo zero',()=>
 
 test('série traz seis meses, escala comum e acesso exato por teclado e tabela',()=>{
  const html=normalize(renderer().render(model()));
+ assert.match(html,/<details class="cxd-card cxd-monthly" data-cxd-panel="monthly" open>/);assert.match(html,/aria-label="Expandir ou recolher a previsão por mês"/);
  assert.match(html,/Previsão por mês/);assert.match(html,/Escala comum até R\$ 2\.000,00/);assert.match(html,/outubro de 2026 a março de 2027/);
  assert.equal((html.match(/class="cxd-month /g)||[]).length,6);assert.equal((html.match(/data-cxd-month="2026-10"/g)||[]).length,2);
  assert.match(html,/aria-label="outubro de 2026\. Previsto: R\$ 1\.500,00\. Recebido: R\$ 500,00\. A receber: R\$ 1\.000,00/);

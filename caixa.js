@@ -39,8 +39,9 @@
  function content(s){
   const available=s.ready&&s.x.unitsOk&&s.x.conditionsOk&&s.x.leadsOk,m=available?currentModel(s):null;
   const r=m?.resumo||{},month=s.filters.mes,months=[...new Set([today().slice(0,7),month,...(m?.meses||[])])].filter(v=>v!=='sem-data').sort();
-  const warning=!s.x.unitsOk?'Estoque indisponível. Atualize os dados para conferir as unidades.':!s.x.conditionsOk?'Condições de venda indisponíveis. Atualize os dados para calcular a previsão.':!s.x.leadsOk?'Cadastro de clientes indisponível. Atualize os dados para conferir o caixa sem omitir vendas.':s.error||'';
+  const warning=!s.x.unitsOk?'Estoque indisponível. Atualize os dados para conferir as unidades.':!s.x.conditionsOk?'Condições de venda indisponíveis. Atualize os dados para calcular a previsão.':!s.x.leadsOk?'Cadastro de clientes indisponível. Atualize os dados para conferir o caixa sem omitir vendas.':s.error||s.pdfError||'';
   return `<div id="cx-message" aria-live="polite">${warning?msg(warning,'error'):s.loading?msg('Consultando os recebimentos no servidor…'):s.notice?msg(s.notice,'success'):''}</div>
+   <div class="cx-export"><span>PDF com todos os meses<small>Gráficos e tabela seguem a busca e a situação do painel.</small></span><button type="button" class="cx-button" data-cx-action="pdf" ${!usable(s)||s.loading||s.exporting||!s.financial||s.financialError?'disabled':''}>${s.exporting?'Preparando PDF…':'Salvar Caixa em PDF'}</button></div>
    ${financialSummary(s,m)}
    <form id="cx-filters" class="cx-toolbar"><label>Mês de vencimento<select name="mes">${months.map(v=>`<option value="${esc(v)}" ${v===month?'selected':''}>${esc(monthLabel(v))}</option>`).join('')}<option value="sem-data" ${month==='sem-data'?'selected':''}>Sem vencimento</option></select></label><label class="cx-search">Cliente ou unidade<input type="search" name="busca" value="${esc(s.filters.busca)}" placeholder="Buscar no caixa" autocomplete="off"></label><label>Parcelas<select name="status">${[['','Todas'],['pendentes','A receber'],['vencidas','Vencidas sem confirmação'],['recebido','Recebidas']].map(([v,t])=>`<option value="${v}" ${s.filters.status===v?'selected':''}>${t}</option>`).join('')}</select></label><button type="submit" class="cx-button">Filtrar</button><button type="button" class="cx-button" data-cx-action="refresh" ${s.loading?'disabled':''}>${s.loading?'Consultando…':'Atualizar caixa'}</button></form>
    <div class="cx-kpis">${metric('previsto',month==='sem-data'?'Sem vencimento definido':'Previsto para o mês',r.previsto,'Valores nominais das parcelas no recorte.')}${metric('recebido-parcelas','Recebido dessas parcelas',r.recebidoParcelas,'Confirmações vinculadas aos vencimentos do recorte.')}${metric('a-receber','A receber dessas parcelas',r.aReceber,'Vencido sem confirmação: '+money(r.vencido)+'.','pending')}${metric('recebido-mes',month==='sem-data'?'Recebimentos sem recorte mensal':r.recebidoSemDataExata>0?'Recebido com data no mês':'Entrou no caixa no mês',month==='sem-data'?null:r.recebidoNoMes,month==='sem-data'?'Selecione um mês para ver o dinheiro recebido.':r.recebidoSemDataExata>0?'Somente pagamentos com data exata; histórico não distribuído por mês.':'Data real e busca; independe do filtro de parcelas.','received')}</div>
@@ -80,10 +81,10 @@
   const events=(m.historico||[]).filter(ev=>(s.filters.mes==='sem-data'||String(D.confirmacaoHistorica(ev)?ev.fonte.vencimento:ev.data||'').slice(0,7)===s.filters.mes)&&(!s.filters.busca||norm([ev.cliente,ev.unidade,ev.descricao].join(' ')).includes(norm(s.filters.busca))));
   return `<details class="cx-card cx-history"><summary>Histórico de confirmações <span class="cx-tag">${events.length} registro(s)</span></summary><p>Recebimentos com data conhecida aparecem no mês de pagamento. Confirmações históricas aparecem pelo vencimento e informam até quando foram recebidas, sem inventar a data de entrada. Estornos preservam a confirmação original.</p>${events.length?'<ul>'+events.map(ev=>eventLine(ev,s)).join('')+'</ul>':'<p class="cx-empty">Nenhuma confirmação neste recorte.</p>'}</details>`;
  }
- function repaint(s=state){if(!s||s!==state||!s.root?.isConnected)return;const open=[...s.root.querySelectorAll('details[open]')].map(el=>el.className);s.root.innerHTML=content(s);for(const el of s.root.querySelectorAll('details'))if(open.includes(el.className))el.open=true;}
+ function repaint(s=state){if(!s||s!==state||!s.root?.isConnected)return;const details=[...s.root.querySelectorAll('details')].map(el=>({className:el.className,open:el.open}));s.root.innerHTML=content(s);for(const el of s.root.querySelectorAll('details')){const previous=details.find(d=>d.className===el.className);if(previous)el.open=previous.open;}}
  async function load(s=state){
   if(!s||s.loading||!allowed())return;
-  s.loading=true;s.error='';s.financial=null;s.financialError='';repaint(s);
+  s.loading=true;s.error='';s.pdfError='';s.financial=null;s.financialError='';repaint(s);
   try{const res=await STORE.api('caixaRecebimentos',{operacao:'listar'});if(s!==state)return;if(res?.ok===false||!Array.isArray(res?.recebimentos))throw Error(res?.erro||'Resposta de recebimentos inválida.');s.ledgers=res.recebimentos;s.ready=true;s.loadedAt=new Date().toLocaleString('pt-BR');
    try{const p=await STORE.api('previsaoCusto',{operacao:'carregar'});if(s!==state)return;if(!p?.ok||!p.registro?.data)throw Error('Resposta inválida.');s.financial=root.DiamondPrevisaoSchema?root.DiamondPrevisaoSchema.decode(JSON.stringify(p.registro)):p.registro;}catch(e){if(s!==state)return;s.financialError='A posição geral em dinheiro não pôde ser consultada. As parcelas abaixo continuam disponíveis.';}
   }
@@ -162,6 +163,17 @@
    }finally{saving=false;el.removeEventListener('cancel',preventClose);for(const b of el.querySelectorAll('button'))b.disabled=b.dataset.blocked==='true';if(submit.textContent==='Salvando…')submit.textContent=original;}
   });
  }
+ async function exportPdf(s){
+  if(!usable(s)||s.loading||s.exporting||!s.financial||s.financialError)return;
+  s.exporting=true;s.notice='';s.pdfError='';repaint(s);
+  try{
+   if(!root.DiamondCaixaPdf)throw Error('Gerador de PDF indisponível. Recarregue a página.');
+   const report=root.DiamondCaixaPdf.model(modelSource(s),s.financial),doc=root.DiamondCaixaPdf.build(report),period=report.charts.periodo;
+   await doc.save('Caixa-Diamond-'+(period?period.inicio+'-a-'+period.fim:'sem-vencimentos')+'.pdf',{returnPromise:true});
+   s.notice='PDF preparado com todos os meses. Confira o download no navegador.';
+  }catch(error){s.pdfError='Não foi possível gerar o PDF: '+error.message;}
+  finally{s.exporting=false;repaint(s);s.root?.querySelector?.('[data-cx-action="pdf"]')?.focus?.({preventScroll:true});}
+ }
  function onClick(ev,s){
   const button=ev.target.closest('button');if(!button||button.disabled||s!==state)return;
   if(button.dataset.cxdMonth){
@@ -170,6 +182,7 @@
    const list=s.root?.querySelector('[data-cx-parcels]');list?.focus?.({preventScroll:true});list?.scrollIntoView?.({block:'start'});return;
   }
   if(button.dataset.cxdClient)return openDashboardClient(button.dataset.cxdClient,s);
+  if(button.dataset.cxAction==='pdf')return exportPdf(s);
   if(button.dataset.cxAction==='refresh'){s.notice='';return s.reload?s.reload():load(s);}
   if(button.dataset.cxConditions)return root.DiamondVendaEditor.abrir(button.dataset.cxConditions,{onSaved:s.reload});
   if(button.dataset.cxConfirm)return openReceipt(findLine(button.dataset.cxConfirm,s),s,true);

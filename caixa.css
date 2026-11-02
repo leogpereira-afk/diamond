@@ -8,3 +8,4 @@
 
 .cx-money .cx-kpis{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:6px}.cx-money summary{cursor:pointer;font-weight:650;min-height:40px;display:flex;align-items:center}.cx-money .cx-kpi strong{overflow-wrap:anywhere}
 @media(max-width:760px){.cx-money .cx-kpis{grid-template-columns:1fr}.cx-money .cx-kpi{padding:10px 12px}.cx-money .cx-kpi strong{font-size:25px}.cx-money .cx-kpi small{font-size:11px}}
+.cx-export{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin:0 0 10px;color:#33472b;font-size:13px}.cx-export>span{min-width:0;flex:1 1 200px;font-weight:600}.cx-export small{display:block;font-size:11px;font-weight:400;margin-top:3px;overflow-wrap:anywhere}.cx-export .cx-button{min-height:44px;max-width:100%;white-space:normal}

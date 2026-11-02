@@ -23,6 +23,26 @@ function fixture({user={usuario:'domo',papel:'corretor',ehMaster:true},hash='#/a
 const value=(html,name)=>html.match(new RegExp('data-cx-value="'+name+'">([^<]+)'))?.[1].replaceAll('\u00a0',' ');
 const response=(operacaoId)=>({ok:true,registro:{unidadeId:'u-101',revisao:1,eventos:[{id:'event-'+operacaoId,operacaoId,tipo:'receber',parcelaId:'entrada',cronogramaChave:'fixture-key',data:'2026-10-31',valor:100}]}});
 
+test('exportação espera consulta financeira completa e impede downloads simultâneos sem gravar dados',async()=>{
+ const t=fixture();assert.match(t.initial,/data-cx-action="pdf" disabled/);await t.load();const s=t.ctx.__cxTest.getState(),calls=t.calls(),before=JSON.stringify({x:t.x,ledgers:s.ledgers});let exports=0,release;
+ const click=()=>t.handlers.click({target:{closest:()=>({disabled:false,dataset:{cxAction:'pdf'}})}});
+ t.ctx.DiamondCaixaPdf={model:()=>({charts:{periodo:{inicio:'2026-10',fim:'2028-09'}}}),build:()=>({save:async name=>{assert.equal(name,'Caixa-Diamond-2026-10-a-2028-09.pdf');exports++;await new Promise(r=>release=r);}})};
+ await click();assert.equal(exports,0);s.financial={revision:1,data:{}};s.financialError='';const pending=click();await click();assert.equal(exports,1);release();await pending;
+ assert.match(t.host.innerHTML,/PDF preparado/);assert.equal(t.calls(),calls);assert.equal(JSON.stringify({x:t.x,ledgers:s.ledgers}),before);
+});
+test('falha ao gerar PDF mostra alerta e libera tentativa seguinte',async()=>{
+ const t=fixture();await t.load();const s=t.ctx.__cxTest.getState();s.financial={data:{}};s.financialError='';t.ctx.DiamondCaixaPdf={model:()=>{throw Error('Falha sintética');}};
+ await t.handlers.click({target:{closest:()=>({disabled:false,dataset:{cxAction:'pdf'}})}});
+ assert.match(t.host.innerHTML,/role="alert">Não foi possível gerar o PDF: Falha sintética/);assert.equal(s.exporting,false);assert.doesNotMatch(t.host.innerHTML,/PDF preparado/);
+});
+test('repaint da exportação preserva gráfico recolhido e detalhes abertos',async()=>{
+ const t=fixture();await t.load();const s=t.ctx.__cxTest.getState();s.financial={data:{}};s.financialError='';let details=[{className:'cxd-card cxd-monthly',open:false},{className:'cx-card cx-notes',open:true}],html=t.host.innerHTML;
+ Object.defineProperty(t.host,'innerHTML',{get:()=>html,set:value=>{html=value;details=[{className:'cxd-card cxd-monthly',open:true},{className:'cx-card cx-notes',open:false}];}});t.host.querySelectorAll=()=>details;
+ t.ctx.DiamondCaixaPdf={model:()=>({charts:{periodo:null}}),build:()=>({save:()=>{}})};
+ await t.handlers.click({target:{closest:()=>({disabled:false,dataset:{cxAction:'pdf'}})}});
+ assert.equal(details[0].open,false);assert.equal(details[1].open,true);
+});
+
 test('consulta pendente ou falha não apresenta recebido zero nem ações de baixa',async()=>{
  const t=fixture({failure:Error('Servidor indisponível')});
  assert.equal(value(t.initial,'recebido-parcelas'),'A conferir');
