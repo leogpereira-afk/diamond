@@ -33,24 +33,29 @@
  function consolidate(model,record){
   if(!record)return model;
   const invalid=message=>({...model,consolidation:{valid:false,message},issues:[...model.issues,{code:'consolidation_stale',scope:'coverage',message}]});
-  const contracts=model.contracts,keys=record.contractKeys,groups=record.groups;
-  if(!keys||!Array.isArray(groups)||!contracts.length||model.unconfirmedContracts.length||model.issues.some(i=>['rows_invalid','unit_duplicate_or_missing'].includes(i.code)))return invalid('A consolidação aguarda a posição completa dos contratos.');
+  const keys=record.contractKeys,baseGroups=record.groups;
+  const contracts=model.contracts.filter(c=>own(keys,c.id)),additional=model.contracts.filter(c=>!own(keys,c.id)),accepted=additional.filter(c=>c.coverageComplete&&[c.commonReceivableCents,c.permutaCents,c.finalCents,c.commissionCents].every(amount));
+  const pending=[...additional.filter(c=>!accepted.includes(c)),...model.unconfirmedContracts.filter(c=>!own(keys,c.id))].map(c=>({id:c.id,issues:c.issues||[],reason:"additional_incomplete"}));
+  const groups=Array.isArray(baseGroups)?baseGroups.map(g=>({...g,unitIds:[...g.unitIds]})):baseGroups;
+  if(!keys||!Array.isArray(groups)||!contracts.length||model.unconfirmedContracts.some(c=>own(keys,c.id))||model.issues.some(i=>['rows_invalid','unit_duplicate_or_missing'].includes(i.code)))return invalid('A consolidação aguarda a posição completa dos contratos.');
   const ids=groups.flatMap(g=>Array.isArray(g.unitIds)?g.unitIds:[]);
   if(new Set(ids).size!==ids.length||ids.length!==contracts.length||Object.keys(keys).length!==contracts.length||contracts.some(c=>!ids.includes(c.id)||keys[c.id]!==c.contractKey||!c.manualCurrent||![c.grossCents,c.permutaCents,c.finalCents,c.commissionCents].every(amount)))return invalid('Os contratos mudaram desde a consolidação. Atualize a fonte consolidada antes de usar estes valores.');
   if(groups.some(g=>!['scp','direta','barter'].includes(g.origin)||!amount(g.commonCents)||(g.origin==='barter'&&g.commonCents!==0)||(g.receivedCents!==null&&(!amount(g.receivedCents)||g.receivedCents>g.commonCents))))return invalid('Os valores da consolidação são inválidos.');
-  const commonCents=sum(groups.map(g=>g.commonCents)),barterCents=sum(contracts.map(c=>c.permutaCents)),commissionCents=sum(contracts.map(c=>c.commissionCents)),finalCents=sum(contracts.map(c=>c.finalCents));
+  const coveredContracts=[...contracts,...accepted];
+  for(const c of accepted)groups.push({id:'additional-'+c.id,label:'Nova venda · '+c.row.u.unidade,origin:classifyOrigin(c.row.contrato,c.row.u.unidade)||'unknown',unitIds:[c.id],commonCents:c.commonReceivableCents,receivedCents:null,receivedCount:null,outstandingCount:null,source:'Condições atuais da unidade e conferência financeira. Entrada e parcelas comuns, sem permuta nem final; comissão deduzida separadamente.',additional:true});
+  const commonCents=sum(groups.map(g=>g.commonCents)),barterCents=sum(coveredContracts.map(c=>c.permutaCents)),commissionCents=sum(coveredContracts.map(c=>c.commissionCents)),finalCents=sum(coveredContracts.map(c=>c.finalCents));
   if(![commonCents,barterCents,commissionCents,finalCents,model.contributionsCents].every(amount))return invalid('A consolidação excede a precisão suportada ou os aportes não estão conferidos.');
   // A barter-only group must remain fully covered by the recorded barter.
   if(groups.filter(g=>g.origin==='barter').some(g=>g.unitIds.some(id=>{const c=contracts.find(c=>c.id===id);return c.grossCents!==c.permutaCents||c.finalCents!==0;})))return invalid('Uma venda antes integralmente em permuta passou a ter outra composição.');
   const coverageCents=sum([commonCents,barterCents,-commissionCents,model.contributionsCents]);
   if(!amount(coverageCents))return invalid('O total consolidado é inválido.');
-  const gap=difference(model.settings.targetCents,coverageCents);
+  const complete=pending.length===0,knownGap=difference(model.settings.targetCents,coverageCents),gap=complete?knownGap:null;
   const dec=value=>{const [mantissa,exponent='0']=String(value).toLowerCase().split('e'),[integer,decimal='']=mantissa.split('.');let n=BigInt(integer+decimal),scale=decimal.length-Number(exponent);if(scale<0){n*=10n**BigInt(-scale);scale=0;}return {n,d:10n**BigInt(scale)};};
   let requiredGrossCents=null;
   if(model.future.valid&&gap!==null){const p=dec(model.future.P),c=dec(model.future.C),n=p.n*c.d-c.n*p.d,d=p.d*c.d;requiredGrossCents=fromBig((BigInt(gap)*d+n-1n)/n);}
-  const gross=sum(contracts.map(c=>c.grossCents));
-  const consolidation={...record,valid:true,groups:groups.map(g=>({...g,outstandingCents:g.receivedCents===null?null:g.commonCents-g.receivedCents})),commonCents,barterCents,commissionCents,finalCents,adjustmentCents:sum([commonCents,barterCents,finalCents,-gross])};
-  return {...model,consolidation,totals:{...model.totals,coverageCents,coverageKnownCents:coverageCents,coverageComplete:true,shortfallCents:gap,shortfallKnownCents:gap,targetStatus:gap===null?'unknown':gap===0?'achieved':'shortfall'},future:{...model.future,requiredGrossCents},inventory:{...model.inventory,remainingShortfallCents:model.inventory.selectionComplete?difference(gap,model.inventory.selectedContributionCents):null},issues:model.issues.filter(i=>i.scope!=='coverage'),complete:gap!==null&&model.future.valid&&requiredGrossCents!==null};
+  const gross=sum(coveredContracts.map(c=>c.grossCents));
+  const consolidation={...record,valid:true,pending,additionalUnitIds:accepted.map(c=>c.id),coveredContractIds:coveredContracts.map(c=>c.id),groups:groups.map(g=>({...g,outstandingCents:g.receivedCents===null?null:g.commonCents-g.receivedCents})),commonCents,barterCents,commissionCents,finalCents,adjustmentCents:sum([commonCents,barterCents,finalCents,-gross])};
+  return {...model,consolidation,totals:{...model.totals,coverageCents:complete?coverageCents:null,coverageKnownCents:coverageCents,coverageComplete:complete,shortfallCents:gap,shortfallKnownCents:knownGap,targetStatus:gap===null?'unknown':gap===0?'achieved':'shortfall'},future:{...model.future,requiredGrossCents},inventory:{...model.inventory,remainingShortfallCents:model.inventory.selectionComplete?difference(gap,model.inventory.selectedContributionCents):null},issues:model.issues.filter(i=>i.scope!=='coverage'||pending.some(c=>c.id===i.unitId)),complete:gap!==null&&model.future.valid&&requiredGrossCents!==null};
  }
 
  function build({model,classifications={}}={}){
@@ -98,14 +103,14 @@
     if(p.key==='contributions')continue;
     const selected=m.consolidation.groups.filter(g=>g.origin===p.key);
     const value=p.key==='barter'?m.consolidation.barterCents:p.key==='commission'?m.consolidation.commissionCents:sum(selected.map(g=>g.commonCents));
-    Object.assign(p,{cents:value,knownCents:value,signedCents:p.sign*value,percent:ratio(value,targetCents),knownPercent:ratio(value,targetCents),complete:true,unitIds:p.key==='barter'?contracts.filter(c=>c.permutaCents>0).map(c=>c.id):p.key==='commission'?contracts.filter(c=>c.commissionCents>0).map(c=>c.id):selected.flatMap(g=>g.unitIds),groups:['scp','direta'].includes(p.key)?selected:[]});
+    Object.assign(p,{cents:value,knownCents:value,signedCents:p.sign*value,percent:ratio(value,targetCents),knownPercent:ratio(value,targetCents),complete:true,unitIds:p.key==='barter'?contracts.filter(c=>m.consolidation.coveredContractIds.includes(c.id)&&c.permutaCents>0).map(c=>c.id):p.key==='commission'?contracts.filter(c=>m.consolidation.coveredContractIds.includes(c.id)&&c.commissionCents>0).map(c=>c.id):selected.flatMap(g=>g.unitIds),groups:['scp','direta','unknown'].includes(p.key)?selected:[]});
    }
   }
   const knownTotalCents=source?sum(parts.map(p=>p.knownCents===null?null:p.sign*p.knownCents)):null;
   const matchesCoverageKnown=knownTotalCents!==null&&knownTotalCents===coverage.knownCents;
   if(source&&!matchesCoverageKnown)note('decomposition_unavailable','A composição detalhada não pôde ser conciliada com a cobertura conhecida.');
-  const decomposition={parts,totalCents:coverage.complete&&matchesCoverageKnown?knownTotalCents:null,knownTotalCents,complete:coverage.complete&&matchesCoverageKnown,matchesCoverageKnown,classificationComplete:eligible.every(c=>origin(c)!=='unknown'),acceptedUnitIds:m.consolidation?.valid?contracts.map(c=>c.id):eligible.map(c=>c.id),pending:m.consolidation?.valid?[]:pending,excluded};
-  if(m.consolidation?.valid)decomposition.classificationComplete=true;
+  const decomposition={parts,totalCents:coverage.complete&&matchesCoverageKnown?knownTotalCents:null,knownTotalCents,complete:coverage.complete&&matchesCoverageKnown,matchesCoverageKnown,classificationComplete:eligible.every(c=>origin(c)!=='unknown'),acceptedUnitIds:m.consolidation?.valid?m.consolidation.coveredContractIds:eligible.map(c=>c.id),pending:m.consolidation?.valid?m.consolidation.pending:pending,excluded};
+  if(m.consolidation?.valid)decomposition.classificationComplete=!m.consolidation.groups.some(g=>g.origin==='unknown'&&g.commonCents>0);
 
   const available=(m.inventory?.units||[]).filter(u=>u?.row?.u?.status==='Disponível').map(u=>({...u,unidade:String(u.row.u.unidade||'')}));
   const apartments=available.filter(u=>!isShop(u)),shops=available.filter(isShop);

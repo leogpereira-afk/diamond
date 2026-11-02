@@ -39,3 +39,31 @@ test('permutas sem caixa não podem mascarar uma nova venda monetária',()=>{
 test('ausência de consolidação mantém o motor anterior e comissão futura vazia não vira zero',()=>{
  const {model,record}=setup();assert.equal(C.consolidate(model,null),model);model.future.valid=false;model.future.C=null;assert.equal(C.consolidate(model,record).future.requiredGrossCents,null);
 });
+function withNewSale(complete=true){
+ const x=setup(),r={u:{id:'new-sale',unidade:'205',status:'Vendido',clienteId:'new-client',atualizadoEm:'r2'},contrato:{unidadeId:'new-sale',clienteId:'new-client',unidadeRevisao:'r2',revisao:1,total:200000,entrada:50000,permutas:[{valor:20000}],parcelas:[{quantidade:10,valor:10000,descricao:'Mensais'},{quantidade:1,valor:30000,descricao:'Final'}],observacoes:'Origem da venda: venda direta.'}};
+ x.rows.push(r);if(complete)x.finance.contracts[r.u.id]={contractKey:D.contractKey(r),commissionCents:5000,finalSeriesIndices:[1],receivedCommonCents:null,receivedFinalCents:null};
+ const build=()=>D.build({rows:x.rows,settings:{targetCents:500000,futurePaymentShare:.5,futureCommissionRate:0},finance:x.finance});
+ return {...x,r,build};
+}
+test('nova venda completa incrementa a base sem duplicar e reduz a falta automaticamente',()=>{
+ const x=withNewSale(),before=clone(x.record),m=C.consolidate(x.build(),x.record),p=C.build({model:m});
+ assert.equal(m.consolidation.valid,true);assert.equal(m.totals.coverageCents,395016);assert.equal(m.totals.shortfallCents,104984);assert.equal(m.future.requiredGrossCents,209968);
+ assert.equal(p.decomposition.matchesCoverageKnown,true);assert.equal(p.decomposition.parts.find(p=>p.key==='direta').cents,219996);assert.equal(p.decomposition.parts.find(p=>p.key==='barter').cents,70000);
+ assert.equal(m.consolidation.additionalUnitIds.length,1);assert.equal(m.consolidation.adjustmentCents,16);assert.deepEqual(x.record,before);
+ assert.equal(C.consolidate(x.build(),x.record).totals.coverageCents,395016);
+});
+test('nova venda incompleta preserva a cobertura conhecida e fica explicitamente pendente',()=>{
+ const x=withNewSale(false),m=C.consolidate(x.build(),x.record),p=C.build({model:m});assert.equal(m.consolidation.valid,true);assert.equal(m.totals.coverageKnownCents,230016);assert.equal(m.totals.coverageCents,null);assert.equal(m.consolidation.pending.length,1);assert.equal(m.future.requiredGrossCents,null);assert.equal(p.decomposition.pending.length,1);assert.equal(p.decomposition.matchesCoverageKnown,true);
+});
+test('cancelar nova venda retira sua contribuição sem afetar a base consolidada',()=>{
+ const x=withNewSale();x.r.u.status='Disponível';const m=C.consolidate(x.build(),x.record);assert.equal(m.consolidation.valid,true);assert.equal(m.totals.coverageCents,230016);assert.equal(m.consolidation.additionalUnitIds.length,0);
+});
+test('alteração ou cancelamento de venda da base exige reconciliação do grupo',()=>{
+ const x=setup();x.rows[0].u.status='Disponível';const m=D.build({rows:x.rows,settings:{targetCents:500000},finance:x.finance});assert.equal(C.consolidate(m,x.record).consolidation.valid,false);
+});
+test('novas vendas sem origem documental ficam separadas sem impedir o valor confirmado',()=>{
+ const x=withNewSale();delete x.r.contrato.observacoes;const p=C.build({model:C.consolidate(x.build(),x.record)});assert.equal(p.decomposition.parts.find(p=>p.key==='unknown').cents,150000);assert.equal(p.decomposition.classificationComplete,false);assert.equal(p.coverage.cents,395016);
+});
+test('nova venda sem condições atuais não apaga o total inicial conhecido',()=>{
+ const x=withNewSale();x.r.contrato.unidadeRevisao='old';const m=C.consolidate(x.build(),x.record);assert.equal(m.consolidation.valid,true);assert.equal(m.totals.coverageKnownCents,230016);assert.equal(m.consolidation.pending[0].id,'new-sale');
+});
