@@ -98,7 +98,7 @@
     if(p.key==='contributions')continue;
     const selected=m.consolidation.groups.filter(g=>g.origin===p.key);
     const value=p.key==='barter'?m.consolidation.barterCents:p.key==='commission'?m.consolidation.commissionCents:sum(selected.map(g=>g.commonCents));
-    Object.assign(p,{cents:value,knownCents:value,signedCents:p.sign*value,percent:ratio(value,targetCents),knownPercent:ratio(value,targetCents),complete:true,unitIds:['barter','commission'].includes(p.key)?contracts.map(c=>c.id):selected.flatMap(g=>g.unitIds),groups:selected});
+    Object.assign(p,{cents:value,knownCents:value,signedCents:p.sign*value,percent:ratio(value,targetCents),knownPercent:ratio(value,targetCents),complete:true,unitIds:p.key==='barter'?contracts.filter(c=>c.permutaCents>0).map(c=>c.id):p.key==='commission'?contracts.filter(c=>c.commissionCents>0).map(c=>c.id):selected.flatMap(g=>g.unitIds),groups:['scp','direta'].includes(p.key)?selected:[]});
    }
   }
   const knownTotalCents=source?sum(parts.map(p=>p.knownCents===null?null:p.sign*p.knownCents)):null;

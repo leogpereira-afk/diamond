@@ -15,7 +15,7 @@ test('cobertura usa dinheiro consolidado + permutas uma vez + aportes, mantém f
  assert.equal(r.totals.coverageCents,230016);assert.equal(r.totals.shortfallCents,269984);assert.equal(r.future.requiredGrossCents,539968);
  assert.equal(r.consolidation.adjustmentCents,16);assert.equal(c.metrics.finals.cents,40000);assert.equal(c.decomposition.totalCents,230016);assert.equal(c.decomposition.matchesCoverageKnown,true);
  assert.equal(c.decomposition.parts.find(p=>p.key==='barter').cents,50000);assert.equal(c.decomposition.parts.find(p=>p.key==='scp').cents,70020);assert.equal(c.decomposition.parts.find(p=>p.key==='direta').cents,69996);assert.equal(c.decomposition.parts.find(p=>p.key==='unknown').cents,0);
- assert.equal(c.decomposition.pending.length,0);assert.deepEqual(model,before);assert.equal(r.contracts,model.contracts);
+ assert.equal(c.decomposition.parts.find(p=>p.key==='barter').unitIds.length,3);assert.equal(c.decomposition.parts.find(p=>p.key==='barter').groups.length,0);assert.equal(c.decomposition.pending.length,0);assert.deepEqual(model,before);assert.equal(r.contracts,model.contracts);
  assert.equal(r.totals.receivedCommonCents,null);assert.equal(r.consolidation.groups[0].outstandingCents,60020);
 });
 test('a posição recebida muda apenas o saldo financeiro e nunca duplica cobertura',()=>{
