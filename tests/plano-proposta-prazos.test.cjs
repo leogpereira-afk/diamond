@@ -17,9 +17,9 @@ test('36 e 48 estão disponíveis com configuração anterior, sem modificá-la'
   assert.equal(JSON.stringify(cfg),antes);
   assert.deepEqual([...P.opcoesParcelasProposta({planoParcelas:[48,36,36,18]})],[18,36,48]);
 });
-test('mínimo e opções da final acompanham o prazo, inclusive com opções antigas menores',()=>{
+test('36 e 48 oferecem somente a final mínima, mesmo com outras opções na configuração',()=>{
   const antes=JSON.stringify(cfg);
-  for(const [n,minimo,opcoes,mes] of [[36,30,[30,40,50],36],[48,20,[20,30,40,50],48]]){
+  for(const [n,minimo,opcoes,mes] of [[36,30,[30],36],[48,20,[20],48]]){
     const r=P.condicoesProposta(n,{...cfg,planoFinalOpcoes:[10,20,30,40,50]});
     assert.equal(r.minimoFinalPct,minimo);
     assert.equal(r.finalPadraoPct,minimo);
@@ -28,6 +28,7 @@ test('mínimo e opções da final acompanham o prazo, inclusive com opções ant
   }
   assert.equal(JSON.stringify(cfg),antes);
   assert.equal(P.condicoesProposta(24,cfg).minimoFinalPct,0);
+  assert.deepEqual([...P.condicoesProposta(24,cfg).opcoesFinal],[30,40,50]);
 });
 test('exemplo da imagem em 36 vezes fecha ao centavo com final de 30%',()=>{
   const p=plano(36,30);

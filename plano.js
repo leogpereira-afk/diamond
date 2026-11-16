@@ -54,7 +54,7 @@ const PLANO = (() => {
     const n = Number(parcelas);
     const minimoFinalPct = ({ 36: 30, 48: 20 })[n] || 0;
     const padrao = Math.round((cfg.planoFinalPct ?? .30) * 100);
-    const opcoesFinal = [...new Set([minimoFinalPct, padrao,
+    const opcoesFinal = minimoFinalPct ? [minimoFinalPct] : [...new Set([padrao,
       ...(Array.isArray(cfg.planoFinalOpcoes) ? cfg.planoFinalOpcoes : [30, 40, 50])])]
       .filter(p => Number.isFinite(p) && p > 0 && p < 100 && p >= minimoFinalPct).sort((a, b) => a - b);
     return { minimoFinalPct, opcoesFinal, finalPadraoPct: minimoFinalPct || padrao,

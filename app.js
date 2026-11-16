@@ -714,7 +714,7 @@
     const user = ator(); // quem assina a proposta (corretor ativo da empresa, ou o próprio admin)
     const vt = valorNegociadoTabela(u, cfg); // preço EFETIVO (aplica desconto da unidade) — vale p/ VALOR, plano e proposta
     const temDesc = (u.desconto || 0) > 0;
-    // plano do corretor — o corretor MONTA escolhendo entrada/parcelas/final entre as opções configuradas em ADM → Config
+    // Nos planos de 36 e 48 mensais, a final acompanha automaticamente o prazo.
     const entDefault = Math.round((cfg.planoEntradaPct ?? 0.20) * 100);
     const finDefault = Math.round((cfg.planoFinalPct ?? 0.30) * 100);
     const entradaOpts = [...new Set([entDefault, ...(Array.isArray(cfg.planoEntradaOpcoes) ? cfg.planoEntradaOpcoes : [10, 20, 30])])].filter((n) => n > 0 && n < 100).sort((a, b) => a - b);
@@ -729,6 +729,10 @@
     const minimoFinal = () => PLANO.valorPercentual(vt, condicoes().minimoFinalPct);
     function ajustarFinal() {
       const regra = condicoes();
+      if (regra.minimoFinalPct) {
+        d.finalPct = regra.minimoFinalPct; d.finalCustom = false; d.finalBotao = regra.minimoFinalPct;
+        return;
+      }
       if (!d.finalCustom && !regra.opcoesFinal.includes(d.finalPct)) d.finalPct = regra.finalPadraoPct;
       if (PLANO.valorPercentual(vt, d.finalPct) < minimoFinal()) {
         d.finalPct = regra.minimoFinalPct; d.finalCustom = false; d.finalBotao = regra.minimoFinalPct;
@@ -784,14 +788,14 @@
                 </div>
               </div>
               <div class="uni-campo"><label>Parcelas mensais</label><div class="uni-parc">${parcelasOpts.map((n) => `<button class="parc-btn ${d.parcelas === n ? 'on' : ''}" data-n="${n}">${n}x</button>`).join('')}</div></div>
-              <div class="uni-campo"><label for="u-fin-valor">Parcela final · mês ${regra.mesFinal}</label>
+              <div class="uni-campo"><label${regra.minimoFinalPct ? '' : ' for="u-fin-valor"'}>Parcela final · mês ${regra.mesFinal}</label>
+                ${regra.minimoFinalPct ? `<p class="uni-final-regra" id="u-final-regra"><strong>${regra.minimoFinalPct}% · ${fmt(minimoFinal(),2)}</strong><br>Final mínima aplicada automaticamente ao plano de ${d.parcelas} vezes.</p>` : `
                 <div class="uni-parc">${finalOpts.map((n) => `<button class="parc-btn ${(!d.finalCustom && d.finalPct === n) ? 'on' : ''}" data-fin="${n}">${n}%</button>`).join('')}</div>
-                ${regra.minimoFinalPct ? `<p class="uni-final-regra" id="u-final-regra">Em ${d.parcelas} vezes, mínimo de <strong>${regra.minimoFinalPct}% (${fmt(minimoFinal(),2)})</strong> na parcela final.</p>` : ''}
                 <div class="ent-livre">
                   <span class="ent-livre-lbl">Parcela final personalizada</span>
-                  <input id="u-fin-valor" type="text" inputmode="decimal" ${regra.minimoFinalPct ? 'aria-describedby="u-final-regra"' : ''} placeholder="${regra.minimoFinalPct ? 'mín. ' + fmt(minimoFinal(),2) : '0 = sem parcela final'}" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
+                  <input id="u-fin-valor" type="text" inputmode="decimal" placeholder="0 = sem parcela final" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
                   <span class="ent-livre-pct" id="u-fin-pct">${d.finalCustom ? (p.fin > 0 ? '= ' + pctTxt(d.finalPct) + '% do valor' : 'sem parcela final — tudo nas mensais') : ''}</span>
-                </div>
+                </div>`}
               </div>
               ${balCfg > 0 ? `<div class="uni-campo"><label>Balões</label>
                 <label class="uni-toggle uni-toggle-inline"><input type="checkbox" id="u-diluir" ${d.diluirBaloes ? 'checked' : ''}> Diluir os balões nas parcelas</label>
@@ -807,8 +811,8 @@
               ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin,2)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
               <div class="uni-total-plano"><span>Total do plano</span><b>${fmt(p.totalNominal,2)}</b></div>
             </div>
-            ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada ou a parcela final${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
-            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div></div>`;
+            ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada${regra.minimoFinalPct ? '' : ' ou a parcela final'}${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
+            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. ${regra.minimoFinalPct ? 'A parcela final acompanha o prazo selecionado.' : 'Escolha a entrada, as parcelas e a parcela final acima.'}</div></div>`;
     }
     // Repinta só o bloco do plano e religa os controles dele.
     function repintarPlano(preservarControles = false) {
@@ -824,8 +828,14 @@
         // o botão de destino e o foco, mesmo ao confirmar um valor digitado.
         const novo = document.createElement('div'); novo.innerHTML = html;
         $('.uni-resultados', box).innerHTML = $('.uni-resultados', novo).innerHTML;
-        for (const id of ['u-ent-valor', 'u-fin-valor']) $('#'+id, box).value = $('#'+id, novo).value;
-        for (const id of ['u-ent-pct', 'u-fin-pct']) $('#'+id, box).textContent = $('#'+id, novo).textContent;
+        for (const id of ['u-ent-valor', 'u-fin-valor']) {
+          const atual = $('#'+id, box), proximo = $('#'+id, novo);
+          if (atual && proximo) atual.value = proximo.value;
+        }
+        for (const id of ['u-ent-pct', 'u-fin-pct']) {
+          const atual = $('#'+id, box), proximo = $('#'+id, novo);
+          if (atual && proximo) atual.textContent = proximo.textContent;
+        }
         $$('.parc-btn',box).forEach(b=>{
           const attr = ['ent','fin','n'].find(k=>b.dataset[k]);
           b.className = $(`[data-${attr}="${b.dataset[attr]}"]`,novo).className;
@@ -1029,7 +1039,7 @@
       // travas antigas: a tela e o WhatsApp anunciavam "24 parcelas de R$ 0,00" e
       // o PDF saía sem nenhuma linha de parcela (o cronograma só imprime mês com
       // valor) — mensagem e anexo discordando na frente do cliente.
-      if (comPlano && planoInviavel(pln)) { toast('Não sobra valor para as parcelas mensais: a entrada + a parcela final já cobrem a unidade. Reduza uma das duas (ou dilua os balões) antes de enviar.', true); return null; }
+      if (comPlano && planoInviavel(pln)) { toast(`Não sobra valor para as parcelas mensais: a entrada + a parcela final já cobrem a unidade. Reduza ${condicoes().minimoFinalPct ? 'a entrada' : 'uma das duas'} (ou dilua os balões) antes de enviar.`, true); return null; }
       if (comPlano && !pln.fecha) { toast('Plano indisponível para esta unidade — fale com a administração.', true); return null; }
       if (!await conferirVaga(d)) return null;
       const p = montaP(comPlano);
