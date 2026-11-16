@@ -86,7 +86,7 @@
       add('Parcelas', i.nParcelas);
       add('Balões', i.balQtde);
       if (i.balQtde > 0) { add('Valor de cada balão', fmt(i.balValor, 2)); add('Primeiro balão (mês)', i.balPrimeiro); add('Intervalo (meses)', i.balIntervalo); }
-      add('Entrega / chaves (mês)', i.chavesMes);
+      add('Parcela final (mês)', i.chavesMes);
       add('Índice', i.indice);
       if (i.dataProposta) add('Data-base', fmtData(i.dataProposta));
       add('Dia de vencimento', i.diaVenc);
@@ -718,15 +718,23 @@
     const entDefault = Math.round((cfg.planoEntradaPct ?? 0.20) * 100);
     const finDefault = Math.round((cfg.planoFinalPct ?? 0.30) * 100);
     const entradaOpts = [...new Set([entDefault, ...(Array.isArray(cfg.planoEntradaOpcoes) ? cfg.planoEntradaOpcoes : [10, 20, 30])])].filter((n) => n > 0 && n < 100).sort((a, b) => a - b);
-    const finalOpts = [...new Set([finDefault, ...(Array.isArray(cfg.planoFinalOpcoes) ? cfg.planoFinalOpcoes : [30, 40, 50])])].filter((n) => n > 0 && n < 100).sort((a, b) => a - b);
-    const parcelasOpts = (Array.isArray(cfg.planoParcelas) && cfg.planoParcelas.length ? cfg.planoParcelas : [12, 24, 36]).slice().sort((a, b) => a - b);
+    const parcelasOpts = PLANO.opcoesParcelasProposta(cfg);
     const parcelaDefault = parcelasOpts[Math.min(1, parcelasOpts.length - 1)]; // 2ª opção (ex.: 24x) ou a 1ª
     const d = _uniDraft[id] || (_uniDraft[id] = { cliente: '', clienteTel: '', planoOn: false, parcelas: parcelaDefault, entradaPct: entDefault, finalPct: finDefault, entradaCustom: false, diluirBaloes: false });
     if (!parcelasOpts.includes(d.parcelas)) d.parcelas = parcelaDefault; // sanitiza se a opção mudou
     // entradaCustom: o corretor digitou um valor em R$ que não é nenhum dos botões.
     // Só sanitiza contra as opções quando NÃO é personalizada (senão apagaria o que ele digitou).
     if (!d.entradaCustom && !entradaOpts.includes(d.entradaPct)) d.entradaPct = entradaOpts.includes(entDefault) ? entDefault : entradaOpts[0];
-    if (!d.finalCustom && !finalOpts.includes(d.finalPct)) d.finalPct = finalOpts.includes(finDefault) ? finDefault : finalOpts[0];
+    const condicoes = () => PLANO.condicoesProposta(d.parcelas, cfg);
+    const minimoFinal = () => PLANO.valorPercentual(vt, condicoes().minimoFinalPct);
+    function ajustarFinal() {
+      const regra = condicoes();
+      if (!d.finalCustom && !regra.opcoesFinal.includes(d.finalPct)) d.finalPct = regra.finalPadraoPct;
+      if (PLANO.valorPercentual(vt, d.finalPct) < minimoFinal()) {
+        d.finalPct = regra.minimoFinalPct; d.finalCustom = false; d.finalBotao = regra.minimoFinalPct;
+      }
+    }
+    ajustarFinal();
     // Balões diluídos: o motor já distribui tudo nas parcelas quando não há balão
     // (vParc = (valor − entrada − final) / nº de parcelas). Então "diluir" é
     // simplesmente calcular com balQtde 0 — sem regra nova, sem risco de divergir
@@ -736,10 +744,11 @@
     // "diluir" mudava o texto mas não a conta (o valor ficava preso ao render anterior).
     const balQtdeEfetiva = () => (d.diluirBaloes ? 0 : (cfg.balQtde ?? 0));
     const buildPlano = (n) => PLANO.calc({
+      arredondamento: 'decimal-v1',
       neg: vt, forma: 'perso', entradaPct: d.entradaPct / 100, finalPct: d.finalPct / 100, nParcelas: n,
       balQtde: balQtdeEfetiva(), balValor: cfg.balValor ?? 0,
       balPrimeiro: cfg.balPrimeiro ?? 6, balIntervalo: cfg.balIntervalo ?? 6,
-      chavesMes: cfg.chavesMes ?? 36, correcaoMensal: cfg.correcaoMensal || 0,
+      chavesMes: condicoes().mesFinal, correcaoMensal: cfg.correcaoMensal || 0,
       correcaoDesde: cfg.correcaoDesde || 1, dataProposta: new Date(), diaVenc: cfg.diaVenc || 10,
     });
     const plano = d.planoOn && u.precoBase ? buildPlano(d.parcelas) : null;
@@ -759,9 +768,11 @@
     // recriar a tela inteira. Isto não é estética: o re-render geral destruía os
     // botões "Baixar PDF"/"Enviar no WhatsApp" entre o mousedown e o mouseup, e o
     // clique do corretor logo depois de digitar a entrada simplesmente sumia.
+    let ponteiroAtivo = false, repinturaPendente = false;
     function planoBoxHTML(p) {
       const balCfg = cfg.balQtde ?? 0;
       const inviavel = planoInviavel(p);
+      const regra = condicoes(), finalOpts = regra.opcoesFinal;
       return `
             <div class="uni-escolha">
               <div class="uni-campo"><label>Entrada</label>
@@ -769,16 +780,17 @@
                 <div class="ent-livre">
                   <span class="ent-livre-lbl">Entrada personalizada</span>
                   <input id="u-ent-valor" type="text" inputmode="decimal" placeholder="mín. ${fmt(vt * Math.min(...entradaOpts) / 100)}" value="${d.entradaCustom ? fmtValor(p.ent) : ''}">
-                  <span class="ent-livre-pct">${d.entradaCustom ? '= ' + pctTxt(d.entradaPct) + '% do valor' : ''}</span>
+                  <span class="ent-livre-pct" id="u-ent-pct">${d.entradaCustom ? '= ' + pctTxt(d.entradaPct) + '% do valor' : ''}</span>
                 </div>
               </div>
               <div class="uni-campo"><label>Parcelas mensais</label><div class="uni-parc">${parcelasOpts.map((n) => `<button class="parc-btn ${d.parcelas === n ? 'on' : ''}" data-n="${n}">${n}x</button>`).join('')}</div></div>
-              <div class="uni-campo"><label>Parcela final (chaves)</label>
+              <div class="uni-campo"><label for="u-fin-valor">Parcela final · mês ${regra.mesFinal}</label>
                 <div class="uni-parc">${finalOpts.map((n) => `<button class="parc-btn ${(!d.finalCustom && d.finalPct === n) ? 'on' : ''}" data-fin="${n}">${n}%</button>`).join('')}</div>
+                ${regra.minimoFinalPct ? `<p class="uni-final-regra" id="u-final-regra">Em ${d.parcelas} vezes, mínimo de <strong>${regra.minimoFinalPct}% (${fmt(minimoFinal(),2)})</strong> na parcela final.</p>` : ''}
                 <div class="ent-livre">
                   <span class="ent-livre-lbl">Parcela final personalizada</span>
-                  <input id="u-fin-valor" type="text" inputmode="decimal" placeholder="0 = sem parcela final" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
-                  <span class="ent-livre-pct">${d.finalCustom ? (p.fin > 0 ? '= ' + pctTxt(d.finalPct) + '% do valor' : 'sem parcela final — tudo nas mensais') : ''}</span>
+                  <input id="u-fin-valor" type="text" inputmode="decimal" ${regra.minimoFinalPct ? 'aria-describedby="u-final-regra"' : ''} placeholder="${regra.minimoFinalPct ? 'mín. ' + fmt(minimoFinal(),2) : '0 = sem parcela final'}" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
+                  <span class="ent-livre-pct" id="u-fin-pct">${d.finalCustom ? (p.fin > 0 ? '= ' + pctTxt(d.finalPct) + '% do valor' : 'sem parcela final — tudo nas mensais') : ''}</span>
                 </div>
               </div>
               ${balCfg > 0 ? `<div class="uni-campo"><label>Balões</label>
@@ -788,21 +800,43 @@
                   : `${balCfg}x de ${fmt(cfg.balValor ?? 0)} a cada ${cfg.balIntervalo ?? 6} meses, a partir do mês ${cfg.balPrimeiro ?? 6}.`}</span>
               </div>` : ''}
             </div>
-            <div class="linhas uni-plano">
+            <div class="uni-resultados" aria-live="polite"><div class="linhas uni-plano">
               <div><span>Entrada (${pctTxt(d.entradaPct)}%)</span><b>${fmt(p.ent,2)}</b></div>
               <div><span>Parcelas mensais (${p.nParc}x)${d.diluirBaloes && balCfg > 0 ? ' · com balões diluídos' : ''}</span><b>${inviavel ? '—' : PLANO.resumoMensais(p,fmt)}</b></div>
-              ${p.balQtde ? `<div><span>Balões (${p.balQtde}x)</span><b>${fmt(p.balValor)}</b></div>` : ''}
+              ${p.balQtde ? `<div><span>Balões (${p.balQtde}x de ${fmt(p.balValor,2)})</span><b>${fmt(p.somaBaloes,2)}</b></div>` : ''}
               ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin,2)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
+              <div class="uni-total-plano"><span>Total do plano</span><b>${fmt(p.totalNominal,2)}</b></div>
             </div>
             ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada ou a parcela final${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
-            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div>`;
+            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div></div>`;
     }
     // Repinta só o bloco do plano e religa os controles dele.
-    function repintarPlano() {
+    function repintarPlano(preservarControles = false) {
+      // Confirmar o campo altera o estado imediatamente. O desenho espera o
+      // clique terminar para um aviso novo não deslocar o botão sob o mouse.
+      if (preservarControles && ponteiroAtivo) { repinturaPendente = true; return; }
       const box = $('#u-plano-box');
       if (!box) { vUnidade(id); return; }
-      box.innerHTML = planoBoxHTML(buildPlano(d.parcelas));
+      repinturaPendente = false;
+      const html = planoBoxHTML(buildPlano(d.parcelas));
+      if (preservarControles) {
+        // O blur acontece antes do clique/Tab. Preservar estes nós mantém
+        // o botão de destino e o foco, mesmo ao confirmar um valor digitado.
+        const novo = document.createElement('div'); novo.innerHTML = html;
+        $('.uni-resultados', box).innerHTML = $('.uni-resultados', novo).innerHTML;
+        for (const id of ['u-ent-valor', 'u-fin-valor']) $('#'+id, box).value = $('#'+id, novo).value;
+        for (const id of ['u-ent-pct', 'u-fin-pct']) $('#'+id, box).textContent = $('#'+id, novo).textContent;
+        $$('.parc-btn',box).forEach(b=>{
+          const attr = ['ent','fin','n'].find(k=>b.dataset[k]);
+          b.className = $(`[data-${attr}="${b.dataset[attr]}"]`,novo).className;
+        });
+        return;
+      }
+      const ativo = document.activeElement;
+      const foco = box.contains(ativo) ? ativo.id ? '#'+ativo.id : ['ent','fin','n'].map(k=>ativo.dataset[k] ? `[data-${k}="${ativo.dataset[k]}"]` : '').find(Boolean) : null;
+      box.innerHTML = html;
       wirePlanoBox();
+      if (foco) $(foco,box)?.focus({preventScroll:true});
     }
 
     app().innerHTML = `
@@ -817,7 +851,7 @@
             <div><span>R$/m²</span><b>${u.precoBase && u.area ? fmt(vt / u.area) : '—'}</b></div>
             ${temDesc && u.precoBase ? `<div><span>Valor de tabela</span><b><s>${fmt(valorTabela(u, cfg))}</s></b></div>
             <div><span>Desconto</span><b class="txt-desc">−${pct(u.desconto)}</b></div>` : ''}
-            <div class="destaque"><span>VALOR</span><b>${u.precoBase ? fmt(vt) : 'consultar'}</b></div>
+            <div class="destaque"><span>VALOR</span><b>${u.precoBase ? fmt(vt,2) : 'consultar'}</b></div>
           </div>
 
           ${u.precoBase ? `
@@ -849,6 +883,21 @@
           </div>
         </div>
       </div>`;
+    const painelUnidade = $('.uni-painel');
+    painelUnidade.onpointerdown = () => { ponteiroAtivo = true; };
+    const finalizarPonteiro = () => {
+      ponteiroAtivo = false;
+      setTimeout(() => {
+        if (repinturaPendente && painelUnidade.isConnected) { repinturaPendente = false; repintarPlano(true); }
+      },0);
+    };
+    painelUnidade.onpointerup = finalizarPonteiro;
+    painelUnidade.onpointercancel = finalizarPonteiro;
+    painelUnidade.onpointerleave = finalizarPonteiro;
+    painelUnidade.onclick = () => {
+      ponteiroAtivo = false;
+      if (repinturaPendente && painelUnidade.isConnected) repintarPlano(true);
+    };
     ativarFotos();
     // planta clicável → abre o visor com zoom (o mesmo da galeria do prédio)
     const fotoUn = fotoDe(u, cfg);
@@ -861,22 +910,15 @@
     // no teclado numérico do celular ele também sai como decimal: "350000.00"
     // virava 35 milhões (e o teto de 95% cortava calado). Se o ponto vier com 1-2
     // casas no fim e não houver vírgula, é decimal.
-    const lerValor = (txt) => {
-      let s = String(txt || '').replace(/[^\d,.]/g, '');
-      if (!s) return NaN;
-      if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');       // 1.234,56
-      else if (/^\d+\.\d{1,2}$/.test(s)) { /* 350000.00 — decimal, mantém */ }
-      else s = s.replace(/\./g, '');                                          // 1.234 / 350.000
-      return parseFloat(s);
-    };
+    const lerValor = PLANO.lerValorMonetario;
     // Aplica um valor digitado a um campo de % (entrada ou parcela final).
     // `voltarPara` guarda o % que estava selecionado nos botões, para apagar o
     // campo devolver ao que a pessoa tinha escolhido — e não ao padrão do ADM.
-    const aplicarCampo = ({ el, opts, rotulo, setPct, setCustom, voltarPara, permiteZero }) => {
-      const minPct = Math.min(...opts);
+    const aplicarCampo = ({ el, opts, rotulo, setPct, setCustom, voltarPara, permiteZero, pisoPct }) => {
+      const minPct = pisoPct ?? Math.min(...opts);
       // O piso é comparado pelo valor ANUNCIADO (arredondado como o texto mostra),
       // senão o app recusava exatamente o mínimo que ele mesmo pede.
-      const minVal = Math.round(vt * minPct / 100);
+      const minVal = pisoPct == null ? Math.round(vt * minPct / 100) : PLANO.valorPercentual(vt, minPct);
       const teto = vt * 0.95; // sempre sobra espaço para o resto do plano
       return () => {
         const txt = String(el.value || '').trim();
@@ -884,18 +926,23 @@
         // ZERO ESCRITO À MÃO é uma escolha ("quero quitar antes das chaves"), e não
         // o mesmo que deixar o campo em branco (que volta ao botão). Só a parcela
         // final aceita: sem ela, o valor todo cai nas parcelas mensais.
-        if (permiteZero && txt !== '' && isFinite(v) && v === 0) { setPct(0); setCustom(true); repintarPlano(); return; }
-        if (!isFinite(v) || v <= 0) { setCustom(false); setPct(voltarPara()); repintarPlano(); return; }
-        if (!permiteZero && Math.round(v) < minVal) {
-          toast(`${rotulo}: mínimo ${fmt(minVal)} (${minPct}% do valor).`, true);
-          repintarPlano();
+        if (permiteZero && txt !== '' && isFinite(v) && v === 0) { setPct(0); setCustom(true); repintarPlano(true); return; }
+        if (txt === '') { setCustom(false); setPct(voltarPara()); repintarPlano(true); return; }
+        if (!isFinite(v)) {
+          toast(`${rotulo}: informe um valor válido, sem sinal negativo e com até duas casas decimais.`,true);
+          repintarPlano(true); return;
+        }
+        if (!permiteZero && (pisoPct == null ? Math.round(v) < minVal : Math.round(v * 100) < Math.round(minVal * 100))) {
+          toast(`${rotulo}: mínimo ${fmt(minVal,pisoPct == null ? 0 : 2)} (${minPct}% do valor).`, true);
+          repintarPlano(true);
           return;
         }
+        if (v <= 0) { setCustom(false); setPct(voltarPara()); repintarPlano(true); return; }
         if (v > teto) toast(`${rotulo}: máximo ${fmt(teto)} (95% do valor) — ajustei para esse limite.`, true);
         const val = Math.min(v, teto);
         setPct((val / vt) * 100);
         setCustom(true);
-        repintarPlano();
+        repintarPlano(true);
       };
     };
     // Liga os controles do BLOCO do plano. Chamado no primeiro render e a cada
@@ -905,7 +952,13 @@
         // clicar num % volta ao modo botão (desliga o valor digitado)
         if (b.dataset.ent) { d.entradaPct = +b.dataset.ent; d.entradaCustom = false; d.entradaBotao = +b.dataset.ent; }
         else if (b.dataset.fin) { d.finalPct = +b.dataset.fin; d.finalCustom = false; d.finalBotao = +b.dataset.fin; }
-        else d.parcelas = +b.dataset.n;
+        else {
+          const anterior = condicoes();
+          const usavaPadrao = !d.finalCustom && d.finalPct === anterior.finalPadraoPct;
+          d.parcelas = +b.dataset.n;
+          if (usavaPadrao) { d.finalPct = condicoes().finalPadraoPct; d.finalBotao = d.finalPct; }
+          ajustarFinal();
+        }
         repintarPlano();
       }; });
       const entVal = $('#u-ent-valor');
@@ -920,11 +973,13 @@
       }
       const finVal = $('#u-fin-valor');
       if (finVal) {
+        const regra = condicoes(), finalOpts = regra.opcoesFinal;
         const aplicarFin = aplicarCampo({
           el: finVal, opts: finalOpts, rotulo: 'Parcela final personalizada',
           setPct: (p) => { d.finalPct = p; }, setCustom: (b) => { d.finalCustom = b; },
-          voltarPara: () => (finalOpts.includes(d.finalBotao) ? d.finalBotao : finDefault),
-          permiteZero: true, // digitar 0 = sem parcela final (tudo nas mensais)
+          voltarPara: () => (finalOpts.includes(d.finalBotao) ? d.finalBotao : regra.finalPadraoPct),
+          pisoPct: regra.minimoFinalPct || undefined,
+          permiteZero: !regra.minimoFinalPct,
         });
         finVal.onblur = aplicarFin;
         finVal.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarFin(); } };
@@ -947,7 +1002,7 @@
         inp: comPlano
           // balQtde vai o EFETIVO (0 quando o corretor diluiu): o PDF, o WhatsApp e o
           // simulador recalculam a partir daqui, então precisam ver o mesmo plano da tela.
-          ? { forma: 'perso', entradaPct: d.entradaPct, finalPct: d.finalPct, nParcelas: d.parcelas, balQtde: balQtdeEfetiva(), balValor: cfg.balValor ?? 0, balPrimeiro: cfg.balPrimeiro ?? 6, balIntervalo: cfg.balIntervalo ?? 6, chavesMes: cfg.chavesMes ?? 36, diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta }
+          ? { forma: 'perso', regrasPlano: '36-48-v1', arredondamento: 'decimal-v1', entradaPct: d.entradaPct, finalPct: d.finalPct, nParcelas: d.parcelas, balQtde: balQtdeEfetiva(), balValor: cfg.balValor ?? 0, balPrimeiro: cfg.balPrimeiro ?? 6, balIntervalo: cfg.balIntervalo ?? 6, chavesMes: condicoes().mesFinal, diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta }
           : { forma: 'avista', diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta },
         criadoEm,
       };
@@ -964,6 +1019,9 @@
       if (!d.cliente.trim()) { toast('Preencha o nome do cliente.', true); return null; }
       const comPlano = d.planoOn && !!u.precoBase;
       const pln = comPlano ? buildPlano(d.parcelas) : null;
+      if (comPlano && Math.round(pln.fin * 100) < Math.round(minimoFinal() * 100)) {
+        toast(`Em ${d.parcelas} vezes, a parcela final deve ser de pelo menos ${condicoes().minimoFinalPct}% (${fmt(minimoFinal(),2)}).`,true); return null;
+      }
       // Com entrada personalizada e parcela final até 80%, é fácil a soma passar de
       // 100% e a parcela virar negativa. A trava já existia; o recado é que dizia
       // "fale com a administração" quando na verdade o corretor resolve sozinho.
@@ -1098,6 +1156,7 @@
     const calcular = () => {
       neg = Number(sim.tabela?.neg || 0);
       plano = PLANO.calc({
+        arredondamento: inp.arredondamento,
         neg, forma: inp.forma, entradaPct: inp.entradaPct / 100, finalPct: inp.finalPct / 100,
         nParcelas: inp.nParcelas, balQtde: inp.balQtde, balValor: inp.balValor,
         balPrimeiro: inp.balPrimeiro, balIntervalo: inp.balIntervalo,
@@ -1137,12 +1196,20 @@
       const de=[];if(l.entrada)de.push(perso?'Entrada ('+pctStr(inp.entradaPct)+')':'Entrada / sinal');if(l.parcela)de.push('Parcela mensal');if(l.balao)de.push('Balão');if(l.chaves)de.push('Parcela final'+(perso?' ('+pctStr(inp.finalPct)+')':''));
       return `<tr><td>${l.m}</td><td>${fmtData(l.data)}</td><td>${de.join(' + ')}</td><td>${fmt(l.total,2)}</td></tr>`;
     }).join('')}</tbody><tfoot><tr><td colspan="3">TOTAL</td><td>${fmt(plano.totalNominal,2)}</td></tr></tfoot></table></div>`;
-    const avisosHTML = () => `${plano.parcelaNegativa ? '<div class="aviso">Entrada, parcela final e balões ultrapassam o valor negociado.</div>' : !plano.fecha ? '<div class="aviso">O plano não fecha com o valor negociado. Confira os valores.</div>' : ''}`;
+    const minimoRegra = () => inp.regrasPlano === '36-48-v1' && inp.forma === 'perso' ? PLANO.condicoesProposta(inp.nParcelas,cfg).minimoFinalPct : 0;
+    const avisoRegra = () => {
+      if (!minimoRegra()) return '';
+      const minimo = PLANO.valorPercentual(neg,minimoRegra());
+      if (plano.fin < minimo) return `Em ${inp.nParcelas} vezes, a parcela final deve ser de pelo menos ${minimoRegra()}% (${fmt(minimo,2)}).`;
+      if (+inp.nParcelas === 48 && plano.chavesMes !== 48) return 'No plano de 48 vezes, a parcela final deve vencer no mês 48.';
+      return '';
+    };
+    const avisosHTML = () => `${avisoRegra() ? '<div class="aviso">'+esc(avisoRegra())+'</div>' : ''}${plano.parcelaNegativa ? '<div class="aviso">Entrada, parcela final e balões ultrapassam o valor negociado.</div>' : !plano.fecha ? '<div class="aviso">O plano não fecha com o valor negociado. Confira os valores.</div>' : ''}`;
     const atualizarResultados = () => {
       calcular();
       $('#s-resumo').innerHTML=resumoHTML();$('#s-cronograma').innerHTML=cronogramaHTML();$('#s-avisos').innerHTML=avisosHTML();
       $('#s-valor-tabela').textContent=fmt(sim.tabela?.valorTabela,2);$('#s-valor-negociado').textContent=fmt(neg,2);
-      const diluir=$('#s-diluir');if(diluir)diluir.disabled=inp.finalPct===0&&inp.balQtde===0;
+      const diluir=$('#s-diluir');if(diluir)diluir.disabled=minimoRegra()?inp.balQtde===0:inp.finalPct===0&&inp.balQtde===0;
       const desconto=$('#s-desconto');if(desconto)desconto.textContent=sim.tabela?.desconto == null ? 'Não registrado' : pct(sim.tabela.desconto);
       for(const [id,valor,sufixo] of [['s-entpct',plano.ent,''],['s-finpct',plano.fin,''],['s-nparc',plano.vParc,'/mês']]){const hint=$('#'+id)?.parentElement.querySelector('.hint');if(hint)hint.textContent=fmt(valor,2)+sufixo;}
       sim.atualizarSalvamento?.();
@@ -1180,7 +1247,7 @@
             </div>
 
             <h3>Pagamento</h3>
-            ${perso ? `<div class="sim-pagamento-atalho"><button type="button" class="btn-lime" id="s-diluir" ${inp.finalPct===0 && inp.balQtde===0 ? 'disabled' : ''}>Diluir balão nas parcelas</button>${sim.antesDiluir ? '<button type="button" class="btn-mini" id="s-restaurar">Restaurar balão</button>' : ''}<span class="nota">Distribui a parcela final e os balões nas mensais. Mantém a entrada e a quantidade de parcelas.</span></div>` : ''}
+            ${perso ? `<div class="sim-pagamento-atalho"><button type="button" class="btn-lime" id="s-diluir" ${(minimoRegra()?inp.balQtde===0:inp.finalPct===0 && inp.balQtde===0) ? 'disabled' : ''}>${minimoRegra()?'Diluir balões nas parcelas':'Diluir balão nas parcelas'}</button>${sim.antesDiluir ? '<button type="button" class="btn-mini" id="s-restaurar">Restaurar balão</button>' : ''}<span class="nota">${minimoRegra()?'Distribui os balões nas mensais, mantendo a parcela final e seu mínimo.':'Distribui a parcela final e os balões nas mensais. Mantém a entrada e a quantidade de parcelas.'}</span></div>` : ''}
             <div class="form">
               <label>Forma<select id="s-forma">${PLANO.FORMAS.map((f) => `<option value="${f.id}" ${inp.forma === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}</select></label>
               ${perso ? `
@@ -1191,7 +1258,7 @@
               <label>Valor do balão<input id="s-balv" type="number" value="${inp.balValor}"></label>
               <label>1º balão no mês<input id="s-balp" type="number" value="${inp.balPrimeiro}"></label>
               <label>Repete a cada (meses)<input id="s-bali" type="number" value="${inp.balIntervalo}"></label>
-              <label>Entrega (chaves) — mês<input id="s-chaves" type="number" value="${inp.chavesMes}"></label>` : ''}
+              <label>Parcela final — mês<input id="s-chaves" type="number" value="${inp.chavesMes}"></label>` : ''}
               <label>Comissão<select id="s-comissao"><option value="padrao" ${!inp.semComissao?'selected':''}>Com comissão (${pctStr(inp.corretagemPct)})</option><option value="sem" ${inp.semComissao?'selected':''}>Sem comissão</option></select><span class="nota sim-comissao-nota">Nesta proposta. O valor do imóvel permanece igual.</span></label>
               <label>Índice de correção<select id="s-indice">${['INCC', 'IPCA'].map((x) => `<option ${inp.indice === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
             </div>
@@ -1268,7 +1335,7 @@
     $('#s-forma').onchange=e=>{inp.forma=e.target.value;_sujo=true;redesenhar();};liga('#s-indice','indice');
     liga('#s-entpct','entradaPct',1);liga('#s-finpct','finalPct',1);liga('#s-nparc','nParcelas',1);liga('#s-balq','balQtde',1);liga('#s-balv','balValor',1);liga('#s-balp','balPrimeiro',1);liga('#s-bali','balIntervalo',1);liga('#s-chaves','chavesMes',1);
     $('#s-comissao').onchange=e=>{inp.semComissao=e.target.value==='sem';_sujo=true;atualizarResultados();};
-    const diluir=$('#s-diluir');if(diluir)diluir.onclick=()=>{try{const novo=window.DiamondProposta.diluir(inp);sim.antesDiluir={finalPct:inp.finalPct,balQtde:inp.balQtde,balValor:inp.balValor};Object.assign(inp,novo);_sujo=true;redesenhar();}catch(e){toast(e.message,true);}};
+    const diluir=$('#s-diluir');if(diluir)diluir.onclick=()=>{try{const novo=window.DiamondProposta.diluir(inp);if(minimoRegra())novo.finalPct=Math.max(minimoRegra(),inp.finalPct);sim.antesDiluir={finalPct:inp.finalPct,balQtde:inp.balQtde,balValor:inp.balValor};Object.assign(inp,novo);_sujo=true;redesenhar();}catch(e){toast(e.message,true);}};
     const restaurar=$('#s-restaurar');if(restaurar)restaurar.onclick=()=>{Object.assign(inp,sim.antesDiluir);sim.antesDiluir=null;_sujo=true;redesenhar();};
 
     const montaProposta = () => {
@@ -1290,6 +1357,7 @@
       if (!inp.cliente.trim()) { toast('Preencha o nome do cliente.', true); return false; }
       if (u.status === 'Vendido' && !STORE.isAdmin()) { toast('Unidade vendida — fale com o administrador.', true); return false; }
       if (inp.forma==='perso' && [inp.entradaPct,inp.finalPct,inp.nParcelas,inp.balQtde,inp.balValor,inp.balPrimeiro,inp.balIntervalo,inp.chavesMes].some(n=>!Number.isFinite(n)||n<0)){toast('Confira os valores do pagamento: não use números negativos.',true);return false;}
+      if (avisoRegra()) { toast(avisoRegra(),true); return false; }
       if (plano.parcelaNegativa) { toast('Ajuste o plano: entrada + parcela final + balões passam de 100%.', true); return false; }
       if (!plano.fecha) { toast('O plano não fecha com o valor negociado — confira parcelas e balões.', true); return false; }
       return true;
@@ -2004,7 +2072,7 @@
     li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent,2)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
     if (plano.nParc) li.push(`• ${PLANO.resumoMensais(plano,fmt)} (todo dia ${p.inp.diaVenc})`);
     if (plano.balQtde) li.push(`• ${plano.balQtde} balões de ${fmt(plano.balValor)} a cada ${plano.balIntervalo} meses`);
-    if (plano.fin) li.push(`• Parcela final${perso ? ' (' + pctStr(p.inp.finalPct) + ')' : ''}: ${fmt(plano.fin,2)} na entrega (mês ${plano.chavesMes})`);
+    if (plano.fin) li.push(`• Parcela final${perso ? ' (' + pctStr(p.inp.finalPct) + ')' : ''}: ${fmt(plano.fin,2)} no mês ${plano.chavesMes}`);
     const prop = plano.cronograma[0] && plano.cronograma[0].data ? new Date(plano.cronograma[0].data) : new Date();
     const val = new Date(prop.getTime()); val.setDate(val.getDate() + 7);
     li.push(`\n_Proposta válida por 7 dias — até ${fmtData(val)}._`);
@@ -3142,7 +3210,7 @@
   function aConfig() {
     const cfg = STORE.getCfg() || {};
     const f = (v, m = 100) => ((v || 0) * m);
-    const parcelasStr = (Array.isArray(cfg.planoParcelas) && cfg.planoParcelas.length ? cfg.planoParcelas : [12, 24, 36]).join(', ');
+    const parcelasStr = PLANO.opcoesParcelasProposta(cfg).join(', ');
     const entOptsStr = (Array.isArray(cfg.planoEntradaOpcoes) && cfg.planoEntradaOpcoes.length ? cfg.planoEntradaOpcoes : [10, 20, 30]).join(', ');
     const finOptsStr = (Array.isArray(cfg.planoFinalOpcoes) && cfg.planoFinalOpcoes.length ? cfg.planoFinalOpcoes : [30, 40, 50]).join(', ');
     $('#aba-corpo').innerHTML = `

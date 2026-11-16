@@ -9,6 +9,64 @@ const PLANO = (() => {
   ];
   const formaLabel = (id) => (FORMAS.find((f) => f.id === id) || {}).label || id;
 
+  // A versão decimal é optativa e fica gravada nas novas propostas. Assim,
+  // corrigir meios centavos não recalcula contratos/propostas anteriores.
+  function fracaoDecimal(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) throw Error('Valor monetário inválido.');
+    const [coeficiente, exp = '0'] = String(n).split('e');
+    const casas = (coeficiente.split('.')[1] || '').length;
+    const potencia = Number(exp) - casas;
+    const numerador = BigInt(coeficiente.replace('.', ''));
+    return potencia >= 0 ? [numerador * 10n ** BigInt(potencia), 1n]
+      : [numerador, 10n ** BigInt(-potencia)];
+  }
+  const arredondarRazao = (n, d) => {
+    const sinal = n < 0n ? -1n : 1n;
+    return sinal * ((2n * n * sinal + d) / (2n * d));
+  };
+  const centavosDecimais = value => {
+    const [n, d] = fracaoDecimal(value);
+    return arredondarRazao(n * 100n, d);
+  };
+  function valorProporcao(valor, proporcao) {
+    const [n, d] = fracaoDecimal(proporcao);
+    return Number(arredondarRazao(centavosDecimais(valor) * n, d)) / 100;
+  }
+  function valorPercentual(valor, percentual) {
+    const [n, d] = fracaoDecimal(percentual);
+    return Number(arredondarRazao(centavosDecimais(valor) * n, d * 100n)) / 100;
+  }
+  function lerValorMonetario(txt) {
+    const s = String(txt ?? '').trim().replace(/^R\$\s*/, '');
+    let normalizado;
+    if (/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(s)) normalizado = s.replace(/\./g, '').replace(',', '.');
+    else if (/^\d+(?:,\d{1,2})?$/.test(s)) normalizado = s.replace(',', '.');
+    else if (/^\d+\.\d{1,2}$/.test(s)) normalizado = s;
+    else return NaN;
+    const n = Number(normalizado);
+    return Number.isFinite(n) && Number.isSafeInteger(Math.round(n * 100)) ? n : NaN;
+  }
+
+  // Condições para montar novas propostas na tela da unidade. O cálculo de
+  // propostas já salvas continua usando os valores do próprio registro.
+  function condicoesProposta(parcelas, cfg = {}) {
+    const n = Number(parcelas);
+    const minimoFinalPct = ({ 36: 30, 48: 20 })[n] || 0;
+    const padrao = Math.round((cfg.planoFinalPct ?? .30) * 100);
+    const opcoesFinal = [...new Set([minimoFinalPct, padrao,
+      ...(Array.isArray(cfg.planoFinalOpcoes) ? cfg.planoFinalOpcoes : [30, 40, 50])])]
+      .filter(p => Number.isFinite(p) && p > 0 && p < 100 && p >= minimoFinalPct).sort((a, b) => a - b);
+    return { minimoFinalPct, opcoesFinal, finalPadraoPct: minimoFinalPct || padrao,
+      mesFinal: n === 48 ? 48 : (cfg.chavesMes ?? 36) };
+  }
+
+  function opcoesParcelasProposta(cfg = {}) {
+    return [...new Set([...(Array.isArray(cfg.planoParcelas) && cfg.planoParcelas.length
+      ? cfg.planoParcelas : [12, 24, 36]), 36, 48])]
+      .filter(n => Number.isInteger(n) && n > 0).sort((a, b) => a - b);
+  }
+
   function dataVenc(base, m, dia) {
     if (m === 0) return new Date(base.getTime());
     const mo = base.getMonth() + m;
@@ -22,7 +80,9 @@ const PLANO = (() => {
   //        balPrimeiro, balIntervalo, chavesMes, correcaoMensal, correcaoDesde,
   //        dataProposta (Date), diaVenc }
   function calc(inp) {
-    const money = n => Math.round((n + Number.EPSILON) * 100) / 100;
+    const decimal = inp.arredondamento === 'decimal-v1';
+    const money = decimal ? n => Number(centavosDecimais(n)) / 100
+      : n => Math.round((n + Number.EPSILON) * 100) / 100;
     const neg = money(+inp.neg || 0);
     const f = inp.forma;
     const preset = { '12x': 12, '24x': 24, '36x': 36 }[f] || null;
@@ -31,8 +91,8 @@ const PLANO = (() => {
     if (f === 'avista') { ent = neg; fin = 0; nParc = 0; vParc = 0; balQtde = 0; }
     else if (preset) { ent = neg / preset; fin = 0; nParc = preset - 1; vParc = neg / preset; balQtde = 0; }
     else {
-      ent = neg * (+inp.entradaPct || 0);
-      fin = neg * (+inp.finalPct || 0);
+      ent = decimal ? valorProporcao(neg, +inp.entradaPct || 0) : neg * (+inp.entradaPct || 0);
+      fin = decimal ? valorProporcao(neg, +inp.finalPct || 0) : neg * (+inp.finalPct || 0);
       nParc = Math.max(0, Math.round(+inp.nParcelas || 0));
       balQtde = Math.max(0, Math.round(+inp.balQtde || 0));
       const balTot = balQtde * (+inp.balValor || 0);
@@ -92,6 +152,6 @@ const PLANO = (() => {
     if (plano.ultimaParcela !== plano.vParc) return (plano.nParc - 1) + ' x ' + fmt(plano.vParc,2) + ' + última de ' + fmt(plano.ultimaParcela,2);
     return plano.nParc + ' x ' + fmt(plano.vParc,2);
   }
-  return { FORMAS, formaLabel, calc, dataVenc, linhasSeparadas, resumoMensais };
+  return { FORMAS, formaLabel, calc, dataVenc, linhasSeparadas, resumoMensais, condicoesProposta, opcoesParcelasProposta, valorPercentual, lerValorMonetario };
 })();
 window.PLANO = PLANO;

@@ -71,7 +71,7 @@ function simulador(options = {}) {
   ctx.testSim.abrir();
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   return {
-    propostas, settle, estado: () => ctx.testSim.estado(), temSalvar: () => !!document.querySelector('#s-salvar'),
+    propostas, settle, estado: () => ctx.testSim.estado(), html: () => html, temSalvar: () => !!document.querySelector('#s-salvar'),
     input(selector, value) {
       const node = document.querySelector(selector);
       assert.ok(node, selector + ' deve existir');
@@ -82,6 +82,7 @@ function simulador(options = {}) {
       node.value = value; node.onchange({ target: node }); await settle();
     },
     async salvar() { await document.querySelector('#s-salvar').onclick(); await settle(); },
+    async clicar(selector) { await document.querySelector(selector).onclick(); await settle(); },
     async navegar(hash) { ctx.location.hash = hash; listeners.get('hashchange')(); await settle(); },
   };
 }
@@ -162,4 +163,33 @@ test('carregar referência nova não reescreve preço de proposta salva', async 
     propostas:[{id:'p-anterior',cliente:'Cliente anterior',neg:90000,inp:{forma:'24x'},tabela:{versao:'v0',dataTabela:'01/08/2026',neg:90000}}],
     api:async()=>({tabelas:[{key:'atual',versao:'v2',neg:104000,valorTabela:104000}]})});
   await s.navegar('#/sim/u-403?editar=p-anterior');await s.settle();assert.equal(s.estado().tabela.neg,90000);await s.salvar();assert.equal(s.propostas[0].neg,90000);assert.equal(s.propostas[0].tabela.versao,'v0');
+});
+
+test('reabrir e salvar preserva a versão decimal da nova proposta e o cálculo das antigas',async()=>{
+ for(const arredondamento of ['decimal-v1',undefined]){
+  const p={id:'p-arredondamento',cliente:'Teste de centavos',neg:150000.05,inp:{forma:'perso',entradaPct:20,finalPct:30,nParcelas:36,balQtde:5,balValor:10000,chavesMes:36,...(arredondamento?{arredondamento}:{})}};
+  const s=simulador({propostas:[p]});
+  await s.navegar('#/sim/u-403?editar=p-arredondamento');
+  assert.match(s.html(),arredondamento?/45\.000,02/:/45\.000,01/);
+  await s.salvar();
+  assert.equal(s.propostas.length,1);assert.equal(s.propostas[0].neg,150000.05);
+  assert.equal(s.propostas[0].inp.arredondamento,arredondamento);
+ }
+});
+
+test('editar uma proposta nova mantém o mínimo contratado e o mês 48, sem travar propostas antigas',async()=>{
+ for(const n of [36,48]){
+  const minimo=n===36?30:20;
+  const original={id:'p-regra',cliente:'Teste de regra',neg:373563.84,inp:{forma:'perso',regrasPlano:'36-48-v1',arredondamento:'decimal-v1',entradaPct:20,finalPct:minimo,nParcelas:n,balQtde:5,balValor:10000,chavesMes:n}};
+  const s=simulador({propostas:[original]});await s.navegar('#/sim/u-403?editar=p-regra');
+  s.input('#s-finpct','10');await s.salvar();
+  assert.equal(s.propostas[0].inp.finalPct,minimo,'edição abaixo do piso não deve sobrescrever o registro');
+  s.input('#s-finpct',String(minimo));
+  if(n===48){s.input('#s-chaves','36');await s.salvar();assert.equal(s.propostas[0].inp.chavesMes,48);s.input('#s-chaves','48');}
+  s.input('#s-cliente','Teste aprovado');await s.salvar();assert.equal(s.propostas[0].cliente,'Teste aprovado');
+  await s.clicar('#s-diluir');await s.salvar();assert.equal(s.propostas[0].inp.finalPct,minimo);assert.equal(s.propostas[0].inp.balQtde,0);
+  await s.clicar('#s-restaurar');await s.salvar();assert.equal(s.propostas[0].inp.finalPct,minimo);assert.equal(s.propostas[0].inp.balQtde,5);
+ }
+ const antigo={id:'p-legado',cliente:'Anterior',neg:373563.84,inp:{forma:'perso',entradaPct:20,finalPct:0,nParcelas:36,balQtde:0,chavesMes:36}};
+ const s=simulador({propostas:[antigo]});await s.navegar('#/sim/u-403?editar=p-legado');await s.salvar();assert.equal(s.propostas[0].inp.finalPct,0);
 });

@@ -214,3 +214,23 @@ test('PDF mostra centavos e separa mensalidade, balão e final com total exato',
  assert.deepEqual(p,before);
  if(process.env.DIAMOND_PDF_TEST_OUTPUT) fs.writeFileSync(process.env.DIAMOND_PDF_TEST_OUTPUT,Buffer.from(doc.output('arraybuffer')));
 });
+
+test('PDF de 48 mensais leva a final de 20% para o mês 48 e preserva os centavos', async()=>{
+ const s=setup(),p=proposta({neg:373563.84,inp:{entradaPct:20,finalPct:20,nParcelas:48,chavesMes:48}});
+ const {doc}=await s.gerar(p,s.plano(p),cfgAtual),t=texto(doc);
+ assert.match(t,/47 x R\$\s*3\.627,88 \+ última de R\$\s*3\.627,94/);
+ assert.match(t,/Final: R\$\s*74\.712,77 no mês 48/);
+ assert.ok(doc.texts.some(r=>r.text==='Parcela 48/48'));
+ assert.ok(doc.texts.some(r=>r.text==='Parcela final (20%)'));
+ assert.match(t,/373\.563,84/);
+});
+
+test('PDF mantém o arredondamento escolhido na proposta salva, sem trocar centavos antigos',async()=>{
+ const s=setup();
+ for(const arredondamento of ['decimal-v1',undefined]){
+  const p=proposta({neg:150000.05,inp:{entradaPct:20,finalPct:30,nParcelas:36,...(arredondamento?{arredondamento}:{})}});
+  const plano=s.plano(p),{doc}=await s.gerar(p,plano,cfgAtual);
+  assert.match(texto(doc),arredondamento?/45\.000,02/:/45\.000,01/);
+  assert.equal(plano.totalNominal,150000.05);
+ }
+});
