@@ -2089,7 +2089,7 @@
     li.push(`• Valor: ${fmt(plano.neg,2)}`);
     li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent,2)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
     if (plano.nParc) li.push(`• ${PLANO.resumoMensais(plano,fmt)} (todo dia ${p.inp.diaVenc})`);
-    if (plano.balQtde) li.push(`• ${plano.balQtde} balões de ${fmt(plano.balValor)} a cada ${plano.balIntervalo} meses`);
+    if (plano.balQtde) li.push(`• ${plano.balQtde} balões de ${fmt(plano.balValor,2)} a cada ${plano.balIntervalo} meses`);
     if (plano.fin) li.push(`• Parcela final${perso ? ' (' + pctStr(p.inp.finalPct) + ')' : ''}: ${fmt(plano.fin,2)} no mês ${plano.chavesMes}`);
     const prop = plano.cronograma[0] && plano.cronograma[0].data ? new Date(plano.cronograma[0].data) : new Date();
     const val = new Date(prop.getTime()); val.setDate(val.getDate() + 7);

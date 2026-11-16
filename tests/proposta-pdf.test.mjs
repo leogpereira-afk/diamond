@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
-import { source, copy } from './helpers.mjs';
+import { source, copy, backend } from './helpers.mjs';
 
 const require = createRequire(import.meta.url);
 const { jsPDF } = require('../vendor/jspdf.umd.min.js');
@@ -25,7 +26,7 @@ function setup({ foto = fixture, obterFoto, arquivarPropostaPdf, unidade = { uni
   const ctx = vm.createContext({
     window: { jspdf: { jsPDF: Document } }, Date, Math, setTimeout, clearTimeout,
     Image: class { set src(value) { this.width = 900; this.height = 550; queueMicrotask(() => value.endsWith(fixture.base64) ? this.onload() : this.onerror()); } },
-    STORE: { arquivarPropostaPdf, unidadePorId: () => unidade, obterFoto: obterFoto || (async () => foto) },
+    STORE: { arquivarPropostaPdf, unidadePorId: () => unidade, obterFoto: obterFoto || (async () => foto), ymdLocal: d => d.toLocaleDateString('en-CA') },
   });
   vm.runInContext(source('plano.js'), ctx);
   vm.runInContext(source('proposta-domain.js'), ctx);
@@ -35,7 +36,7 @@ function setup({ foto = fixture, obterFoto, arquivarPropostaPdf, unidade = { uni
   vm.runInContext(code.slice(0, cut) + `
     imgData = async () => null;
     carregarLogoImob = async () => null;
-    globalThis.pdfTools = { gerarPDF, gerarPropostaSimples, gerarPdfScp, baixarPropostaArquivada };
+    globalThis.pdfTools = { gerarPDF, gerarPropostaSimples, gerarPdfScp, baixarPropostaArquivada, resumoTexto, resumoDoPlano };
   })();`, ctx);
   return {
     gerar: ctx.pdfTools.gerarPDF,
@@ -43,6 +44,8 @@ function setup({ foto = fixture, obterFoto, arquivarPropostaPdf, unidade = { uni
     simples: ctx.pdfTools.gerarPropostaSimples,
     scp: ctx.pdfTools.gerarPdfScp,
     diluir: ctx.window.DiamondProposta.diluir,
+    whats: ctx.pdfTools.resumoTexto,
+    resumo: ctx.pdfTools.resumoDoPlano,
     plano: p => ctx.window.PLANO.calc({
       ...p.inp, neg: p.neg,
       entradaPct: p.inp.entradaPct / 100, finalPct: p.inp.finalPct / 100,
@@ -72,6 +75,27 @@ function proposta({ inp = {}, ...rest } = {}) {
 
 const texto = doc => doc.texts.map(row => row.text).join('\n');
 const valorBRL = value => Number(value.replace(/[^\d,-]/g, '').replace(',', '.'));
+
+async function capturarWhatsApp(p, doc, mensagem, b) {
+  const popup={location:{},close(){}},button={},avisos=[];
+  const code=source('app.js'),start=code.indexOf("    $('#u-whats').onclick = async () => {"),end=code.indexOf('    // Solicitar reserva',start);
+  assert.ok(start>0&&end>start);
+  const context=vm.createContext({
+    $:()=>button,window:{open:()=>popup},d:{cliente:p.cliente,clienteTel:p.clienteTel,propostaId:p.id},
+    u:{unidade:p.unidade,precoBase:p.neg,area:p.area},vt:p.neg,user:{nome:p.corretor},
+    preparar:async()=>({doc,proposta:p,msg:mensagem}),crmRegistrar:async()=>null,
+    telWa:()=> '5538999990000',encodeURIComponent,toast:m=>avisos.push(m),
+    STORE:{enviarPropostaPdf:async(base64,meta)=>{
+      const r=await b.request('putPropostaPdf',{base64,...meta});
+      if(!r.ok)throw Error(JSON.stringify(r));
+      return 'https://proposta.invalid/'+r.id;
+    }},
+  });
+  vm.runInContext(code.slice(start,end),context);
+  await button.onclick();
+  assert.ok(popup.location.href,avisos.join('\n'));
+  return new URL(popup.location.href);
+}
 
 test('PDF preserva tabela v1 de julho no cabeçalho de todas as páginas e na ficha, com configuração atual v2', async () => {
   const s = setup(), p = proposta(), cfg = copy(cfgAtual), before = copy({ p, cfg });
@@ -245,4 +269,55 @@ test('PDF imprime a escolha da final e o vencimento dos seis planos v2',async()=
   assert.ok(doc.texts.some(r=>r.text===`Parcela ${n}/${n}`));
   assert.equal(plano.totalNominal,373563.84);assert.deepEqual(p,antes);
  }
+});
+
+test('PDF e WhatsApp preservam entrada, mensais, balões e final nos seis planos, com três entradas e diluição',async()=>{
+ const s=setup(), br=cents=>(cents/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),norm=t=>t.replace(/\s+/g,' ');
+ for(const [n,finalPct,finalCents] of [[36,10,3735638],[36,20,7471277],[36,30,11206915],[48,10,3735638],[48,15,5603458],[48,20,7471277]]){
+  for(const entradaPct of [10,20,30])for(const balQtde of [0,5]){
+   const p=proposta({neg:373563.84,inp:{regrasPlano:'36-48-v2',arredondamento:'decimal-v1',dataProposta:'2026-11-16',entradaPct,finalPct,nParcelas:n,chavesMes:n,balQtde}}),plano=s.plano(p);
+   const entCents=Math.round(37356384*entradaPct/100),saldo=37356384-entCents-finalCents-balQtde*1000000,mensal=Math.floor(saldo/n),ultima=saldo-mensal*(n-1);
+   const mensais=mensal===ultima?`${n} x ${br(mensal)}`:`${n-1} x ${br(mensal)} + última de ${br(ultima)}`,final=`${br(finalCents)} no mês ${n}`;
+   const {doc}=await s.gerar(p,plano,cfgAtual),pdf=norm(texto(doc)),whats=norm(s.whats(plano,p)),resumo=s.resumo(p,plano);
+   for(const t of [pdf,whats]){assert.ok(t.includes(norm(mensais)),t);assert.ok(t.includes(norm(final)),t);assert.ok(t.includes(norm(br(entCents))),t);assert.ok(t.includes('373.563,84'));}
+   assert.ok(whats.includes(`Parcela final (${finalPct}%):`));
+   assert.equal(whats.includes('balões de'),balQtde>0);
+   assert.equal(resumo.itens.find(x=>x.rotulo==='Parcela final').valor,`${br(finalCents)} · mês ${n}`);
+   const row=doc.texts.find(x=>x.text===`Parcela final (${finalPct}%)`),cells=doc.texts.filter(x=>x.y===row.y&&x.page===row.page).map(x=>x.text);
+   assert.ok(cells.includes(String(n)));assert.ok(cells.includes(n===36?'10/11/2029':'10/11/2030'));assert.ok(cells.includes(br(finalCents)));
+   assert.equal(plano.totalNominal,373563.84);
+  }
+ }
+});
+
+test('link do WhatsApp conserva o PDF original e o mês da final mesmo depois de editar a proposta',async()=>{
+ const s=setup();
+ for(const [n,opcoes] of [[36,[10,20,30]],[48,[10,15,20]]])for(const finalPct of opcoes){
+  const p=proposta({unidade:'1',unidadeId:'u-1',corretor:'Teste',corretorUsuario:'domo',neg:373563.84,inp:{regrasPlano:'36-48-v2',arredondamento:'decimal-v1',entradaPct:20,finalPct,nParcelas:n,chavesMes:n}}),plano=s.plano(p);
+  p.resumoEnvio=s.resumo(p,plano);
+  const {doc}=await s.gerar(p,plano,cfgAtual),base64=doc.output('datauristring').split(',')[1],b=backend();
+  b.table('propostas').set(p.id,copy(p));
+  const url=await capturarWhatsApp(p,doc,s.whats(plano,p),b),mensagem=url.searchParams.get('text');
+  assert.equal(url.hostname,'wa.me');assert.ok(mensagem.includes(`Parcela final (${finalPct}%):`));assert.ok(mensagem.includes('no mês '+n));
+  const id=mensagem.match(/https:\/\/proposta\.invalid\/(pp-[a-f0-9]+)/)?.[1];assert.ok(id);
+  const saved=await b.publicGet({id,dados:'1',preview:'1'}),publicData=JSON.parse(saved.body),pdf=await b.publicGet({id,pdf:'1',preview:'1'});
+  assert.equal(pdf.statusCode,200);assert.equal(pdf.body,base64);
+  assert.deepEqual(publicData.resumo.itens,copy(p.resumoEnvio.itens));
+  if(process.env.DIAMOND_PROPOSAL_AUDIT_DIR){
+   const dir=process.env.DIAMOND_PROPOSAL_AUDIT_DIR,name=`${n}x-final-${finalPct}`;
+   fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,name+'.pdf'),Buffer.from(pdf.body,'base64'));
+   fs.writeFileSync(path.join(dir,name+'-whatsapp.txt'),mensagem);
+   fs.writeFileSync(path.join(dir,name+'-link.json'),JSON.stringify(publicData.resumo,null,2));
+  }
+  b.table('propostas').get(p.id).resumoEnvio.itens.find(x=>x.rotulo==='Parcela final').valor='Condição de outra proposta';
+  const again=JSON.parse((await b.publicGet({id,dados:'1',preview:'1'})).body);
+  assert.deepEqual(again.resumo,publicData.resumo);
+ }
+});
+
+test('texto do WhatsApp mantém os centavos dos balões, como o PDF e o plano',async()=>{
+ const s=setup(),p=proposta({neg:373563.84,inp:{regrasPlano:'36-48-v2',arredondamento:'decimal-v1',entradaPct:20,finalPct:15,nParcelas:48,chavesMes:48,balValor:10000.51}}),plano=s.plano(p);
+ const {doc}=await s.gerar(p,plano,cfgAtual);
+ assert.match(texto(doc),/Balões: 5 x R\$\s*10\.000,51/);
+ assert.match(s.whats(plano,p),/5 balões de R\$\s*10\.000,51/);
 });
