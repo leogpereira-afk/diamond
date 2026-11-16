@@ -19,9 +19,9 @@ values = [D('373563.84'), D('100000.01'), D('150000.05'), D('299999.95'), D('100
 values += [D(random.randrange(10000000, 150000000)) / 100 for _ in range(150)]
 cases = []
 for total in values:
-    for n, minimum in [(36, 30), (48, 20)]:
+    for n, options in [(36, [10,20,30]), (48, [10,15,20])]:
         for entry_pct in [10, 20, 30]:
-            for final_pct in [minimum, 40, 50]:
+            for final_pct in options:
                 for balloons in [0, 5]:
                     entry = (total * entry_pct / 100).quantize(D('.01'), rounding=ROUND_HALF_UP)
                     final = (total * final_pct / 100).quantize(D('.01'), rounding=ROUND_HALF_UP)
@@ -44,7 +44,7 @@ for(const c of data){
  const input={...c.input,dataProposta:new Date('2026-11-16T12:00:00-03:00')};
  const p=P.calc({...input,arredondamento:'decimal-v1'});
  const diff=Object.entries(c.expected).filter(([k,v])=>p[k]!==v).map(([k,v])=>({key:k,expected:v,actual:p[k]}));
- const minPct=c.input.nParcelas===36?30:20,announced=P.valorPercentual(c.input.neg,minPct);
+ const minPct=10,announced=P.valorPercentual(c.input.neg,minPct);
  if(c.input.finalPct===minPct/100&&p.fin<announced)diff.push({key:'minimoAnunciado',expected:announced,actual:p.fin});
  if(P.linhasSeparadas(p).reduce((s,l)=>s+Math.round(l.total*100),0)!==Math.round(c.expected.totalNominal*100))diff.push({key:'cronograma'});
  if(p.cronograma.find(l=>l.chaves)?.m!==c.input.chavesMes)diff.push({key:'mesFinal'});

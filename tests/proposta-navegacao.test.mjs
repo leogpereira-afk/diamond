@@ -177,7 +177,7 @@ test('reabrir e salvar preserva a versão decimal da nova proposta e o cálculo 
  }
 });
 
-test('editar uma proposta nova mantém o mínimo contratado e o mês 48, sem travar propostas antigas',async()=>{
+test('propostas v1 mantêm o mínimo contratado e o mês 48, sem travar propostas antigas',async()=>{
  for(const n of [36,48]){
   const minimo=n===36?30:20;
   const original={id:'p-regra',cliente:'Teste de regra',neg:373563.84,inp:{forma:'perso',regrasPlano:'36-48-v1',arredondamento:'decimal-v1',entradaPct:20,finalPct:minimo,nParcelas:n,balQtde:5,balValor:10000,chavesMes:n}};
@@ -192,4 +192,34 @@ test('editar uma proposta nova mantém o mínimo contratado e o mês 48, sem tra
  }
  const antigo={id:'p-legado',cliente:'Anterior',neg:373563.84,inp:{forma:'perso',entradaPct:20,finalPct:0,nParcelas:36,balQtde:0,chavesMes:36}};
  const s=simulador({propostas:[antigo]});await s.navegar('#/sim/u-403?editar=p-legado');await s.salvar();assert.equal(s.propostas[0].inp.finalPct,0);
+});
+
+test('propostas v2 preservam as seis escolhas ao salvar, reabrir e diluir os balões',async()=>{
+ for(const [n,opcoes] of [[36,[10,20,30]],[48,[10,15,20]]])for(const finalPct of opcoes){
+  const original={id:'p-escolha',cliente:'Teste de escolha',neg:373563.84,inp:{forma:'perso',regrasPlano:'36-48-v2',arredondamento:'decimal-v1',entradaPct:20,finalPct,nParcelas:n,balQtde:5,balValor:10000,chavesMes:n}};
+  const s=simulador({propostas:[original]});await s.navegar('#/sim/u-403?editar=p-escolha');
+  s.input('#s-cliente','Escolha preservada');await s.salvar();
+  assert.equal(s.propostas[0].cliente,'Escolha preservada');assert.equal(s.propostas[0].inp.finalPct,finalPct);
+  await s.navegar('#/home');await s.navegar('#/sim/u-403?editar=p-escolha');
+  assert.equal(s.estado().inp.finalPct,finalPct);assert.equal(s.estado().inp.chavesMes,n);
+  await s.clicar('#s-diluir');await s.salvar();
+  assert.equal(s.propostas[0].inp.finalPct,finalPct);assert.equal(s.propostas[0].inp.balQtde,0);
+  await s.clicar('#s-restaurar');await s.salvar();
+  assert.equal(s.propostas[0].inp.finalPct,finalPct);assert.equal(s.propostas[0].inp.balQtde,5);
+ }
+});
+
+test('propostas v2 bloqueiam percentual fora das opções e final antecipada em 48 vezes',async()=>{
+ for(const n of [36,48]){
+  const original={id:'p-escolha',cliente:'Original',neg:373563.84,inp:{forma:'perso',regrasPlano:'36-48-v2',arredondamento:'decimal-v1',entradaPct:20,finalPct:10,nParcelas:n,balQtde:5,balValor:10000,chavesMes:n}};
+  const s=simulador({propostas:[original]});await s.navegar('#/sim/u-403?editar=p-escolha');
+  s.input('#s-cliente','Não salvar');
+  for(const pct of [0,5,n===36?15:30,40,50]){
+   s.input('#s-finpct',String(pct));await s.salvar();
+   assert.equal(s.propostas[0].cliente,'Original');assert.equal(s.propostas[0].inp.finalPct,10);
+  }
+  s.input('#s-finpct','10');
+  if(n===48){s.input('#s-chaves','36');await s.salvar();assert.equal(s.propostas[0].cliente,'Original');s.input('#s-chaves','48');}
+  s.input('#s-cliente','Válido');await s.salvar();assert.equal(s.propostas[0].cliente,'Válido');
+ }
 });

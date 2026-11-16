@@ -234,3 +234,15 @@ test('PDF mantém o arredondamento escolhido na proposta salva, sem trocar centa
   assert.equal(plano.totalNominal,150000.05);
  }
 });
+
+test('PDF imprime a escolha da final e o vencimento dos seis planos v2',async()=>{
+ const s=setup();
+ for(const [n,opcoes] of [[36,[10,20,30]],[48,[10,15,20]]])for(const finalPct of opcoes){
+  const p=proposta({neg:373563.84,inp:{regrasPlano:'36-48-v2',arredondamento:'decimal-v1',entradaPct:20,finalPct,nParcelas:n,chavesMes:n}});
+  const antes=copy(p),plano=s.plano(p),{doc}=await s.gerar(p,plano,cfgAtual);
+  assert.ok(doc.texts.some(r=>r.text===`Parcela final (${finalPct}%)`));
+  assert.match(texto(doc),new RegExp('Final: R\\$[^\\n]+ no mês '+n));
+  assert.ok(doc.texts.some(r=>r.text===`Parcela ${n}/${n}`));
+  assert.equal(plano.totalNominal,373563.84);assert.deepEqual(p,antes);
+ }
+});

@@ -17,18 +17,34 @@ test('36 e 48 estão disponíveis com configuração anterior, sem modificá-la'
   assert.equal(JSON.stringify(cfg),antes);
   assert.deepEqual([...P.opcoesParcelasProposta({planoParcelas:[48,36,36,18]})],[18,36,48]);
 });
-test('36 e 48 oferecem somente a final mínima, mesmo com outras opções na configuração',()=>{
+test('36 e 48 oferecem exatamente os três percentuais aprovados para cada prazo',()=>{
   const antes=JSON.stringify(cfg);
-  for(const [n,minimo,opcoes,mes] of [[36,30,[30],36],[48,20,[20],48]]){
+  for(const [n,padrao,opcoes,mes] of [[36,30,[10,20,30],36],[48,20,[10,15,20],48]]){
     const r=P.condicoesProposta(n,{...cfg,planoFinalOpcoes:[10,20,30,40,50]});
-    assert.equal(r.minimoFinalPct,minimo);
-    assert.equal(r.finalPadraoPct,minimo);
+    assert.equal(r.minimoFinalPct,10);
+    assert.equal(r.finalPadraoPct,padrao);
     assert.deepEqual([...r.opcoesFinal],opcoes);
     assert.equal(r.mesFinal,mes);
   }
   assert.equal(JSON.stringify(cfg),antes);
   assert.equal(P.condicoesProposta(24,cfg).minimoFinalPct,0);
   assert.deepEqual([...P.condicoesProposta(24,cfg).opcoesFinal],[30,40,50]);
+});
+test('os seis percentuais recalculam as mensais e fecham ao centavo',()=>{
+  // Valores de referência calculados separadamente com Decimal/ROUND_HALF_UP.
+  for(const [n,final,fin,mensal,ultima] of [
+    [36,10,37356.38,5874.85,5874.94],
+    [36,20,74712.77,4837.17,4837.35],
+    [36,30,112069.15,3799.49,3799.77],
+    [48,10,37356.38,4406.13,4406.58],
+    [48,15,56034.58,4017.01,4017.02],
+    [48,20,74712.77,3627.88,3627.94],
+  ]){
+    const p=plano(n,final);
+    assert.equal(p.fin,fin);assert.equal(p.vParc,mensal);assert.equal(p.ultimaParcela,ultima);
+    assert.equal(p.cronograma.find(l=>l.chaves).m,n);
+    assert.equal(P.linhasSeparadas(p).reduce((s,l)=>s+Math.round(l.total*100),0),37356384);
+  }
 });
 test('exemplo da imagem em 36 vezes fecha ao centavo com final de 30%',()=>{
   const p=plano(36,30);

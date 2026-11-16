@@ -12,7 +12,7 @@ const base='http://127.0.0.1:8771',results=[];
    const summary=async()=>(await p.locator('.uni-plano').innerText()).replace(/\s+/g,' ');
    await p.locator('#u-fin-valor').fill('150.000,00');await p.locator('[data-n="36"]').click();
    assert.equal(await p.locator('[data-n].on').innerText(),'36x');assert.match(await summary(),/112\.069,15/);
-   assert.equal(await p.locator('[data-fin],#u-fin-valor').count(),0);
+   assert.equal(await p.locator('[data-fin]').count(),3);assert.equal(await p.locator('#u-fin-valor').count(),0);
    await p.locator('#u-ent-valor').fill('80.000,00');await p.locator('[data-n="48"]').click();
    assert.equal(await p.locator('[data-n].on').innerText(),'48x');assert.match(await summary(),/80\.000,00/);
    await p.locator('#u-ent-valor').fill('90.000,00');await p.locator('#u-diluir').click();
@@ -25,9 +25,11 @@ const base='http://127.0.0.1:8771',results=[];
     assert.match(await summary(),/Entrada \(20%\).*74\.712,77/);assert.match(await p.locator('.toast').last().innerText(),/valor válido/);
    }
    await p.locator('#u-diluir').uncheck();
-   for(const [n,pct,amount] of [[36,30,'112.069,15'],[48,20,'74.712,77'],[36,30,'112.069,15'],[48,20,'74.712,77']]){
+   for(const [n,pct,amount] of [[36,10,'37.356,38'],[36,20,'74.712,77'],[36,30,'112.069,15'],[48,10,'37.356,38'],[48,15,'56.034,58'],[48,20,'74.712,77']]){
     await p.locator(`[data-n="${n}"]`).click();
-    assert.equal(await p.locator('[data-fin],#u-fin-valor').count(),0);
+    assert.deepEqual(await p.locator('[data-fin]').allTextContents(),n===36?['10%','20%','30%']:['10%','15%','20%']);
+    await p.locator(`[data-fin="${pct}"]`).click();
+    assert.equal(await p.locator('[data-fin]').count(),3);assert.equal(await p.locator('#u-fin-valor').count(),0);
     assert.ok((await p.locator('#u-final-regra').innerText()).includes(pct+'%'));
     assert.ok((await p.locator('#u-final-regra').innerText()).includes(amount));
     assert.match(await summary(),new RegExp('Parcela final \\('+pct+'%\\).*mês '+n));
@@ -39,7 +41,7 @@ const base='http://127.0.0.1:8771',results=[];
    await p.locator('#u-ent-valor').fill('350.000,00');await p.locator('#u-pdf').click();
    assert.match(await p.locator('.toast').last().innerText(),/Não sobra valor/);
    const state=await(await p.request.get(base+'/audit-state')).json();assert.ok(!state.propostas.some(x=>x.cliente==='Auditoria plano inviável '+width));
-   assert.deepEqual(errors,[]);results.push({width,status:'passed',checks:['final automática sem opções extras','troca de prazo descarta final personalizada anterior','clique após digitar entrada','diluição após digitar','foco por Tab','entradas inválidas','totais e final no mês 48','layout sem corte','plano inviável bloqueado']});await c.close();
+   assert.deepEqual(errors,[]);results.push({width,status:'passed',checks:['seis escolhas da parcela final sem opções extras','troca de prazo descarta final personalizada anterior','clique após digitar entrada','diluição após digitar','foco por Tab','entradas inválidas','totais e final no mês 48','layout sem corte','plano inviável bloqueado']});await c.close();
   }
   // Preço de teste que gerava final 1 centavo abaixo do mínimo e impedia a emissão.
   const c=await browser.newContext({viewport:{width:1360,height:1000},locale:'pt-BR',serviceWorkers:'block'}),p=await c.newPage();
@@ -57,7 +59,7 @@ const base='http://127.0.0.1:8771',results=[];
   await p.locator('#u-cliente').fill('Auditoria centavos 15000005');
   const download=p.waitForEvent('download');await p.locator('#u-pdf').click();await(await download).saveAs('/private/tmp/diamond-auditoria-centavos.pdf');
   const state=await(await p.request.get(base+'/audit-state')).json(),saved=state.propostas.find(x=>x.cliente==='Auditoria centavos 15000005');
-  assert.ok(saved);assert.equal(saved.inp.arredondamento,'decimal-v1');assert.equal(saved.inp.regrasPlano,'36-48-v1');assert.equal(saved.inp.nParcelas,36);
+  assert.ok(saved);assert.equal(saved.inp.arredondamento,'decimal-v1');assert.equal(saved.inp.regrasPlano,'36-48-v2');assert.equal(saved.inp.nParcelas,36);
   assert.match(saved.resumoEnvio.itens.find(x=>x.rotulo==='Parcela final').valor,/45\.000,02/);
   results.push({case:'150000.05',status:'passed',checks:['mínimo e final coincidem','PDF emitido','versão do cálculo salva','resumo e registro conferem']});await c.close();
   fs.writeFileSync('/private/tmp/diamond-auditoria-browser-final.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));

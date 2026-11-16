@@ -730,7 +730,8 @@
     function ajustarFinal() {
       const regra = condicoes();
       if (regra.minimoFinalPct) {
-        d.finalPct = regra.minimoFinalPct; d.finalCustom = false; d.finalBotao = regra.minimoFinalPct;
+        if (d.finalCustom || !regra.opcoesFinal.includes(d.finalPct)) d.finalPct = regra.finalPadraoPct;
+        d.finalCustom = false; d.finalBotao = d.finalPct;
         return;
       }
       if (!d.finalCustom && !regra.opcoesFinal.includes(d.finalPct)) d.finalPct = regra.finalPadraoPct;
@@ -789,8 +790,8 @@
               </div>
               <div class="uni-campo"><label>Parcelas mensais</label><div class="uni-parc">${parcelasOpts.map((n) => `<button class="parc-btn ${d.parcelas === n ? 'on' : ''}" data-n="${n}">${n}x</button>`).join('')}</div></div>
               <div class="uni-campo"><label${regra.minimoFinalPct ? '' : ' for="u-fin-valor"'}>Parcela final · mês ${regra.mesFinal}</label>
-                ${regra.minimoFinalPct ? `<p class="uni-final-regra" id="u-final-regra"><strong>${regra.minimoFinalPct}% · ${fmt(minimoFinal(),2)}</strong><br>Final mínima aplicada automaticamente ao plano de ${d.parcelas} vezes.</p>` : `
                 <div class="uni-parc">${finalOpts.map((n) => `<button class="parc-btn ${(!d.finalCustom && d.finalPct === n) ? 'on' : ''}" data-fin="${n}">${n}%</button>`).join('')}</div>
+                ${regra.minimoFinalPct ? `<p class="uni-final-regra" id="u-final-regra"><strong>${d.finalPct}% · ${fmt(p.fin,2)}</strong> no mês ${regra.mesFinal}. As parcelas mensais são recalculadas conforme sua escolha.</p>` : `
                 <div class="ent-livre">
                   <span class="ent-livre-lbl">Parcela final personalizada</span>
                   <input id="u-fin-valor" type="text" inputmode="decimal" placeholder="0 = sem parcela final" value="${d.finalCustom ? fmtValor(p.fin) : ''}">
@@ -811,8 +812,8 @@
               ${p.fin > 0 ? `<div><span>Parcela final (${pctTxt(d.finalPct)}%) · mês ${p.chavesMes}</span><b>${fmt(p.fin,2)}</b></div>` : '<div><span>Parcela final</span><b>sem parcela final</b></div>'}
               <div class="uni-total-plano"><span>Total do plano</span><b>${fmt(p.totalNominal,2)}</b></div>
             </div>
-            ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada${regra.minimoFinalPct ? '' : ' ou a parcela final'}${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
-            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. ${regra.minimoFinalPct ? 'A parcela final acompanha o prazo selecionado.' : 'Escolha a entrada, as parcelas e a parcela final acima.'}</div></div>`;
+            ${inviavel ? `<div class="nota nota-alerta">⚠ Não sobra valor para as parcelas mensais: a entrada + a parcela final${p.balQtde ? ' + os balões' : ''} já cobrem a unidade. Reduza a entrada ou a parcela final${p.balQtde ? ', ou marque "Diluir os balões nas parcelas"' : ''}.</div>` : ''}
+            <div class="nota">Correção ${esc(cfg.indice || 'INCC')} nas parcelas${p.balQtde ? ' e balões' : ''}. Escolha a entrada, as parcelas e a parcela final acima.</div></div>`;
     }
     // Repinta só o bloco do plano e religa os controles dele.
     function repintarPlano(preservarControles = false) {
@@ -963,10 +964,7 @@
         if (b.dataset.ent) { d.entradaPct = +b.dataset.ent; d.entradaCustom = false; d.entradaBotao = +b.dataset.ent; }
         else if (b.dataset.fin) { d.finalPct = +b.dataset.fin; d.finalCustom = false; d.finalBotao = +b.dataset.fin; }
         else {
-          const anterior = condicoes();
-          const usavaPadrao = !d.finalCustom && d.finalPct === anterior.finalPadraoPct;
           d.parcelas = +b.dataset.n;
-          if (usavaPadrao) { d.finalPct = condicoes().finalPadraoPct; d.finalBotao = d.finalPct; }
           ajustarFinal();
         }
         repintarPlano();
@@ -1012,7 +1010,7 @@
         inp: comPlano
           // balQtde vai o EFETIVO (0 quando o corretor diluiu): o PDF, o WhatsApp e o
           // simulador recalculam a partir daqui, então precisam ver o mesmo plano da tela.
-          ? { forma: 'perso', regrasPlano: '36-48-v1', arredondamento: 'decimal-v1', entradaPct: d.entradaPct, finalPct: d.finalPct, nParcelas: d.parcelas, balQtde: balQtdeEfetiva(), balValor: cfg.balValor ?? 0, balPrimeiro: cfg.balPrimeiro ?? 6, balIntervalo: cfg.balIntervalo ?? 6, chavesMes: condicoes().mesFinal, diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta }
+          ? { forma: 'perso', regrasPlano: '36-48-v2', arredondamento: 'decimal-v1', entradaPct: d.entradaPct, finalPct: d.finalPct, nParcelas: d.parcelas, balQtde: balQtdeEfetiva(), balValor: cfg.balValor ?? 0, balPrimeiro: cfg.balPrimeiro ?? 6, balIntervalo: cfg.balIntervalo ?? 6, chavesMes: condicoes().mesFinal, diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta }
           : { forma: 'avista', diaVenc: cfg.diaVenc || 10, indice: cfg.indice || 'INCC', dataProposta },
         criadoEm,
       };
@@ -1029,6 +1027,9 @@
       if (!d.cliente.trim()) { toast('Preencha o nome do cliente.', true); return null; }
       const comPlano = d.planoOn && !!u.precoBase;
       const pln = comPlano ? buildPlano(d.parcelas) : null;
+      if (comPlano && condicoes().minimoFinalPct && !condicoes().opcoesFinal.includes(d.finalPct)) {
+        toast(`Em ${d.parcelas} vezes, escolha ${condicoes().opcoesFinal.join('%, ')}% para a parcela final.`,true); return null;
+      }
       if (comPlano && Math.round(pln.fin * 100) < Math.round(minimoFinal() * 100)) {
         toast(`Em ${d.parcelas} vezes, a parcela final deve ser de pelo menos ${condicoes().minimoFinalPct}% (${fmt(minimoFinal(),2)}).`,true); return null;
       }
@@ -1039,7 +1040,7 @@
       // travas antigas: a tela e o WhatsApp anunciavam "24 parcelas de R$ 0,00" e
       // o PDF saía sem nenhuma linha de parcela (o cronograma só imprime mês com
       // valor) — mensagem e anexo discordando na frente do cliente.
-      if (comPlano && planoInviavel(pln)) { toast(`Não sobra valor para as parcelas mensais: a entrada + a parcela final já cobrem a unidade. Reduza ${condicoes().minimoFinalPct ? 'a entrada' : 'uma das duas'} (ou dilua os balões) antes de enviar.`, true); return null; }
+      if (comPlano && planoInviavel(pln)) { toast('Não sobra valor para as parcelas mensais: a entrada + a parcela final já cobrem a unidade. Reduza uma das duas (ou dilua os balões) antes de enviar.', true); return null; }
       if (comPlano && !pln.fecha) { toast('Plano indisponível para esta unidade — fale com a administração.', true); return null; }
       if (!await conferirVaga(d)) return null;
       const p = montaP(comPlano);
@@ -1206,9 +1207,16 @@
       const de=[];if(l.entrada)de.push(perso?'Entrada ('+pctStr(inp.entradaPct)+')':'Entrada / sinal');if(l.parcela)de.push('Parcela mensal');if(l.balao)de.push('Balão');if(l.chaves)de.push('Parcela final'+(perso?' ('+pctStr(inp.finalPct)+')':''));
       return `<tr><td>${l.m}</td><td>${fmtData(l.data)}</td><td>${de.join(' + ')}</td><td>${fmt(l.total,2)}</td></tr>`;
     }).join('')}</tbody><tfoot><tr><td colspan="3">TOTAL</td><td>${fmt(plano.totalNominal,2)}</td></tr></tfoot></table></div>`;
-    const minimoRegra = () => inp.regrasPlano === '36-48-v1' && inp.forma === 'perso' ? PLANO.condicoesProposta(inp.nParcelas,cfg).minimoFinalPct : 0;
+    // Cada proposta mantém a regra com que foi emitida. As novas escolhas não
+    // alteram os mínimos nem os percentuais de documentos anteriores.
+    const opcoesFinalRegra = () => inp.regrasPlano === '36-48-v2' && inp.forma === 'perso' && [36,48].includes(+inp.nParcelas)
+      ? PLANO.condicoesProposta(inp.nParcelas,cfg).opcoesFinal : null;
+    const minimoRegra = () => inp.forma !== 'perso' ? 0
+      : inp.regrasPlano === '36-48-v1' ? ({36:30,48:20})[inp.nParcelas] || 0
+      : opcoesFinalRegra() ? Math.min(...opcoesFinalRegra()) : 0;
     const avisoRegra = () => {
       if (!minimoRegra()) return '';
+      if (opcoesFinalRegra() && !opcoesFinalRegra().includes(inp.finalPct)) return `Em ${inp.nParcelas} vezes, escolha ${opcoesFinalRegra().join('%, ')}% para a parcela final.`;
       const minimo = PLANO.valorPercentual(neg,minimoRegra());
       if (plano.fin < minimo) return `Em ${inp.nParcelas} vezes, a parcela final deve ser de pelo menos ${minimoRegra()}% (${fmt(minimo,2)}).`;
       if (+inp.nParcelas === 48 && plano.chavesMes !== 48) return 'No plano de 48 vezes, a parcela final deve vencer no mês 48.';

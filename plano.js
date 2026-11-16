@@ -52,12 +52,13 @@ const PLANO = (() => {
   // propostas já salvas continua usando os valores do próprio registro.
   function condicoesProposta(parcelas, cfg = {}) {
     const n = Number(parcelas);
-    const minimoFinalPct = ({ 36: 30, 48: 20 })[n] || 0;
+    const opcoesPrazo = ({ 36: [10, 20, 30], 48: [10, 15, 20] })[n];
+    const minimoFinalPct = opcoesPrazo ? Math.min(...opcoesPrazo) : 0;
     const padrao = Math.round((cfg.planoFinalPct ?? .30) * 100);
-    const opcoesFinal = minimoFinalPct ? [minimoFinalPct] : [...new Set([padrao,
+    const opcoesFinal = opcoesPrazo || [...new Set([padrao,
       ...(Array.isArray(cfg.planoFinalOpcoes) ? cfg.planoFinalOpcoes : [30, 40, 50])])]
       .filter(p => Number.isFinite(p) && p > 0 && p < 100 && p >= minimoFinalPct).sort((a, b) => a - b);
-    return { minimoFinalPct, opcoesFinal, finalPadraoPct: minimoFinalPct || padrao,
+    return { minimoFinalPct, opcoesFinal, finalPadraoPct: opcoesPrazo ? opcoesPrazo[opcoesPrazo.length - 1] : padrao,
       mesFinal: n === 48 ? 48 : (cfg.chavesMes ?? 36) };
   }
 
