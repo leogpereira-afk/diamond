@@ -10,6 +10,7 @@ function appFixture({propostas = [], leads = [], envios = [], unidade = {id:'u-1
   const STORE = {getCfg:()=>({}),getUser:()=>({usuario:'domo',nome:'Domo',papel:'corretor',ehMaster:true,temSenhaEquipe:true,corretorAtivo:{nome:'Teste'}}),isAdmin:()=>false,podeVerPainel:()=>true,getPropostas:()=>propostas,getLeads:()=>leads,getUnidades:()=>[unidade],unidadePorId:id=>id===unidade.id?unidade:null,listEnvios:async()=>envios};
   const context = vm.createContext({window:{P_URL:'https://example.invalid/p'},document:{body:node(),querySelector:get,querySelectorAll:()=>[],createElement:node},location:{hash:'#/proposta/p-antiga'},STORE,URLSearchParams,Date,Math});
   const code = source('app.js');
+  vm.runInContext(source('proposta-domain.js'),context);
   vm.runInContext(code.slice(0,code.lastIndexOf("  window.addEventListener('hashchange'"))+`;globalThis.audit={vConexoesUnidade,vCliente,vProposta:typeof vProposta==='function'?vProposta:null,clienteReferencias:typeof clienteReferencias==='function'?clienteReferencias:null,crmResumo,renderTeste:()=>{renderTopo=()=>{};vProposta=id=>globalThis.escolhida=id;render();}};})();`,context);
   return {api:context.audit,nodes,STORE,context};
 }

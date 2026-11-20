@@ -979,3 +979,17 @@ a.registro-item:hover { background: var(--lime-s); border-color: #b8c95e; }
 
 .sim-comissao-nota{display:block;font-weight:400;margin-top:6px;line-height:1.4}
 .sim-tabela-box select{border:1px solid var(--borda,#d6d6ce);border-radius:8px;padding:10px 12px;background:#fff;color:var(--texto,#1a1a1a)}
+
+/* Escolha da planta em todas as modalidades de proposta. */
+.proposta-quartos{border:0;margin:0 0 18px;padding:0;min-width:0}
+.proposta-quartos legend{font-size:15px;font-weight:700;margin-bottom:10px}
+.quartos-opcoes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.quartos-btn{display:flex;flex-direction:column;align-items:flex-start;gap:5px;background:#fff;border:1px solid #d6d9ce;border-radius:12px;padding:14px 16px;color:#272d23;cursor:pointer;font:inherit;min-height:72px}
+.quartos-btn strong{font-size:17px}.quartos-btn span{font-size:13px}
+.quartos-btn.on{background:#efff52;border:2px solid #272d23;padding:13px 15px}
+.quartos-btn:focus-visible{outline:3px solid #4267a8;outline-offset:3px}
+.proposta-quartos .nota{margin:8px 0 0;font-size:13px}
+.planta-pendente{display:flex;align-items:center;justify-content:center;min-height:140px;padding:20px;color:#59604e;text-align:center;background:#f5f6ef;border-radius:12px;width:100%;box-sizing:border-box}
+
+.sim-foto.sem-planta{height:auto;background:#f5f6ef}
+.quartos-btn:disabled{cursor:wait;opacity:.65}

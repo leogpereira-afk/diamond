@@ -159,5 +159,32 @@
     return { percentual, valor, quemPaga, liquido };
   }
 
-  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao, referencia, precoReferencia, origemConferida, precoAtualConferido });
+  // A escolha pertence à proposta. Não altera a tabela ou o cadastro da unidade.
+  function quartos(u, value) {
+    if (String(u?.unidade || '').trim().toUpperCase() === 'LOJA') return 0;
+    return value === 2 || value === '2' ? 2 : 1;
+  }
+
+  function adicionalQuartos(u, value) {
+    return quartos(u, value) === 2 ? 15000 : 0;
+  }
+
+  // Recebe o preço já negociado: o adicional fixo não sofre o desconto da base.
+  function valorComQuartos(base, u, value) {
+    const valor = numero(base);
+    if (valor == null || valor < 0) throw Error('Valor negociado inválido para a opção de quartos.');
+    const centavos = Math.round((valor + Number.EPSILON) * 100) + adicionalQuartos(u, value) * 100;
+    if (!Number.isSafeInteger(centavos)) throw Error('Valor negociado inválido para a opção de quartos.');
+    return centavos / 100;
+  }
+
+  function fotoPlanta(u, cfg = {}, value) {
+    if (!u) return '';
+    const tipo = quartos(u, value) === 0 ? 'LOJA' : String(u.unidade).slice(-2);
+    // Uma planta de um quarto não representa a opção de dois quartos.
+    if (quartos(u, value) === 2) return cfg?.fotosTipo2Quartos?.[tipo] || '';
+    return cfg?.fotosTipo?.[tipo] || u.fotoId || '';
+  }
+
+  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao, referencia, precoReferencia, origemConferida, precoAtualConferido, quartos, adicionalQuartos, valorComQuartos, fotoPlanta });
 })(typeof window !== 'undefined' ? window : globalThis);

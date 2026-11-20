@@ -453,22 +453,24 @@ const STORE = (() => {
   }
 
   // foto por TIPO de planta (final 01..08 / LOJA) — uma imagem vale p/ a coluna toda
-  async function anexarFotoTipo(tipo, file) {
+  async function anexarFotoTipo(tipo, file, quartos = 1) {
+    const campo = Number(quartos) === 2 ? 'fotosTipo2Quartos' : 'fotosTipo';
     const base64 = await comprimir(file);
-    const fileId = 'ft-' + tipo + '-' + Date.now();
+    const fileId = 'ft-' + tipo + (Number(quartos) === 2 ? '-2q-' : '-') + Date.now();
     await fotoLocalSet(fileId, base64, 'image/jpeg');
     enqueue({ action: 'putFoto', fileId, mime: 'image/jpeg' });
     const cfg = getCfg() || {};
-    const antiga = (cfg.fotosTipo || {})[tipo];
-    salvarCfg({ ...cfg, fotosTipo: { ...(cfg.fotosTipo || {}), [tipo]: fileId } });
+    const antiga = (cfg[campo] || {})[tipo];
+    salvarCfg({ ...cfg, [campo]: { ...(cfg[campo] || {}), [tipo]: fileId } });
     if (antiga) enqueue({ action: 'delFoto', fileId: antiga });
     return fileId;
   }
 
   // gira a foto do tipo 90° horário (corrigir orientação/encaixe)
-  async function girarFotoTipo(tipo) {
+  async function girarFotoTipo(tipo, quartos = 1) {
+    const campo = Number(quartos) === 2 ? 'fotosTipo2Quartos' : 'fotosTipo';
     const cfg = getCfg() || {};
-    const fid = (cfg.fotosTipo || {})[tipo];
+    const fid = (cfg[campo] || {})[tipo];
     if (!fid) return null;
     const f = await obterFoto(fid);
     if (!f) return null;
@@ -484,10 +486,10 @@ const STORE = (() => {
     cx.rotate(Math.PI / 2);
     cx.drawImage(img, -img.width / 2, -img.height / 2);
     const b64 = cv.toDataURL('image/jpeg', 0.85).split(',')[1];
-    const novo = 'ft-' + tipo + '-' + Date.now();
+    const novo = 'ft-' + tipo + (Number(quartos) === 2 ? '-2q-' : '-') + Date.now();
     await fotoLocalSet(novo, b64, 'image/jpeg');
     enqueue({ action: 'putFoto', fileId: novo, mime: 'image/jpeg' });
-    salvarCfg({ ...cfg, fotosTipo: { ...(cfg.fotosTipo || {}), [tipo]: novo } });
+    salvarCfg({ ...cfg, [campo]: { ...(cfg[campo] || {}), [tipo]: novo } });
     enqueue({ action: 'delFoto', fileId: fid });
     return novo;
   }

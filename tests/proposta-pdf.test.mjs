@@ -81,7 +81,7 @@ async function capturarWhatsApp(p, doc, mensagem, b) {
   const code=source('app.js'),start=code.indexOf("    $('#u-whats').onclick = async () => {"),end=code.indexOf('    // Solicitar reserva',start);
   assert.ok(start>0&&end>start);
   const context=vm.createContext({
-    $:()=>button,window:{open:()=>popup},d:{cliente:p.cliente,clienteTel:p.clienteTel,propostaId:p.id},
+    $:()=>button,$$:()=>[],window:{open:()=>popup},d:{cliente:p.cliente,clienteTel:p.clienteTel,propostaId:p.id},
     u:{unidade:p.unidade,precoBase:p.neg,area:p.area},vt:p.neg,user:{nome:p.corretor},
     preparar:async()=>({doc,proposta:p,msg:mensagem}),crmRegistrar:async()=>null,
     telWa:()=> '5538999990000',encodeURIComponent,toast:m=>avisos.push(m),
@@ -91,7 +91,9 @@ async function capturarWhatsApp(p, doc, mensagem, b) {
       return 'https://proposta.invalid/'+r.id;
     }},
   });
-  vm.runInContext(code.slice(start,end),context);
+  const lockStart=code.indexOf('    const travarQuartos ='),lockEnd=code.indexOf("    $('#u-pdf').onclick",lockStart);
+  assert.ok(lockStart>0&&lockEnd>lockStart);
+  vm.runInContext(code.slice(lockStart,lockEnd)+code.slice(start,end),context);
   await button.onclick();
   assert.ok(popup.location.href,avisos.join('\n'));
   return new URL(popup.location.href);

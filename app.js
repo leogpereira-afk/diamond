@@ -33,7 +33,28 @@
   const ehCliente = () => (STORE.getUser() || {}).papel === 'cliente';
   const cliCfg = () => ({ precos: true, predio: true, baixarPdf: true, ...(((STORE.getCfg() || {}).cliente) || {}) });
   const tipoDe = (u) => String(u.unidade).toUpperCase() === 'LOJA' ? 'LOJA' : String(u.unidade).slice(-2);
-  const fotoDe = (u, cfg) => ((cfg && cfg.fotosTipo) || {})[tipoDe(u)] || u.fotoId || '';
+  const fotoDe = (u, cfg, quartos = 1) => window.DiamondProposta.fotoPlanta(u, cfg, quartos);
+  const quartosLabel = q => q === 2 ? '2 quartos' : q === 1 ? '1 quarto' : '';
+  function dadosQuartos(u, cfg, escolha, base) {
+    const quartos = window.DiamondProposta.quartos(u, escolha);
+    return { quartos, acrescimoQuartos: window.DiamondProposta.adicionalQuartos(u, quartos), valorBaseQuartos: base, fotoPlantaId: fotoDe(u, cfg, quartos) };
+  }
+  function itensQuartos(p) {
+    const quartos = window.DiamondProposta.quartos({unidade:p.unidade}, p.quartos);
+    return quartos ? [{rotulo:'Apartamento',valor:quartosLabel(quartos)}, ...(quartos === 2 ? [{rotulo:'Acréscimo de 2 quartos',valor:fmt(p.acrescimoQuartos ?? 15000,2)}] : [])] : [];
+  }
+  function quartosHTML(u, escolha) {
+    const q = window.DiamondProposta.quartos(u, escolha);
+    if (!q) return '';
+    return `<fieldset class="proposta-quartos"><legend>Escolha a planta do apartamento</legend><div class="quartos-opcoes">${[1,2].map(n=>`<button type="button" class="quartos-btn ${q===n?'on':''}" data-quartos="${n}" aria-pressed="${q===n}"><strong>${quartosLabel(n)}</strong><span>${n===2?'+ '+fmt(15000):'Valor atual'}</span></button>`).join('')}</div><p class="nota">${q===2?'O valor da proposta inclui o acréscimo de '+fmt(15000)+'.':'Planta de 1 quarto, sem acréscimo.'}</p></fieldset>`;
+  }
+  function plantaHTML(u,cfg,q) {
+    const foto = fotoDe(u,cfg,q);
+    return `<div class="sim-foto${foto?' zoomavel':' sem-planta'}" data-fotoid="${esc(foto)}">${foto?'<span class="foto-zoom">🔍</span>':`<span class="planta-pendente">${q===2?'Planta de 2 quartos a cadastrar':'Planta a cadastrar'}</span>`}</div>`;
+  }
+  function ligarQuartos(mudar) {
+    $$('[data-quartos]').forEach(b=>b.onclick=()=>mudar(Number(b.dataset.quartos)));
+  }
 
   // Consulta do registro original: nunca recalcula, salva ou associa por nome.
   const rotaRegistro = (tipo, id) => '#/' + tipo + '/' + encodeURIComponent(id) + '?voltar=' + encodeURIComponent(location.hash);
@@ -66,6 +87,7 @@
     const i = p.inp || {};
     const linhas = [];
     const add = (rotulo, valor) => { if (valor !== undefined && valor !== null && valor !== '') linhas.push(`<div><dt>${esc(rotulo)}</dt><dd>${esc(valor)}</dd></div>`); };
+    for(const item of itensQuartos(p))add(item.rotulo,item.valor);
     if(p.vaga)add('Vaga de garagem', vagaTexto(p.vaga));
     if(p.tabela){add('Tabela escolhida',p.tabela.versao||'Versão não registrada');add('Data da tabela',p.tabela.dataTabela||'Não registrada');}
     if(i.semComissao===true)add('Comissão','Sem comissão');
@@ -712,7 +734,7 @@
     if (!u) { app().innerHTML = '<div class="vazio">Unidade não encontrada. <a href="#/home">voltar ao espelho</a></div>'; return; }
     if (!STORE.isAdmin() && u.status !== 'Disponível') { app().innerHTML = '<div class="vazio">Unidade indisponível. <a href="#/home">voltar ao espelho</a></div>'; return; }
     const user = ator(); // quem assina a proposta (corretor ativo da empresa, ou o próprio admin)
-    const vt = valorNegociadoTabela(u, cfg); // preço EFETIVO (aplica desconto da unidade) — vale p/ VALOR, plano e proposta
+    const baseQuartos = valorNegociadoTabela(u, cfg);
     const temDesc = (u.desconto || 0) > 0;
     // Nos planos de 36 e 48 mensais, a final acompanha automaticamente o prazo.
     const entDefault = Math.round((cfg.planoEntradaPct ?? 0.20) * 100);
@@ -721,6 +743,8 @@
     const parcelasOpts = PLANO.opcoesParcelasProposta(cfg);
     const parcelaDefault = parcelasOpts[Math.min(1, parcelasOpts.length - 1)]; // 2ª opção (ex.: 24x) ou a 1ª
     const d = _uniDraft[id] || (_uniDraft[id] = { cliente: '', clienteTel: '', planoOn: false, parcelas: parcelaDefault, entradaPct: entDefault, finalPct: finDefault, entradaCustom: false, diluirBaloes: false });
+    d.quartos = window.DiamondProposta.quartos(u,d.quartos);
+    const vt = window.DiamondProposta.valorComQuartos(baseQuartos,u,d.quartos);
     if (!parcelasOpts.includes(d.parcelas)) d.parcelas = parcelaDefault; // sanitiza se a opção mudou
     // entradaCustom: o corretor digitou um valor em R$ que não é nenhum dos botões.
     // Só sanitiza contra as opções quando NÃO é personalizada (senão apagaria o que ele digitou).
@@ -854,7 +878,8 @@
       <div class="sim">
         <a class="volta" href="#/home">← espelho</a>
         <div class="painel uni-painel">
-          <div class="sim-foto${fotoDe(u, cfg) ? ' zoomavel' : ''}" data-fotoid="${fotoDe(u, cfg)}">${fotoDe(u, cfg) ? '<span class="foto-zoom">🔍</span>' : ''}</div>
+          ${quartosHTML(u,d.quartos)}
+          ${plantaHTML(u,cfg,d.quartos)}
           <h2 class="dv-unit-title">${uiIcon('key')}Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
           <div class="linhas">
             <div><span>Andar</span><b>${u.andar === 0 ? 'Térreo' : u.andar + 'º'}</b></div>
@@ -911,7 +936,8 @@
     };
     ativarFotos();
     // planta clicável → abre o visor com zoom (o mesmo da galeria do prédio)
-    const fotoUn = fotoDe(u, cfg);
+    ligarQuartos(q=>{if(d.emitindo||d.quartos===q)return;d.quartos=q;d.propostaId=null;d.criadoEm=null;vUnidade(id);});
+    const fotoUn = fotoDe(u, cfg,d.quartos);
     if (fotoUn) { const sf = $('.sim-foto'); if (sf) { sf.style.cursor = 'zoom-in'; sf.onclick = () => abrirVisor([fotoUn], 0); } }
     // trocar de cliente = proposta NOVA (não sobrescreve a anterior no Histórico)
     $('#u-cliente').oninput = (e) => { d.cliente = e.target.value; d.propostaId = null; d.criadoEm = null; };
@@ -1006,6 +1032,7 @@
         unidadeId: u.id, unidade: u.unidade, area: u.area, vaga: d.vaga || null,
         cliente: d.cliente.trim(), clienteTel: d.clienteTel.trim(),
         corretor: user.nome, corretorUsuario: user.usuario, corretorTel: user.telefone || '', corretorPapel: user.papel, corretorEmpresa: user.empresa || '',
+        ...dadosQuartos(u,cfg,d.quartos,baseQuartos),
         neg: vt, forma: comPlano ? 'perso' : 'avista', formaLabel: comPlano ? 'Personalizado' : 'À vista',
         inp: comPlano
           // balQtde vai o EFETIVO (0 quando o corretor diluiu): o PDF, o WhatsApp e o
@@ -1019,8 +1046,9 @@
     const assina = () => `\n\nQualquer dúvida, estou à disposição!\n${user.nome}${user.telefone ? ' — ' + user.telefone : ''}`;
     const msgSimples = () => saud() + `Segue a proposta da unidade ${u.unidade} do Edifício Diamond — Domo Construtora:\n\n`
       + `• Unidade ${u.unidade} · ${u.andar === 0 ? 'Térreo' : u.andar + 'º andar'} · ${u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : ''}\n`
+      + (d.quartos ? `• Apartamento: ${quartosLabel(d.quartos)}${d.quartos===2?' · acréscimo de '+fmt(15000):''}\n` : '')
       + (d.vaga ? `• Vaga: ${vagaTexto(d.vaga)}\n` : '')
-      + `• Valor: ${u.precoBase ? fmt(vt) + (temDesc ? ' (de ' + fmt(valorTabela(u, cfg)) + ' · −' + pct(u.desconto) + ')' : '') : 'sob consulta'}` + assina();
+      + `• Valor: ${u.precoBase ? fmt(vt,2) + (temDesc ? ' (de ' + fmt(valorTabela(u, cfg)) + ' · −' + pct(u.desconto) + ')' : '') : 'sob consulta'}` + assina();
     const msgComPlano = (p, pln) => saud() + `Proposta da unidade ${u.unidade} — Edifício Diamond:\n\n${resumoTexto(pln, p)}` + assina();
 
     const preparar = async () => {
@@ -1053,23 +1081,29 @@
         {rotulo:'Parcela final',valor:fmt(pln.fin,2)+' · mês '+pln.chavesMes},
         {rotulo:'Correção',valor:p.inp.indice||'INCC'}
       ]:[{rotulo:'Pagamento à vista',valor:fmt(p.neg,2)}]};
+      p.resumoEnvio.itens.unshift(...itensQuartos(p));
       STORE.salvarProposta(p); // rastreio: fica no Histórico com corretor + empresa
       if (comPlano) { const g = await gerarPDF(p, pln, cfg); return { ...g, proposta: p, msg: msgComPlano(p, pln) }; }
-      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga); return { ...g, proposta: p, msg: msgSimples()+'\nVálida até '+fmtData(p.resumoEnvio.validade) };
+      const g = await gerarPropostaSimples(u, cfg, d.cliente, d.clienteTel, user, d.vaga, p); return { ...g, proposta: p, msg: msgSimples()+'\nVálida até '+fmtData(p.resumoEnvio.validade) };
     };
 
+    const travarQuartos = ativo => {d.emitindo=ativo;$$('[data-quartos]').forEach(b=>b.disabled=ativo);};
     $('#u-pdf').onclick = async () => {
+      if(d.emitindo)return;
+      travarQuartos(true);
       const b = $('#u-pdf'), label = b.textContent;
       b.disabled = true; b.textContent = 'Gerando…';
       try { const r = await preparar(); if (r) { await baixarPropostaArquivada(r.doc,r.nome,r.proposta); toast('PDF salvo no CRM e baixado ✓'); } }
       catch (e) { toast('Não foi possível gerar o PDF: ' + e.message, true); }
-      finally { b.disabled = false; b.textContent = label; }
+      finally { travarQuartos(false); b.disabled = false; b.textContent = label; }
     };
     // WhatsApp por LINK: gera o PDF → hospeda na plataforma → manda saudação + link (o cliente clica e abre o PDF)
     $('#u-whats').onclick = async () => {
+      if(d.emitindo)return;
       if (!d.cliente.trim()) { toast('Preencha o nome do cliente.', true); return; }
       if (!d.clienteTel.trim()) { toast('Preencha o telefone do cliente para enviar no WhatsApp.', true); return; }
       const win = window.open('about:blank', '_blank'); // pré-abre no clique (evita bloqueio de popup depois do await)
+      travarQuartos(true);
       const btn = $('#u-whats'); btn.disabled = true; btn.textContent = 'gerando…';
       try {
         const r = await preparar(); if (!r) { if (win) win.close(); return; }
@@ -1083,11 +1117,12 @@
         if (win) win.location.href = url; else window.open(url, '_blank');
         toast('WhatsApp aberto' + (cr && cr.acao === 'novo' ? ' · cliente salvo no CRM 👥' : cr && cr.acao === 'atualizado' ? ' · CRM atualizado 👥' : '') + ' ✓');
       } catch (e) { if (win) win.close(); toast('Erro ao preparar o link: ' + e.message, true); }
-      finally { btn.disabled = false; btn.textContent = 'Enviar proposta no WhatsApp'; }
+      finally { travarQuartos(false); btn.disabled = false; btn.textContent = 'Enviar proposta no WhatsApp'; }
     };
     // Solicitar reserva → WhatsApp da Domo (dono) com unidade + cliente + corretor. Não muda o status (a Domo confirma e reserva).
     $('#u-reserva').onclick = async (ev) => {
       if (!d.cliente.trim()) { toast('Preencha o nome do cliente para solicitar a reserva.', true); return; }
+      const quartosReserva=d.quartos;
       const rb = ev.currentTarget; if (rb.disabled) return; rb.disabled = true; // trava contra duplo-toque (evita lead/mensagem duplicados)
       // registra o pedido: se JÁ existe um de outro corretor, avisa antes de mandar (dois no mesmo apto = briga)
       try {
@@ -1100,7 +1135,8 @@
         '🔖 *Solicitação de reserva* — Edifício Diamond',
         '',
         `*Unidade:* ${u.unidade}${u.andar != null ? ' · ' + (u.andar === 0 ? 'Térreo' : u.andar + 'º andar') : ''}${u.area ? ' · ' + u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : ''}`,
-        `*Valor:* ${u.precoBase ? fmt(vt) : 'a combinar'}`,
+        ...(quartosReserva?[`*Apartamento:* ${quartosLabel(quartosReserva)}${quartosReserva===2?' · acréscimo de '+fmt(15000):''}`]:[]),
+        `*Valor:* ${u.precoBase ? fmt(vt,2) : 'a combinar'}`,
         `*Cliente:* ${d.cliente.trim()}${d.clienteTel.trim() ? ' · ' + d.clienteTel.trim() : ''}`,
         `*Corretor:* ${user.nome}${user.empresa ? ' · ' + user.empresa : ''}`,
         '',
@@ -1153,19 +1189,23 @@
         const p = STORE.getPropostas().find((x) => x.id === propostaId);
         if (p) {
           sim.inp = { ...sim.inp, ...p.inp, cliente: p.cliente || '', clienteTel: p.clienteTel || '' };
+          sim.inp.quartos = window.DiamondProposta.quartos(u,p.quartos ?? p.inp?.quartos);
           sim.vaga = p.vaga || null;
           sim.criadoEm = p.criadoEm; // preserva a data original da proposta ao re-salvar
           sim.original = p;
           // Propostas antigas não registraram a versão. Preservar o valor sem atribuir a tabela atual.
-          sim.tabela = p.tabela ? {...p.tabela, key:'salva', neg:p.neg} : {key:'salva',versao:'',dataTabela:'',neg:p.neg,valorTabela:null,desconto:null,origem:'sem_registro',observacao:'Esta proposta não guardou a versão da tabela. O valor salvo foi preservado.'};
+          const baseSalva = p.valorBaseQuartos ?? (p.neg - window.DiamondProposta.adicionalQuartos(u,sim.inp.quartos));
+          sim.tabela = p.tabela ? {...p.tabela, key:'salva', neg:baseSalva} : {key:'salva',versao:'',dataTabela:'',neg:baseSalva,valorTabela:null,desconto:null,origem:'sem_registro',observacao:'Esta proposta não guardou a versão da tabela. O valor salvo foi preservado.'};
           if (p.corretor) sim.corretorKey = (p.corretorUsuario || '') + '|' + p.corretor; // reabre já no corretor da proposta
         }
       }
     }
     const inp = sim.inp;
+    inp.quartos = window.DiamondProposta.quartos(u,inp.quartos);
     let neg, plano, comissao, liquido;
     const calcular = () => {
-      neg = Number(sim.tabela?.neg || 0);
+      const base = Number(sim.tabela?.neg || 0);
+      neg = base ? window.DiamondProposta.valorComQuartos(base,u,inp.quartos) : 0;
       plano = PLANO.calc({
         arredondamento: inp.arredondamento,
         neg, forma: inp.forma, entradaPct: inp.entradaPct / 100, finalPct: inp.finalPct / 100,
@@ -1238,10 +1278,11 @@
         <a class="volta" href="#/home">← espelho</a>
         <div class="sim-grid">
           <div class="painel">
-            <div class="sim-foto${fotoDe(u, cfg) ? ' zoomavel' : ''}" data-fotoid="${fotoDe(u, cfg)}">${fotoDe(u, cfg) ? '<span class="foto-zoom">🔍</span>' : ''}</div>
+            ${quartosHTML(u,inp.quartos)}
+            ${plantaHTML(u,cfg,inp.quartos)}
             ${STORE.isAdmin() ? `<div class="foto-acao">
               <input type="file" id="s-foto" accept="image/jpeg,image/png,image/*" style="display:none">
-              <button class="btn-mini" id="s-fotobtn">📷 Foto do tipo ${tipoDe(u)}${tipoDe(u) === 'LOJA' ? '' : ' — vale para todas as unidades final ' + tipoDe(u)}</button>
+              <button class="btn-mini" id="s-fotobtn">📷 Planta ${quartosLabel(inp.quartos)} do tipo ${tipoDe(u)}${tipoDe(u) === 'LOJA' ? '' : ' — vale para todas as unidades final ' + tipoDe(u)}</button>
               <button class="btn-mini" id="s-girar" title="girar 90°">↻ girar imagem</button>
             </div>` : ''}
             <h2 class="dv-unit-title">${uiIcon('key')}Unidade ${esc(u.unidade)} ${u.status !== 'Disponível' ? `<span class="badge ${u.status === 'Vendido' ? 'b-red' : 'b-warn'}">${u.status}</span>` : ''}</h2>
@@ -1296,7 +1337,8 @@
         </div>
       </div>`;
     ativarFotos();
-    { const fz = fotoDe(u, cfg); const sf = $('.sim-foto'); if (fz && sf) { sf.style.cursor = 'zoom-in'; sf.onclick = () => abrirVisor([fz], 0); } }
+    ligarQuartos(q=>{inp.quartos=q;_sujo=true;vSim(unidadeId,propostaId);});
+    { const fz = fotoDe(u, cfg,inp.quartos); const sf = $('.sim-foto'); if (fz && sf) { sf.style.cursor = 'zoom-in'; sf.onclick = () => abrirVisor([fz], 0); } }
 
     const fbtn = $('#s-fotobtn');
     if (fbtn) {
@@ -1305,14 +1347,14 @@
         const tipoAntes = tipoDe(u); // revalida contexto pós-await (blueprint)
         const file = e.target.files[0]; if (!file) return;
         toast('Enviando foto…');
-        await STORE.anexarFotoTipo(tipoAntes, file);
+        await STORE.anexarFotoTipo(tipoAntes, file,inp.quartos);
         toast('Foto do tipo ' + tipoAntes + ' salva ✓ (vale para todas)');
         vSim(unidadeId, propostaId);
       };
       $('#s-girar').onclick = async () => {
         const tipoAntes = tipoDe(u);
         toast('Girando imagem…');
-        const ok = await STORE.girarFotoTipo(tipoAntes);
+        const ok = await STORE.girarFotoTipo(tipoAntes,inp.quartos);
         toast(ok ? 'Imagem girada ✓' : 'Sem imagem para girar', !ok);
         vSim(unidadeId, propostaId);
       };
@@ -1360,6 +1402,7 @@
       const c = resolveCorr(); // corretor escolhido no seletor (resolvido na hora de salvar/gerar)
       return {
         ...sim.original,
+        ...dadosQuartos(u,cfg,inp.quartos,Number(sim.tabela?.neg||0)),
         tabela: {...sim.tabela},
         id: sim.propostaId || ('p-' + Date.now() + '-' + u.unidade), vaga: sim.vaga || null,
         unidadeId: u.id, unidade: u.unidade, area: u.area,
@@ -1424,6 +1467,7 @@
   function resumoDoPlano(p,plano){
     const validade=new Date((p.inp.dataProposta||STORE.diaLocalISO(p.criadoEm))+'T12:00:00');validade.setDate(validade.getDate()+7);
     return{modalidade:plano.formaLabel,validade:STORE.ymdLocal(validade),itens:[
+      ...itensQuartos(p),
       {rotulo:'Entrada',valor:fmt(plano.ent,2)},
       {rotulo:'Parcelas mensais',valor:PLANO.resumoMensais(plano,fmt)+' (valores nominais)'},
       {rotulo:'Balões',valor:plano.balQtde?plano.balQtde+' × '+fmt(plano.balValor,2):'Sem balões'},
@@ -1433,8 +1477,10 @@
 
   // Recupera a planta antes de liberar qualquer PDF. A segunda tentativa ignora
   // o cache, incluindo imagens antigas que existem mas não podem ser decodificadas.
-  async function plantaParaProposta(u, cfg) {
-    const fileId = u && fotoDe(u, cfg);
+  async function plantaParaProposta(u, cfg, proposta = {}) {
+    const quartos = window.DiamondProposta.quartos(u, proposta.quartos);
+    const fileId = proposta.fotoPlantaId || (u && window.DiamondProposta.fotoPlanta(u, cfg, quartos));
+    if (!fileId && quartos === 2) return { pendente: 'Planta de 2 quartos a cadastrar' };
     if (!fileId) throw new Error('Planta não cadastrada para esta unidade. Cadastre a imagem em Configurações antes de gerar a proposta.');
     for (let tentativa = 0; tentativa < 2; tentativa++) {
       try {
@@ -1452,6 +1498,17 @@
       } catch (e) { /* mais uma tentativa, diretamente na nuvem */ }
     }
     throw new Error('Não foi possível carregar a planta desta unidade. A proposta não foi gerada. Confira a conexão e tente novamente; se persistir, confira a imagem em Configurações.');
+  }
+
+  function fichaQuartosPDF(u, proposta = {}) {
+    const quartos = window.DiamondProposta.quartos(u, proposta.quartos);
+    if (!quartos) return [];
+    const adicional = proposta.acrescimoQuartos ?? window.DiamondProposta.adicionalQuartos(u, quartos);
+    return [[['Apartamento', quartos === 2 ? '2 quartos' : '1 quarto'], ['Acréscimo', adicional ? fmt(adicional, 2) : 'Sem acréscimo']]];
+  }
+  function tituloPlantaPDF(u, proposta = {}) {
+    const quartos = window.DiamondProposta.quartos(u, proposta.quartos);
+    return `Unidade ${u?.unidade || proposta.unidade} · planta ilustrada${quartos ? ' · ' + (quartos === 2 ? '2 quartos' : '1 quarto') : ''}`;
   }
 
   // ---------- PDF ----------
@@ -1548,6 +1605,7 @@
     const area = p.area ? ' · ' + p.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '';
     const fichas = [
       ...(p.tabela ? [[['Tabela escolhida',p.tabela.versao||'Não registrada'],['Data da tabela',p.tabela.dataTabela||'Não registrada']]] : []),
+      ...fichaQuartosPDF(STORE.unidadePorId(p.unidadeId) || { unidade: p.unidade }, p),
       ...(p.inp?.semComissao ? [[['Comissão','Sem comissão'],['Condição','Nesta proposta']]] : []),
       ...(p.vaga ? [[['Vaga', p.vaga.codigo], ['Pavimento', p.vaga.pavimento]]] : []),
       [['Cliente', p.cliente || '—'], ['Telefone', p.clienteTel || '—']],
@@ -1629,7 +1687,14 @@
     y += 30;
 
     {
-      const { foto, durl, dim } = await plantaParaProposta(STORE.unidadePorId(p.unidadeId), cfg);
+      const unidade = STORE.unidadePorId(p.unidadeId) || { unidade: p.unidade };
+      const planta = await plantaParaProposta(unidade, cfg, p);
+      if (planta.pendente) {
+        if (y + 35 > H - 30) { doc.addPage(); pag++; cab(pag); y = CTOP; }
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(115, 115, 115);
+        doc.text(planta.pendente, M, y + 14); y += 35;
+      } else {
+      const { foto, durl, dim } = planta;
       // Insere após o texto; usa outra página apenas se a planta não couber.
       const TITULO_H = 22, RESPIRO = 14, RODAPE = 30;
       const maxW = W - 2 * M;
@@ -1639,10 +1704,11 @@
       if (y + 10 + TITULO_H + dh + RESPIRO > H - RODAPE) { doc.addPage(); pag++; cab(pag); y = CTOP; }
       y += 10;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
-      doc.text(`Unidade ${p.unidade} · planta ilustrada`, M, y);
+      doc.text(tituloPlantaPDF(unidade, p), M, y);
       y += RESPIRO;
       doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
       y += dh;
+      }
     }
 
     // (a logomarca da imobiliária agora sai centralizada abaixo da barra do
@@ -1684,7 +1750,7 @@
   }
 
   // ---------- proposta simples (só o valor da unidade — usada pelo corretor) ----------
-  async function gerarPropostaSimples(u, cfg, cliente, clienteTel, user, vaga = null) {
+  async function gerarPropostaSimples(u, cfg, cliente, clienteTel, user, vaga = null, proposta = {}) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const W = 595, H = 842, M = 40, CX = W / 2, LIME = [228, 247, 43];
@@ -1698,13 +1764,14 @@
       doc.addImage(logoImob.dataUrl, logoImob.fmt, CX - lw / 2, y - 6, lw, lh);
       y += 40;
     }
-    const vt = valorNegociadoTabela(u, cfg); // preço EFETIVO (aplica desconto da unidade)
+    const vt = Number.isFinite(proposta.neg) ? proposta.neg : window.DiamondProposta.valorComQuartos(valorNegociadoTabela(u, cfg), u, proposta.quartos);
     const temDesc = (u.desconto || 0) > 0;
     const areaS = u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—';
     const prop = new Date();
     const validade = new Date(prop.getTime()); validade.setDate(validade.getDate() + 7);
     const fichas = [
       ...(vaga ? [[['Vaga', vaga.codigo], ['Pavimento', vaga.pavimento]]] : []),
+      ...fichaQuartosPDF(u, proposta),
       [['Cliente', cliente || '—'], ['Telefone', clienteTel || '—']],
       [['Corretor', (user && user.nome) || '—'], ['Telefone', (user && user.telefone) || '—']],
       [['Unidade', String(u.unidade)], ['Andar', u.andar === 0 ? 'Térreo' : u.andar + 'º']],
@@ -1731,21 +1798,27 @@
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90, 96, 20);
     doc.text('VALOR DA UNIDADE', M + 18, y + 19);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(23); doc.setTextColor(26, 26, 26);
-    doc.text(u.precoBase ? fmt(vt) : 'Sob consulta', M + 18, y + 43);
+    doc.text(u.precoBase ? fmt(vt, 2) : 'Sob consulta', M + 18, y + 43);
     y += 52 + 10;
     doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(115, 115, 115);
     doc.text(`Proposta válida por 7 dias — até ${fmtData(validade)}.`, M, y); y += 18;
     // Mantém a planta legível; abre uma página se não houver espaço suficiente.
     {
-      const { foto, durl, dim } = await plantaParaProposta(u, cfg);
+      const planta = await plantaParaProposta(u, cfg, proposta);
+      if (planta.pendente) {
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(115, 115, 115);
+        doc.text(planta.pendente, M, y + 14); y += 35;
+      } else {
+      const { foto, durl, dim } = planta;
       const maxW = W - 2 * M;
       if (H - y - 90 < 180) { doc.addPage(); drawBanda(doc, cfg, 'PROPOSTA', doc.getNumberOfPages(), logos); y = 100; }
       const escala = Math.min(maxW / dim.w, (H - y - 90) / dim.h);
       const dw = dim.w * escala, dh = dim.h * escala;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
-      doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 14;
+      doc.text(tituloPlantaPDF(u, proposta), M, y); y += 14;
       doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
       y += dh;
+      }
     }
     // (logo da imobiliária agora sai grande, centralizada abaixo da banda)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(174, 174, 178);
@@ -1773,6 +1846,7 @@
     const areaS = u.area ? u.area.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' m²' : '—';
     const fichas = [
       ...(opts.vaga ? [[['Vaga', opts.vaga.codigo], ['Pavimento', opts.vaga.pavimento]]] : []),
+      ...fichaQuartosPDF(u, opts),
       [['Cliente', cliente || '—'], ['Telefone', tel || '—']],
       [['Corretor', (user && user.nome) || '—'], ['Telefone', (user && user.telefone) || '—']],
       [['Unidade', String(u.unidade)], ['Andar', u.andar === 0 ? 'Térreo' : u.andar + 'º']],
@@ -1796,10 +1870,10 @@
     doc.setFillColor(LIME[0], LIME[1], LIME[2]); doc.rect(M, y, 4, 52, 'F');
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90, 96, 20);
     const comDesc = s.descPct > 0;
-    doc.text(comDesc ? 'VALOR (' + s.descTxt + '% DE DESCONTO)' : 'VALOR DE TABELA', M + 18, y + 19);
+    doc.text(s.adicionalQuartos ? 'VALOR COM 2 QUARTOS' : comDesc ? 'VALOR (' + s.descTxt + '% DE DESCONTO)' : 'VALOR DE TABELA', M + 18, y + 19);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(23); doc.setTextColor(26, 26, 26);
-    doc.text(fmt(comDesc ? s.valor : s.base), M + 18, y + 43);
-    if (comDesc) { // valor de tabela "de R$ X" riscado, no canto direito
+    doc.text(fmt(s.valor, 2), M + 18, y + 43);
+    if (comDesc && !s.adicionalQuartos) { // valor de tabela "de R$ X" riscado, no canto direito
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(120, 120, 120);
       const deTxt = 'de ' + fmt(s.base); const tw = doc.getTextWidth(deTxt); const rx = W - M - 18;
       doc.text(deTxt, rx, y + 32, { align: 'right' });
@@ -1817,7 +1891,9 @@
       doc.setFont('helvetica', forte ? 'bold' : 'normal'); doc.setTextColor(26, 26, 26); doc.text(val, W - M, y, { align: 'right' }); y += 21;
     };
     const idx = cfg.indice || 'INCC';
-    if (comDesc) { linhaC('Desconto ' + s.descTxt + '% (sobre o valor de tabela)', '- ' + fmt(s.desc)); linhaC('Valor negociado', fmt(s.valor), true); }
+    if (comDesc) linhaC('Desconto ' + s.descTxt + '% (sobre o valor ' + (s.adicionalQuartos ? 'de 1 quarto' : 'de tabela') + ')', '- ' + fmt(s.desc));
+    if (s.adicionalQuartos) linhaC('Acréscimo de 2 quartos', fmt(s.adicionalQuartos));
+    if (comDesc || s.adicionalQuartos) linhaC('Valor negociado', fmt(s.valor), true);
     if (s.nParc) linhaC(s.nParc + 'x sem juros', fmt(s.pParc, 2) + '/mês', true);
     if (s.nTot) { const nm = s.nFix + ' + ' + s.nCor; linhaC(nm + ' · parcela' + (s.nFix > 1 ? 's ' : ' ') + scpFaixa(1, s.nFix, ' a ') + ' (fixas)', fmt(s.pNom, 2) + '/mês', true); linhaC(nm + ' · parcela' + (s.nCor > 1 ? 's ' : ' ') + scpFaixa(s.nFix + 1, s.nTot, ' a ') + ' (' + idx + ')', fmt(s.pCor1, 2) + (s.nCor > 1 ? ' a ' + fmt(s.pCorN, 2) : '') + '/mês', true); }
     if (s.corrPct > 0) { linhaC('Corretagem ' + scpPct(s.corrPct) + '%', '- ' + fmt(s.corrValor)); linhaC('Valor líquido (Domo recebe)', fmt(s.liquido), true); }
@@ -1831,15 +1907,22 @@
     doc.text(wrap, M, y); y += wrap.length * 11 + 10;
     // Mantém a planta legível; abre uma página se não houver espaço suficiente.
     {
-      const { foto, durl, dim } = await plantaParaProposta(u, cfg);
+      const planta = await plantaParaProposta(u, cfg, opts);
+      if (planta.pendente) {
+        if (H - y - 90 < 35) { doc.addPage(); drawBanda(doc, cfg, 'PROPOSTA SCP', doc.getNumberOfPages(), logos); y = 100; }
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(115, 115, 115);
+        doc.text(planta.pendente, M, y + 14); y += 35;
+      } else {
+      const { foto, durl, dim } = planta;
       const maxW = W - 2 * M;
       if (H - y - 90 < 180) { doc.addPage(); drawBanda(doc, cfg, 'PROPOSTA SCP', doc.getNumberOfPages(), logos); y = 100; }
       const escala = Math.min(maxW / dim.w, (H - y - 90) / dim.h);
       const dw = dim.w * escala, dh = dim.h * escala;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(26, 26, 26);
-      doc.text(`Unidade ${u.unidade} · planta ilustrada`, M, y); y += 14;
+      doc.text(tituloPlantaPDF(u, opts), M, y); y += 14;
       doc.addImage(durl, foto.mime.includes('png') ? 'PNG' : 'JPEG', M + (maxW - dw) / 2, y, dw, dh);
       y += dh;
+      }
     }
     // (logo da imobiliária agora sai grande, centralizada abaixo da banda)
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(174, 174, 178);
@@ -2084,7 +2167,7 @@
 
   function resumoTexto(plano, p) {
     const perso = plano.forma === 'perso';
-    const li = [];
+    const li = itensQuartos(p).map(i=>'• '+i.rotulo+': '+i.valor);
     if(p.vaga)li.push('• Vaga: '+vagaTexto(p.vaga));
     li.push(`• Valor: ${fmt(plano.neg,2)}`);
     li.push(`• Entrada${perso ? ' (' + pctStr(p.inp.entradaPct) + ')' : ''}: ${fmt(plano.ent,2)} (${fmtData(plano.cronograma[0] && plano.cronograma[0].data)})`);
@@ -2737,15 +2820,15 @@
     $('#aba-corpo').innerHTML = `
       <section id="precos-tabela"></section>
       <details class="bloco-fotos"><summary>Fotos por tipo de planta <span class="nota" style="font-weight:400">— configura uma vez; valem para todas as unidades do final</span></summary>
-      <div class="tipos-strip">${['01', '02', '03', '04', '05', '06', '07', '08', 'LOJA'].map((t) => `
+      <div class="tipos-strip">${['01', '02', '03', '04', '05', '06', '07', '08', 'LOJA'].flatMap(t=>(t==='LOJA'?[1]:[1,2]).map(q=>({t,q}))).map(({t,q}) => `
         <div class="tipo-slot">
-          <span class="mini-foto grande" data-fotoid="${(cfg.fotosTipo || {})[t] || ''}"></span>
-          <span class="tipo-lab">${t}</span>
+          <span class="mini-foto grande" data-fotoid="${(cfg[q===2?'fotosTipo2Quartos':'fotosTipo'] || {})[t] || ''}"></span>
+          <span class="tipo-lab">${t}${t==='LOJA'?'':' · '+quartosLabel(q)}</span>
           <span class="tipo-btns">
-            <button class="btn-mini t-fotobtn" data-tipo="${t}">📷</button>
-            <button class="btn-mini t-girar" data-tipo="${t}" title="girar 90°">↻</button>
+            <button class="btn-mini t-fotobtn" data-tipo="${t}" data-quartos-foto="${q}">📷</button>
+            <button class="btn-mini t-girar" data-tipo="${t}" data-quartos-foto="${q}" title="girar 90°">↻</button>
           </span>
-          <input type="file" accept="image/*" class="t-file" data-tipo="${t}" style="display:none">
+          <input type="file" accept="image/*" class="t-file" data-tipo="${t}" data-quartos-foto="${q}" style="display:none">
         </div>`).join('')}
       </div></details>
       <div class="un-busca"><input id="un-q" placeholder="🔎 buscar unidade (nº ou andar)" autocomplete="off"><select id="un-status"><option value="">Todos os status</option><option value="Disponível">Disponíveis</option><option value="Reservado">Reservadas</option><option value="Vendido">Vendidas</option></select><span id="un-cont" class="nota"></span></div>
@@ -2832,14 +2915,14 @@
     { const s = $('#un-status'); if (s) s.onchange = filtrarUn; }
     contarUn();
     $$('.t-fotobtn').forEach((b) => {
-      b.onclick = () => $('.t-file[data-tipo="' + b.dataset.tipo + '"]').click();
+      b.onclick = () => $('.t-file[data-tipo="' + b.dataset.tipo + '"][data-quartos-foto="'+b.dataset.quartosFoto+'"]').click();
     });
     $$('.t-file').forEach((inp) => {
       inp.onchange = async (e) => {
         const tipo = inp.dataset.tipo; // revalida contexto pós-await (blueprint)
         const file = e.target.files[0]; if (!file) return;
         toast('Enviando foto do tipo ' + tipo + '…');
-        await STORE.anexarFotoTipo(tipo, file);
+        await STORE.anexarFotoTipo(tipo, file,Number(inp.dataset.quartosFoto));
         toast('Foto do tipo ' + tipo + ' salva ✓');
         vAdmin('unidades');
       };
@@ -2848,7 +2931,7 @@
       b.onclick = async () => {
         const tipo = b.dataset.tipo;
         toast('Girando…');
-        const ok = await STORE.girarFotoTipo(tipo);
+        const ok = await STORE.girarFotoTipo(tipo,Number(b.dataset.quartosFoto));
         toast(ok ? 'Imagem do tipo ' + tipo + ' girada ✓' : 'Tipo ' + tipo + ' ainda sem imagem', !ok);
         vAdmin('unidades');
       };
@@ -3970,7 +4053,8 @@
     const corrPct = Math.max(0, Math.min(100, scpNum(o.corr) || 0));
     const descPct = Math.max(0, Math.min(100, scpNum(o.descPct) || 0));
     const desc = base * descPct / 100;            // DESCONTO digitado, sobre o valor de tabela
-    const valor = base - desc;                    // valor negociado (o cliente paga isto; o parcelamento incide sobre ele)
+    const adicionalQuartos = o.quartos === 2 ? 15000 : 0;
+    const valor = Math.round((base - desc + adicionalQuartos + Number.EPSILON)*100)/100;                    // valor negociado (o cliente paga isto; o parcelamento incide sobre ele)
     const corrValor = valor * corrPct / 100;      // corretagem sobre o valor negociado
     const liquido = valor - corrValor;            // corretagem DEDUZ do que a Domo recebe
     const incc = (cfg && cfg.correcaoMensal) || 0;
@@ -3982,28 +4066,31 @@
     const erro = (o.p12 && !nParc) ? 'Digite a quantidade de parcelas sem juros (de 1 a 240).'
       : (o.p2412 && !nTot) ? 'Digite as duas quantidades do parcelamento com correção (de 1 a 240 cada).'
       : ((o.p12 || o.p2412) && valor <= 0) ? 'Com esse desconto não sobra valor para parcelar.' : '';
-    return { base, descPct, descTxt: scpPct(descPct), desc, valor, corrPct, corrValor, liquido,
+    return { base, adicionalQuartos, descPct, descTxt: scpPct(descPct), desc, valor, corrPct, corrValor, liquido,
       nParc, pParc: nParc ? valor / nParc : 0, nFix, nCor, nTot, pNom,
       pCor1: pNom * (1 + incc), pCorN: pNom * Math.pow(1 + incc, nCor || 0),
-      marcado: descPct > 0 || o.p12 || o.p2412 || corrPct > 0, erro };
+      marcado: adicionalQuartos > 0 || descPct > 0 || o.p12 || o.p2412 || corrPct > 0, erro };
   }
   function scpProposta(u, base, opcoes, cfg, usr) {
     const nome = String(opcoes.cliente || '').trim();
     const normalizado = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    opcoes={...opcoes,quartos:window.DiamondProposta.quartos(u,opcoes.quartos)};
     const s = scpCalcular(base, opcoes, cfg);
     const validade=new Date();validade.setDate(validade.getDate()+7);
-    const itens=[];
+    const dq=dadosQuartos(u,cfg,opcoes.quartos,Math.round((base-s.desc+Number.EPSILON)*100)/100);
+    const itens=itensQuartos({...dq,unidade:u.unidade});
     if(s.nParc)itens.push({rotulo:'Opção sem juros',valor:s.nParc+' × '+fmt(s.pParc,2)});
     if(s.nTot)itens.push({rotulo:'Opção com correção',valor:s.nFix+' parcelas fixas de '+fmt(s.pNom,2)+' + '+s.nCor+' parcelas corrigidas por '+(cfg.indice||'INCC')});
     if(!s.nParc&&!s.nTot)itens.push({rotulo:'À vista',valor:fmt(s.valor,2)});
     return {
       resumoEnvio:{modalidade:'SCP',validade:STORE.ymdLocal(validade),itens},
-      id: 'p-scp-' + u.unidade + '-' + normalizado,
+      id: 'p-scp-' + u.unidade + '-' + normalizado + (opcoes.quartos===2?'-2q':''),
+      ...dq,
       unidadeId: u.id, unidade: u.unidade, area: u.area, vaga: opcoes.vaga || null,
       cliente: nome, clienteTel: String(opcoes.tel || '').trim(),
       corretor: usr.nome, corretorUsuario: usr.usuario, corretorTel: usr.telefone || '', corretorPapel: usr.papel, corretorEmpresa: usr.empresa || '',
       neg: s.valor, forma: 'scp', formaLabel: 'SCP',
-      inp: { forma: 'scp', descPct: s.descPct, p12: !!opcoes.p12, nParc: s.nParc, p2412: !!opcoes.p2412, nFix: s.nFix, nCor: s.nCor, corr: opcoes.corr },
+      inp: { forma: 'scp', quartos:opcoes.quartos, descPct: s.descPct, p12: !!opcoes.p12, nParc: s.nParc, p2412: !!opcoes.p2412, nFix: s.nFix, nCor: s.nCor, corr: opcoes.corr },
       criadoEm: new Date().toISOString(),
     };
   }
@@ -4014,6 +4101,7 @@
     if (!s.marcado) return '<div class="nota">Preencha as opções acima para montar o cálculo.</div>';
     const L = [`<div><span>Valor de tabela</span><b>${fmt(s.base)}</b></div>`];
     if (s.descPct > 0) { L.push(`<div><span>Desconto ${s.descTxt}%</span><b class="txt-desc">− ${fmt(s.desc)}</b></div>`); L.push(`<div><span>Valor negociado</span><b>${fmt(s.valor)}</b></div>`); }
+    if(s.adicionalQuartos)L.push(`<div><span>2 quartos · acréscimo</span><b>+ ${fmt(s.adicionalQuartos)}</b></div>`);
     if (s.nParc) L.push(`<div><span>${s.nParc}x sem juros</span><b>${fmt(s.pParc, 2)}/mês</b></div>`);
     if (s.nTot) { L.push(`<div><span>${s.nFix}+${s.nCor} · ${scpFaixa(1, s.nFix, '–')} (fixas)</span><b>${fmt(s.pNom, 2)}/mês</b></div>`); L.push(`<div><span>${s.nFix}+${s.nCor} · ${scpFaixa(s.nFix + 1, s.nTot, '–')} (${idx})</span><b>${fmt(s.pCor1, 2)}${s.nCor > 1 ? ' → ' + fmt(s.pCorN, 2) : ''}/mês</b></div>`); }
     if (s.corrPct > 0) { L.push(`<div><span>Corretagem ${scpPct(s.corrPct)}%</span><b class="txt-desc">− ${fmt(s.corrValor)}</b></div>`); L.push(`<div><span>Líquido (Domo recebe)</span><b>${fmt(s.liquido)}</b></div>`); }
@@ -4021,13 +4109,14 @@
     if (s.nTot) notas.push(scpNotaCor(s, idx) + ' (estimativa pela taxa mensal atual).');
     if (s.corrPct > 0) notas.push('A corretagem deduz do valor que a Domo recebe.');
     // valor em DESTAQUE: com desconto mostra o valor negociado grande (+ tabela riscado); senão o valor de tabela
-    const destaque = `<div class="scp-destaque"><span>${s.descPct > 0 ? 'VALOR · com ' + s.descTxt + '% de desconto' : 'VALOR DE TABELA'}</span><b>${fmt(s.descPct > 0 ? s.valor : s.base)}</b>${s.descPct > 0 ? '<s>de ' + fmt(s.base) + '</s>' : ''}</div>`;
+    const destaque = `<div class="scp-destaque"><span>${s.adicionalQuartos?'VALOR · 2 QUARTOS':s.descPct > 0 ? 'VALOR · com ' + s.descTxt + '% de desconto' : 'VALOR DE TABELA'}</span><b>${fmt(s.valor)}</b>${s.descPct > 0 && !s.adicionalQuartos ? '<s>de ' + fmt(s.base) + '</s>' : ''}</div>`;
     return (s.erro ? `<div class="nota scp-erro">⚠ ${esc(s.erro)}</div>` : '') + destaque + `<div class="linhas uni-plano">${L.join('')}</div>${notas.length ? '<div class="nota">' + notas.join(' ') + '</div>' : ''}`;
   }
   function scpMsgTexto(unidade, base, o, cfg) {
     const s = scpCalcular(base, o, cfg); const idx = (cfg && cfg.indice) || 'INCC';
     let t = `*SCP · Edifício Diamond — Unidade ${unidade}*\n\nValor de tabela: ${fmt(s.base)}\n`;
     if (s.descPct > 0) t += `Desconto ${s.descTxt}%: − ${fmt(s.desc)} → valor negociado ${fmt(s.valor)}\n`;
+    if(o.quartos)t += `Apartamento: ${quartosLabel(o.quartos)}${s.adicionalQuartos?' · acréscimo de '+fmt(s.adicionalQuartos):''}\nValor da proposta: ${fmt(s.valor,2)}\n`;
     if (s.nParc) t += `• ${s.nParc}x sem juros: ${fmt(s.pParc, 2)}/mês\n`;
     if (s.nTot) t += `• ${s.nFix} + ${s.nCor}: ${fmt(s.pNom, 2)}/mês — ${scpNotaCor(s, idx).replace(/^./, (c) => c.toLowerCase())}\n`;
     if (s.corrPct > 0) t += `Corretagem ${scpPct(s.corrPct)}%: − ${fmt(s.corrValor)} (líquido ${fmt(s.liquido)})\n`;
@@ -4039,6 +4128,7 @@
     const uns = STORE.getUnidades().slice().sort((a, b) => String(a.unidade).padStart(5, '0') < String(b.unidade).padStart(5, '0') ? -1 : 1).filter((x) => x.precoBase);
     const u = _scp.unidadeId ? STORE.unidadePorId(_scp.unidadeId) : null;
     const base = u ? valorNegociadoTabela(u, cfg) : 0;
+    if(u)_scp.quartos=window.DiamondProposta.quartos(u,_scp.quartos);
     app().innerHTML = `
       <div class="sim">
         <a class="volta" href="#/home">← espelho</a>
@@ -4052,7 +4142,7 @@
               </select>
             </label>
           </div>
-          ${u ? vagaHTML('scp-vaga', _scp) : ''}
+          ${u ? quartosHTML(u,_scp.quartos)+plantaHTML(u,cfg,_scp.quartos)+vagaHTML('scp-vaga', _scp) : ''}
           <div class="scp-box">
             <label class="scp-corr scp-desc">Desconto <small>sobre o valor de tabela</small> <span><input type="number" id="scp-desc" min="0" max="100" step="0.01" inputmode="decimal" value="${esc(_scp.descPct)}" placeholder="0"> %</span></label>
             <label class="scp-opt"><input type="checkbox" id="scp-12" ${_scp.p12 ? 'checked' : ''}> <input type="number" class="scp-n" id="scp-n" min="1" max="240" step="1" inputmode="numeric" value="${esc(_scp.nParc)}" aria-label="quantidade de parcelas sem juros"> x sem juros</label>
@@ -4070,7 +4160,7 @@
           </div>
         </div>
       </div>`;
-    if(u)wireVaga('scp-vaga', _scp);
+    if(u){wireVaga('scp-vaga', _scp);ativarFotos();ligarQuartos(q=>{_scp.quartos=q;vScp();});}
     $('#scp-unidade').onchange = (e) => { _scp.unidadeId = e.target.value; _scp.vaga=null; vScp(); };
     const reScp = () => { const r = $('#scp-res'); if (r) r.innerHTML = scpResumoHTML(base, _scp, cfg); };
     $('#scp-desc').oninput = (e) => { _scp.descPct = e.target.value; reScp(); };
@@ -4094,30 +4184,34 @@
       return cr;
     };
     $('#scp-pdf').onclick = async () => {
-      if (!validaScp() || !await conferirVaga(_scp)) return;
-      if(!_scp.cliente.trim()){toast('Preencha o nome do cliente para salvar o PDF no CRM.',true);return;}
+      if (!validaScp()) return;
+      const opcoes={..._scp};
+      if(!await conferirVaga(opcoes))return;
+      if(!opcoes.cliente.trim()){toast('Preencha o nome do cliente para salvar o PDF no CRM.',true);return;}
       const btn = $('#scp-pdf'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'gerando…';
-      try { const { doc, nome } = await gerarPdfScp(u, base, _scp, cfg, ator(), _scp.cliente.trim(), _scp.tel.trim()); const p=scpProposta(u,base,_scp,cfg,ator());const cr=await registrarScp(p);if(cr?.id)p.leadId=cr.id;await baixarPropostaArquivada(doc,nome,p);toast('PDF salvo no CRM e baixado ✓'); }
+      try { const { doc, nome } = await gerarPdfScp(u, base, opcoes, cfg, ator(), opcoes.cliente.trim(), opcoes.tel.trim()); const p=scpProposta(u,base,opcoes,cfg,ator());const cr=await registrarScp(p);if(cr?.id)p.leadId=cr.id;await baixarPropostaArquivada(doc,nome,p);toast('PDF salvo no CRM e baixado ✓'); }
       catch (e) { toast('Erro ao gerar o PDF: ' + e.message, true); }
       finally { btn.disabled = false; btn.textContent = t; }
     };
     // WhatsApp: gera o PDF → hospeda → manda saudação + resumo + LINK (o cliente abre a landing com o PDF)
     $('#scp-whats').onclick = async () => {
-      if (!validaScp() || !await conferirVaga(_scp)) return;
-      if (!_scp.cliente.trim()) { toast('Preencha o nome do cliente para vincular a proposta.', true); return; }
-      if (!_scp.tel.trim()) { toast('Preencha o telefone do cliente para enviar no WhatsApp.', true); return; }
+      if (!validaScp()) return;
+      const opcoes={..._scp};
+      if(!await conferirVaga(opcoes))return;
+      if (!opcoes.cliente.trim()) { toast('Preencha o nome do cliente para vincular a proposta.', true); return; }
+      if (!opcoes.tel.trim()) { toast('Preencha o telefone do cliente para enviar no WhatsApp.', true); return; }
       const win = window.open('about:blank', '_blank'); // pré-abre no clique (evita bloqueio de popup)
       const btn = $('#scp-whats'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'gerando…';
       try {
         const usr = ator();
-        const { doc } = await gerarPdfScp(u, base, _scp, cfg, usr, _scp.cliente.trim(), _scp.tel.trim());
-        const proposta = scpProposta(u, base, _scp, cfg, usr);
+        const { doc } = await gerarPdfScp(u, base, opcoes, cfg, usr, opcoes.cliente.trim(), opcoes.tel.trim());
+        const proposta = scpProposta(u, base, opcoes, cfg, usr);
         const cr = await registrarScp(proposta); // Histórico + CRM compartilham o mesmo identificador
         const base64 = doc.output('datauristring').split(',')[1];
         const link = await STORE.enviarPropostaPdf(base64, { unidade: u.unidade, valor: proposta.neg, area: u.area || 0, andar: u.andar, cliente: proposta.cliente, corretor: usr.nome, corretorTel: usr.telefone, empresa: usr.empresa, propostaId: proposta.id, leadId: (cr && cr.id) || '' });
-        const saud = _scp.cliente.trim() ? `Olá ${_scp.cliente.trim()}! 😊 ` : '';
-        const msg = saud + scpMsgTexto(u.unidade, base, _scp, cfg) + '\nVálida até '+fmtData(proposta.resumoEnvio.validade)+ `\n\n📄 Abra a proposta completa aqui: ${link}` + (usr.nome ? `\n\nQualquer dúvida, estou à disposição!\n${usr.nome}${usr.telefone ? ' — ' + usr.telefone : ''}` : '');
-        const url = 'https://wa.me/' + telWa(_scp.tel) + '?text=' + encodeURIComponent(msg);
+        const saud = opcoes.cliente.trim() ? `Olá ${opcoes.cliente.trim()}! 😊 ` : '';
+        const msg = saud + scpMsgTexto(u.unidade, base, opcoes, cfg) + '\nVálida até '+fmtData(proposta.resumoEnvio.validade)+ `\n\n📄 Abra a proposta completa aqui: ${link}` + (usr.nome ? `\n\nQualquer dúvida, estou à disposição!\n${usr.nome}${usr.telefone ? ' — ' + usr.telefone : ''}` : '');
+        const url = 'https://wa.me/' + telWa(opcoes.tel) + '?text=' + encodeURIComponent(msg);
         if (win) win.location.href = url; else window.open(url, '_blank');
         toast('WhatsApp aberto' + (cr && cr.acao === 'novo' ? ' · cliente salvo no CRM 👥' : '') + ' ✓');
       } catch (e) { if (win) win.close(); toast('Erro: ' + e.message, true); }

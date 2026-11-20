@@ -29,7 +29,14 @@ function simulador(options = {}) {
       if (!nodes.has(selector)) nodes.set(selector, element());
       return nodes.get(selector);
     },
-    querySelectorAll: () => [],
+    querySelectorAll(selector) {
+      if (selector !== '[data-quartos]') return [];
+      return Array.from(html.matchAll(/data-quartos="([12])"/g), match => {
+        const key = '[data-quartos="' + match[1] + '"]';
+        if (!nodes.has(key)) nodes.set(key, { ...element(), dataset: { quartos: match[1] } });
+        return nodes.get(key);
+      });
+    },
   };
   const unidade = { id: 'u-403', unidade: '403', area: 45, andar: 4, status: 'Disponível', precoBase: 300000, ...options.unidade };
   const ctx = vm.createContext({
@@ -79,6 +86,16 @@ function simulador(options = {}) {
     },
     async forma(value) {
       const node = document.querySelector('#s-forma');
+      node.value = value; node.onchange({ target: node }); await settle();
+    },
+    async quartos(value) {
+      const node = document.querySelectorAll('[data-quartos]').find(node => node.dataset.quartos === String(value));
+      assert.ok(node, 'A opção de ' + value + ' quarto(s) deve existir');
+      node.onclick(); await settle();
+    },
+    async tabela(value) {
+      const node = document.querySelector('#s-tabela');
+      assert.ok(node, 'O seletor de tabela deve existir');
       node.value = value; node.onchange({ target: node }); await settle();
     },
     async salvar() { await document.querySelector('#s-salvar').onclick(); await settle(); },
@@ -222,4 +239,78 @@ test('propostas v2 bloqueiam percentual fora das opções e final antecipada em 
   if(n===48){s.input('#s-chaves','36');await s.salvar();assert.equal(s.propostas[0].cliente,'Original');s.input('#s-chaves','48');}
   s.input('#s-cliente','Válido');await s.salvar();assert.equal(s.propostas[0].cliente,'Válido');
  }
+});
+
+test('dois quartos salva o adicional uma vez, reabre o mesmo total e volta ao preço de um quarto', async () => {
+  const s = simulador({ unidade: { precoBase: 373563.84, desconto: .1 }, cfg: { fotosTipo: { '03': 'planta-1q' }, fotosTipo2Quartos: { '03': 'planta-2q' } } });
+  s.input('#s-cliente', 'Cliente de dois quartos');
+  await s.quartos(2);
+  assert.equal(s.estado().inp.cliente, 'Cliente de dois quartos', 'Trocar planta preserva o formulário');
+  assert.match(s.html(), /data-fotoid="planta-2q"/);
+  await s.salvar();
+  const original = copy(s.propostas[0]), id = original.id;
+  assert.equal(original.neg, 351207.46, 'Acrescenta 15 mil depois do desconto da base');
+  assert.equal(original.quartos, 2);
+  assert.equal(original.inp.quartos, 2);
+  assert.equal(original.acrescimoQuartos, 15000);
+  assert.equal(Math.round(original.valorBaseQuartos * 100), 33620746);
+  assert.equal(original.fotoPlantaId, 'planta-2q');
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    await s.navegar('#/home');
+    await s.navegar('#/sim/u-403?editar=' + encodeURIComponent(id));
+    assert.equal(s.estado().inp.quartos, 2);
+    await s.salvar();
+    assert.equal(s.propostas.length, 1);
+    assert.equal(s.propostas[0].neg, original.neg, 'Reabrir não aplica o adicional novamente');
+  }
+  await s.quartos(1);
+  await s.salvar();
+  assert.equal(s.propostas[0].id, id);
+  assert.equal(s.propostas[0].neg, 336207.46);
+  assert.equal(s.propostas[0].quartos, 1);
+  assert.equal(s.propostas[0].acrescimoQuartos, 0);
+  assert.equal(s.propostas[0].fotoPlantaId, 'planta-1q');
+  await s.quartos(2);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, original.neg);
+});
+
+test('proposta legada conserva o preço salvo e ganha dois quartos somente quando selecionado', async () => {
+  const original = { id: 'p-legada-quartos', unidadeId: 'u-403', unidade: '403', cliente: 'Cliente legado', neg: 271234.56, inp: { forma: '24x' } };
+  const s = simulador({ propostas: [original], unidade: { precoBase: 400000 } });
+  await s.navegar('#/sim/u-403?editar=' + original.id);
+  assert.equal(s.estado().inp.quartos, 1);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, original.neg, 'A tabela atual não recalcula uma proposta antiga');
+  await s.quartos(2);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, 286234.56);
+  await s.quartos(1);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, original.neg);
+});
+
+test('trocar a versão da tabela preserva dois quartos e usa a nova base com um único adicional', async () => {
+  const tabelas = [
+    { key: 'atual', tabelaId: 'tb-atual', versao: 'v2', dataTabela: '01/11/2026', valorTabela: 300000, desconto: .1, neg: 270000 },
+    { key: 'tabela:tb-antiga', tabelaId: 'tb-antiga', versao: 'v1', dataTabela: '01/10/2026', valorTabela: 280000, desconto: .1, neg: 252000 },
+  ];
+  const s = simulador({ unidade: { precoTabelaReferencia: {} }, api: async () => ({ tabelas }) });
+  await s.settle();
+  s.input('#s-cliente', 'Cliente de duas tabelas');
+  await s.quartos(2);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, 285000);
+  await s.tabela('tabela:tb-antiga');
+  assert.equal(s.estado().inp.quartos, 2);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, 267000);
+  assert.equal(s.propostas[0].tabela.tabelaId, 'tb-antiga');
+  assert.equal(s.propostas[0].valorBaseQuartos, 252000);
+  assert.equal(s.propostas[0].acrescimoQuartos, 15000);
+  await s.navegar('#/home');
+  await s.navegar('#/sim/u-403?editar=' + s.propostas[0].id);
+  await s.salvar();
+  assert.equal(s.propostas[0].neg, 267000);
+  assert.equal(s.propostas[0].quartos, 2);
 });
