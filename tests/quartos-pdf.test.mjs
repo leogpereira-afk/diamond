@@ -15,7 +15,9 @@ function runtime() {
   class Image { width = 600; height = 400; set src(value) { queueMicrotask(() => this.onload?.()); } }
   const ctx = vm.createContext({ window: { jspdf: { jsPDF } }, Date, Math, setTimeout, clearTimeout, Image,
     fetch: async () => { throw Error('Sem logos neste teste'); },
-    STORE: { unidadePorId: () => unit, getUser: () => user, getUsuarios: () => [], obterFoto: async id => { reads.push(id); return photo; } }
+    STORE: { unidadePorId: () => unit, getUser: () => user, getUsuarios: () => [], obterFoto: async id => { reads.push(id);
+      const path = ctx.window.DiamondProposta.urlPlantaPublicada(id);
+      return path ? { mime: 'image/png', base64: fs.readFileSync(new URL('../' + path, import.meta.url)).toString('base64') } : photo; } }
   });
   vm.runInContext(source('proposta-domain.js'), ctx);
   vm.runInContext(source('plano.js'), ctx);
@@ -28,7 +30,7 @@ function proposal(quartos = 2) {
     neg: quartos === 2 ? 375000 : 360000, cliente: 'Cliente fictício', corretor: user.nome,
     inp: { forma: 'avista', diaVenc: 10, indice: 'INCC' } };
 }
-test('os três PDFs exibem 2 quartos, acréscimo fixo e planta pendente sem usar a imagem de 1 quarto', async () => {
+test('os três PDFs exibem 2 quartos, acréscimo fixo e a planta publicada do mesmo final', async () => {
   const r = runtime(), p = proposal();
   const plano = r.ctx.window.PLANO.calc({ neg: p.neg, forma: 'avista', dataProposta: new Date('2026-11-19T12:00:00Z') });
   const docs = await Promise.all([
@@ -41,9 +43,10 @@ test('os três PDFs exibem 2 quartos, acréscimo fixo e planta pendente sem usar
     assert.match(text, /2 quartos/);
     assert.match(text, /15\.000,00/);
     assert.match(text, /375\.000/);
-    assert.match(text, /Planta de 2 quartos a cadastrar/);
+    assert.doesNotMatch(text, /Planta de 2 quartos a cadastrar/);
+    assert.match(text, /\/Subtype \/Image/);
   }
-  assert.deepEqual(r.reads, []);
+  assert.deepEqual(r.reads, Array(3).fill('diamond-2q-03'));
 });
 test('planta escolhida e snapshot de 2 quartos são respeitados sem consultar a de 1 quarto', async () => {
   const r = runtime(), two = { ...cfg, fotosTipo2Quartos: { '03': 'planta-2q' } };

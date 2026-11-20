@@ -470,7 +470,8 @@ const STORE = (() => {
   async function girarFotoTipo(tipo, quartos = 1) {
     const campo = Number(quartos) === 2 ? 'fotosTipo2Quartos' : 'fotosTipo';
     const cfg = getCfg() || {};
-    const fid = (cfg[campo] || {})[tipo];
+    const cadastrada = (cfg[campo] || {})[tipo];
+    const fid = cadastrada || window.DiamondProposta?.fotoPlanta({ unidade: tipo }, cfg, quartos);
     if (!fid) return null;
     const f = await obterFoto(fid);
     if (!f) return null;
@@ -490,7 +491,7 @@ const STORE = (() => {
     await fotoLocalSet(novo, b64, 'image/jpeg');
     enqueue({ action: 'putFoto', fileId: novo, mime: 'image/jpeg' });
     salvarCfg({ ...cfg, [campo]: { ...(cfg[campo] || {}), [tipo]: novo } });
-    enqueue({ action: 'delFoto', fileId: fid });
+    if (cadastrada) enqueue({ action: 'delFoto', fileId: cadastrada });
     return novo;
   }
 
@@ -619,7 +620,23 @@ const STORE = (() => {
       catch (e) { /* IndexedDB indisponível: buscar na nuvem */ }
     }
     try {
-      const r = await api('getFoto', { fileId });
+      const url = window.DiamondProposta?.urlPlantaPublicada(fileId);
+      let r;
+      if (url) {
+        const response = await fetch(url, { cache: atualizar ? 'reload' : 'default' });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        if (blob.type !== 'image/png') return null;
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        r = { mime: blob.type, base64 };
+      } else {
+        r = await api('getFoto', { fileId });
+      }
       if (!valida(r)) return null;
       try { await fotoLocalSet(fileId, r.base64, r.mime); }
       catch (e) { /* quota/cache bloqueado: a foto baixada continua utilizável */ }

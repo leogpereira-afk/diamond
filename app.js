@@ -2822,7 +2822,7 @@
       <details class="bloco-fotos"><summary>Fotos por tipo de planta <span class="nota" style="font-weight:400">— configura uma vez; valem para todas as unidades do final</span></summary>
       <div class="tipos-strip">${['01', '02', '03', '04', '05', '06', '07', '08', 'LOJA'].flatMap(t=>(t==='LOJA'?[1]:[1,2]).map(q=>({t,q}))).map(({t,q}) => `
         <div class="tipo-slot">
-          <span class="mini-foto grande" data-fotoid="${(cfg[q===2?'fotosTipo2Quartos':'fotosTipo'] || {})[t] || ''}"></span>
+          <span class="mini-foto grande" data-fotoid="${esc(fotoDe({ unidade: t }, cfg, q))}"></span>
           <span class="tipo-lab">${t}${t==='LOJA'?'':' · '+quartosLabel(q)}</span>
           <span class="tipo-btns">
             <button class="btn-mini t-fotobtn" data-tipo="${t}" data-quartos-foto="${q}">📷</button>

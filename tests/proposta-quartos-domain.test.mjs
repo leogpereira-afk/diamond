@@ -57,10 +57,11 @@ test('planta de dois quartos usa o seu próprio cadastro por final e nunca a fot
   assert.equal(fotoPlanta(unidade, cfg, 2), 'tipo-2');
   assert.equal(fotoPlanta({ ...unidade, unidade: '903' }, cfg, 2), 'tipo-2');
   assert.equal(fotoPlanta(unidade, {}, 1), 'individual-1');
-  assert.equal(fotoPlanta(unidade, {}, 2), '');
-  assert.equal(fotoPlanta(unidade, { fotosTipo: cfg.fotosTipo }, 2), '');
-  assert.equal(fotoPlanta({ ...unidade, unidade: '404' }, cfg, 2), '');
-  assert.equal(fotoPlanta(unidade, null, 2), '');
+  assert.equal(fotoPlanta(unidade, {}, 2), 'diamond-2q-03');
+  assert.equal(fotoPlanta(unidade, { fotosTipo: cfg.fotosTipo }, 2), 'diamond-2q-03');
+  assert.equal(fotoPlanta({ ...unidade, unidade: '404' }, cfg, 2), 'diamond-2q-04');
+  assert.equal(fotoPlanta(unidade, null, 2), 'diamond-2q-03');
+  assert.equal(fotoPlanta({ ...unidade, unidade: '402' }, cfg, 2), '');
   assert.equal(fotoPlanta(null, cfg, 2), '');
 });
 

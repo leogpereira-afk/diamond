@@ -178,13 +178,30 @@
     return centavos / 100;
   }
 
+  const plantasPublicadas = new Map([
+    ['diamond-2q-01', 'plantas/2-quartos/tipo 01 - 2 quartos.png'],
+    ['diamond-2q-03', 'plantas/2-quartos/Tipo 03.png'],
+    ['diamond-2q-04', 'plantas/2-quartos/Tipo 04.png'],
+    ['diamond-2q-05', 'plantas/2-quartos/Tipo 05.png'],
+    ['diamond-2q-06', 'plantas/2-quartos/Tipo 06.png'],
+    ['diamond-2q-07', 'plantas/2-quartos/Tipo 07 - 2 quartos.png'],
+    ['diamond-2q-08', 'plantas/2-quartos/tipo 08 - 2 quartos.png'],
+  ]);
+
+  function urlPlantaPublicada(id) {
+    return plantasPublicadas.get(id) || '';
+  }
+
   function fotoPlanta(u, cfg = {}, value) {
     if (!u) return '';
     const tipo = quartos(u, value) === 0 ? 'LOJA' : String(u.unidade).slice(-2);
     // Uma planta de um quarto não representa a opção de dois quartos.
-    if (quartos(u, value) === 2) return cfg?.fotosTipo2Quartos?.[tipo] || '';
+    if (quartos(u, value) === 2) {
+      const id = 'diamond-2q-' + tipo;
+      return cfg?.fotosTipo2Quartos?.[tipo] || (plantasPublicadas.has(id) ? id : '');
+    }
     return cfg?.fotosTipo?.[tipo] || u.fotoId || '';
   }
 
-  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao, referencia, precoReferencia, origemConferida, precoAtualConferido, quartos, adicionalQuartos, valorComQuartos, fotoPlanta });
+  root.DiamondProposta = Object.freeze({ tabelas, diluir, comissao, referencia, precoReferencia, origemConferida, precoAtualConferido, quartos, adicionalQuartos, valorComQuartos, fotoPlanta, urlPlantaPublicada });
 })(typeof window !== 'undefined' ? window : globalThis);
